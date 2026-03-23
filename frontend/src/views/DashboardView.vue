@@ -1,163 +1,132 @@
 <script setup lang="ts">
-import { computed, onMounted, reactive, watch } from 'vue';
-import Header from '@/components/layout/Header.vue';
-import Sidebar from '@/components/layout/Sidebar.vue';
+import { ref, computed, onMounted } from 'vue';
+import AppShell from '@/components/layout/AppShell.vue';
 import FindingCard from '@/components/findings/FindingCard.vue';
 import { useFindingsStore } from '@/stores/findings';
-import { useProjectsStore } from '@/stores/projects';
 
 const findingsStore = useFindingsStore();
-const projectsStore = useProjectsStore();
 
-const filters = reactive({
-  date: '',
-  category: '',
-  difficulty: '',
-  author: '',
+const selectedCategory = ref('all');
+const selectedDifficulty = ref('all');
+const selectedAuthor = ref('all');
+
+const categories = ['All', 'Security', 'Performance', 'CodeStyle', 'Testing', 'Architecture'];
+const difficulties = ['All', 'Beginner', 'Intermediate', 'Advanced'];
+
+onMounted(() => {
+  findingsStore.fetchFindings();
 });
 
-const hasFindings = computed(() => findingsStore.findings.length > 0);
-
-async function loadFindings(page = 1) {
-  if (!projectsStore.selectedProjectId) {
-    findingsStore.findings = [];
-    return;
-  }
-
-  await findingsStore.fetchFindings({
-    projectId: projectsStore.selectedProjectId,
-    date: filters.date || undefined,
-    category: filters.category || undefined,
-    difficulty: filters.difficulty || undefined,
-    author: filters.author || undefined,
-    page,
-    limit: findingsStore.limit,
+const filteredFindings = computed(() => {
+  return findingsStore.findings.filter((finding) => {
+    if (selectedCategory.value !== 'all' && finding.category !== selectedCategory.value) return false;
+    if (selectedDifficulty.value !== 'all' && finding.difficulty !== selectedDifficulty.value) return false;
+    return true;
   });
-}
-
-onMounted(async () => {
-  await projectsStore.fetchProjects();
-  await loadFindings(1);
 });
 
-watch(
-  () => projectsStore.selectedProjectId,
-  async () => {
-    await loadFindings(1);
-  },
-);
-
-watch(
-  () => [filters.date, filters.category, filters.difficulty, filters.author],
-  async () => {
-    await loadFindings(1);
-  },
-);
+const currentDate = computed(() => {
+  const now = new Date();
+  return now.toLocaleDateString('en-US', {
+    weekday: 'long',
+    year: 'numeric',
+    month: 'long',
+    day: 'numeric',
+  });
+});
 </script>
 
 <template>
-  <div class="app-shell flex">
-    <Sidebar />
-    <div class="flex min-h-screen flex-1 flex-col">
-      <Header />
-      <main class="flex-1 space-y-5 p-6">
-        <section>
-          <h2 class="text-2xl font-semibold">Monday, March 23, 2026</h2>
-          <p class="mt-1 text-sm text-text-secondary">
-            {{ findingsStore.total }} pending reviews across {{ projectsStore.projects.length }} active projects
-          </p>
-        </section>
+  <AppShell>
+    <div class="p-8 flex-1">
+      <!-- Content Header -->
+      <header class="mb-10">
+        <h1 class="text-4xl font-black text-on-surface tracking-tight mb-2">
+          {{ currentDate }}
+        </h1>
+        <p class="text-outline text-sm">
+          Welcome back. You have 
+          <span class="text-primary font-semibold">{{ filteredFindings.length }} pending reviews</span>
+          across 3 active projects.
+        </p>
+      </header>
 
-        <!-- Filter bar - Stitch style -->
-        <section class="flex items-center justify-between">
-          <div class="flex items-center gap-3">
-            <!-- Category filter -->
-            <div class="filter-button">
-              <svg class="h-4 w-4 text-text-secondary" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 4a1 1 0 011-1h16a1 1 0 011 1v2.586a1 1 0 01-.293.707l-6.414 6.414a1 1 0 00-.293.707V17l-4 4v-6.586a1 1 0 00-.293-.707L3.293 7.293A1 1 0 013 6.586V4z" />
-              </svg>
-              <select v-model="filters.category" class="filter-select">
-                <option value="">Category: All</option>
-                <option value="SECURITY">Security</option>
-                <option value="PERFORMANCE">Performance</option>
-                <option value="CODE_STYLE">Code Style</option>
-                <option value="TESTING">Testing</option>
-                <option value="ARCHITECTURE">Architecture</option>
-                <option value="DOCUMENTATION">Documentation</option>
-              </select>
-              <svg class="h-4 w-4 text-text-secondary" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7" />
-              </svg>
-            </div>
+      <!-- Filter Bar -->
+      <div class="flex flex-wrap items-center gap-4 mb-8 bg-surface-container-low p-3 rounded-xl border border-outline-variant/10">
+        <!-- Category Filter -->
+        <div class="flex items-center gap-2 px-3 py-1.5 bg-surface-container rounded-lg border border-outline-variant/20">
+          <span class="material-symbols-outlined text-sm text-outline">filter_list</span>
+          <select
+            v-model="selectedCategory"
+            class="bg-transparent border-none text-xs text-on-surface focus:ring-0 cursor-pointer"
+          >
+            <option value="all">Category: All</option>
+            <option v-for="cat in categories.slice(1)" :key="cat" :value="cat">
+              {{ cat }}
+            </option>
+          </select>
+        </div>
 
-            <!-- Difficulty filter -->
-            <div class="filter-button">
-              <svg class="h-4 w-4 text-text-secondary" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z" />
-              </svg>
-              <select v-model="filters.difficulty" class="filter-select">
-                <option value="">Difficulty: All</option>
-                <option value="BEGINNER">Beginner</option>
-                <option value="INTERMEDIATE">Intermediate</option>
-                <option value="ADVANCED">Advanced</option>
-              </select>
-              <svg class="h-4 w-4 text-text-secondary" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7" />
-              </svg>
-            </div>
+        <!-- Difficulty Filter -->
+        <div class="flex items-center gap-2 px-3 py-1.5 bg-surface-container rounded-lg border border-outline-variant/20">
+          <span class="material-symbols-outlined text-sm text-outline">signal_cellular_alt</span>
+          <select
+            v-model="selectedDifficulty"
+            class="bg-transparent border-none text-xs text-on-surface focus:ring-0 cursor-pointer"
+          >
+            <option value="all">Difficulty: All</option>
+            <option v-for="diff in difficulties.slice(1)" :key="diff" :value="diff">
+              {{ diff }}
+            </option>
+          </select>
+        </div>
 
-            <!-- Author filter -->
-            <div class="filter-button">
-              <svg class="h-4 w-4 text-text-secondary" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z" />
-              </svg>
-              <select v-model="filters.author" class="filter-select">
-                <option value="">Author: All</option>
-                <option value="alice">alice</option>
-                <option value="bob">bob</option>
-              </select>
-              <svg class="h-4 w-4 text-text-secondary" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7" />
-              </svg>
-            </div>
-          </div>
+        <!-- Author Filter -->
+        <div class="flex items-center gap-2 px-3 py-1.5 bg-surface-container rounded-lg border border-outline-variant/20">
+          <span class="material-symbols-outlined text-sm text-outline">person</span>
+          <select
+            v-model="selectedAuthor"
+            class="bg-transparent border-none text-xs text-on-surface focus:ring-0 cursor-pointer"
+          >
+            <option value="all">Author: All</option>
+          </select>
+        </div>
 
-          <!-- Results count -->
-          <span class="text-xs uppercase tracking-wider text-text-secondary">
-            Showing {{ findingsStore.findings.length }} of {{ findingsStore.total }} findings
+        <!-- Results Count -->
+        <div class="ml-auto">
+          <span class="text-[10px] text-outline uppercase font-bold tracking-tighter">
+            Showing {{ filteredFindings.length }} findings
           </span>
-        </section>
+        </div>
+      </div>
 
-        <section class="space-y-4">
-          <h3 class="text-lg font-semibold">Findings</h3>
-          <div v-if="findingsStore.loading" class="grid gap-4">
-            <div v-for="index in 3" :key="index" class="h-32 animate-pulse rounded-lg border border-border bg-bg-card" />
-          </div>
-          <p v-else-if="!hasFindings" class="rounded-lg border border-border bg-bg-card p-4 text-sm text-text-secondary">
-            No findings for the selected filters.
-          </p>
-          <div v-else class="grid gap-4 xl:grid-cols-2">
-            <FindingCard v-for="finding in findingsStore.findings" :key="finding.id" :finding="finding" />
-          </div>
-          <div class="flex items-center justify-end gap-2 pt-1">
-            <button
-              class="rounded-md border border-border px-3 py-1 text-sm text-text-secondary transition hover:border-primary hover:text-primary disabled:opacity-50"
-              :disabled="findingsStore.page <= 1 || findingsStore.loading"
-              @click="loadFindings(findingsStore.page - 1)"
-            >
-              Prev
-            </button>
-            <span class="text-xs text-text-secondary">Page {{ findingsStore.page }} / {{ findingsStore.totalPages }}</span>
-            <button
-              class="rounded-md border border-border px-3 py-1 text-sm text-text-secondary transition hover:border-primary hover:text-primary disabled:opacity-50"
-              :disabled="findingsStore.page >= findingsStore.totalPages || findingsStore.loading"
-              @click="loadFindings(findingsStore.page + 1)"
-            >
-              Next
-            </button>
-          </div>
-        </section>
-      </main>
+      <!-- Finding Cards Grid -->
+      <div class="grid grid-cols-1 lg:grid-cols-2 xl:grid-cols-3 gap-6">
+        <FindingCard
+          v-for="finding in filteredFindings"
+          :key="finding.id"
+          :finding="finding"
+        />
+
+        <!-- Empty State -->
+        <div
+          v-if="filteredFindings.length === 0"
+          class="col-span-full flex flex-col items-center justify-center py-16"
+        >
+          <span class="material-symbols-outlined text-6xl text-outline mb-4">inbox</span>
+          <p class="text-on-surface-variant text-lg">No findings match your filters</p>
+        </div>
+      </div>
     </div>
-  </div>
+
+    <!-- Footer -->
+    <footer class="flex justify-between items-center w-full px-8 py-4 mt-auto bg-background border-t border-outline-variant/15">
+      <span class="text-xs uppercase tracking-widest text-outline">© 2024 ReviewHub</span>
+      <div class="flex gap-6">
+        <a href="#" class="text-xs uppercase tracking-widest text-outline hover:text-primary transition-opacity">Documentation</a>
+        <a href="#" class="text-xs uppercase tracking-widest text-outline hover:text-primary transition-opacity">System Status</a>
+        <a href="#" class="text-xs uppercase tracking-widest text-outline hover:text-primary transition-opacity">Privacy</a>
+      </div>
+    </footer>
+  </AppShell>
 </template>
