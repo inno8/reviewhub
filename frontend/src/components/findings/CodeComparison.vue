@@ -68,20 +68,20 @@ const changedOptimizedLineNumbers = computed(() => changedOriginalLineNumbers.va
 
 <template>
   <Card>
-    <h3 class="mb-3 text-lg font-semibold">Code Comparison</h3>
+    <h3 class="mb-4 text-lg font-semibold">Code Comparison</h3>
     <div class="grid gap-4 lg:grid-cols-2">
-      <div class="rounded-lg border border-error/40 bg-error/5 p-3">
+      <div class="rounded-lg border border-border bg-bg-darkest p-3">
         <p class="mb-2 text-sm font-semibold text-error">Original</p>
-        <div class="max-h-[520px] overflow-auto rounded border border-dark-border/60">
-          <table class="w-full border-collapse text-xs font-mono">
+        <div class="max-h-[520px] overflow-auto rounded border border-border/70">
+          <table class="code-panel w-full border-collapse text-[13px]">
             <tbody>
               <tr v-for="(line, index) in originalLines" :key="`original-${index}`">
-                <td class="w-10 select-none border-r border-dark-border/60 px-2 py-1 text-right text-text-secondary">
+                <td class="line-number border-r border-border/70 px-2 py-1">
                   {{ index + 1 }}
                 </td>
                 <td
                   class="px-2 py-1 align-top"
-                  :class="changedOriginalLineNumbers.has(index + 1) ? 'bg-error/15' : ''"
+                  :class="changedOriginalLineNumbers.has(index + 1) ? 'line-deleted' : ''"
                   v-html="highlightLine(line)"
                 />
               </tr>
@@ -89,18 +89,18 @@ const changedOptimizedLineNumbers = computed(() => changedOriginalLineNumbers.va
           </table>
         </div>
       </div>
-      <div class="rounded-lg border border-success/40 bg-success/5 p-3">
+      <div class="rounded-lg border border-border bg-bg-darkest p-3">
         <p class="mb-2 text-sm font-semibold text-success">Optimized</p>
-        <div class="max-h-[520px] overflow-auto rounded border border-dark-border/60">
-          <table class="w-full border-collapse text-xs font-mono">
+        <div class="max-h-[520px] overflow-auto rounded border border-border/70">
+          <table class="code-panel w-full border-collapse text-[13px]">
             <tbody>
               <tr v-for="(line, index) in optimizedLines" :key="`optimized-${index}`">
-                <td class="w-10 select-none border-r border-dark-border/60 px-2 py-1 text-right text-text-secondary">
+                <td class="line-number border-r border-border/70 px-2 py-1">
                   {{ index + 1 }}
                 </td>
                 <td
                   class="px-2 py-1 align-top"
-                  :class="changedOptimizedLineNumbers.has(index + 1) ? 'bg-success/15' : ''"
+                  :class="changedOptimizedLineNumbers.has(index + 1) ? 'line-added' : ''"
                   v-html="highlightLine(line)"
                 />
               </tr>

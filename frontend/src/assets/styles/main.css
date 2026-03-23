@@ -6,23 +6,129 @@
 
 :root {
   --primary: #58a6ff;
+  --primary-hover: #6caeff;
+  --primary-light: #a2c9ff;
   --secondary: #5f799c;
+  --secondary-light: #7992b7;
   --tertiary: #da9600;
-  --bg-dark: #0d1117;
+  --tertiary-light: #ffba42;
+  --bg-darkest: #0d1117;
+  --bg-dark: #181c22;
   --bg-card: #161b22;
+  --bg-elevated: #2d3137;
+  --border: #30363d;
   --text-primary: #ffffff;
   --text-secondary: #8b949e;
+  --text-muted: #6e7681;
   --success: #3fb950;
   --error: #f85149;
   --warning: #d29922;
+  --radius-card: 8px;
+  --radius-button: 6px;
+  --radius-badge: 4px;
 }
 
 body {
-  @apply bg-dark-bg text-white font-sans antialiased;
+  @apply bg-darkest text-white font-sans antialiased;
+  letter-spacing: 0.01em;
 }
 
 #app {
   @apply min-h-screen;
+}
+
+h1,
+h2,
+h3,
+h4,
+h5,
+h6 {
+  letter-spacing: 0.02em;
+}
+
+.app-shell {
+  @apply min-h-screen bg-darkest text-text-primary;
+}
+
+.surface-card {
+  @apply border border-border bg-bg-card;
+  border-radius: var(--radius-card);
+}
+
+.login-card {
+  background: var(--bg-card);
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  padding: 32px;
+  max-width: 400px;
+}
+
+.field-label {
+  @apply mb-1.5 block text-xs font-medium uppercase tracking-wide text-text-secondary;
+}
+
+.status-pill {
+  @apply inline-flex items-center rounded px-2 py-0.5 text-[11px] font-medium;
+  border-radius: var(--radius-badge);
+}
+
+.status-pill-security {
+  background: rgba(248, 81, 73, 0.15);
+  color: #f85149;
+}
+
+.status-pill-performance {
+  background: rgba(210, 153, 34, 0.15);
+  color: #d29922;
+}
+
+.status-pill-code-style {
+  background: rgba(88, 166, 255, 0.15);
+  color: #58a6ff;
+}
+
+.status-pill-testing {
+  background: rgba(63, 185, 80, 0.15);
+  color: #3fb950;
+}
+
+.status-pill-beginner {
+  background: rgba(63, 185, 80, 0.15);
+  color: #3fb950;
+}
+
+.status-pill-intermediate {
+  background: rgba(210, 153, 34, 0.15);
+  color: #d29922;
+}
+
+.status-pill-advanced {
+  background: rgba(248, 81, 73, 0.15);
+  color: #f85149;
+}
+
+.code-panel {
+  background: #0d1117;
+  border-radius: 8px;
+  font-family: 'JetBrains Mono', Consolas, monospace;
+  font-size: 13px;
+  line-height: 1.6;
+}
+
+.line-number {
+  color: var(--text-muted);
+  padding-right: 16px;
+  user-select: none;
+  text-align: right;
+  width: 40px;
+}
+
+.line-deleted {
+  background: rgba(248, 81, 73, 0.15);
+}
+
+.line-added {
+  background: rgba(63, 185, 80, 0.15);
 }
 
 .hljs-keyword,

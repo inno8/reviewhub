@@ -5,6 +5,7 @@ import Sidebar from '@/components/layout/Sidebar.vue';
 import Card from '@/components/common/Card.vue';
 import Badge from '@/components/common/Badge.vue';
 import Button from '@/components/common/Button.vue';
+import Dropdown from '@/components/common/Dropdown.vue';
 import Modal from '@/components/common/Modal.vue';
 import { api } from '@/composables/useApi';
 
@@ -154,41 +155,49 @@ onMounted(async () => {
 </script>
 
 <template>
-  <div class="flex min-h-screen bg-dark-bg">
+  <div class="app-shell flex">
     <Sidebar />
     <div class="flex min-h-screen flex-1 flex-col">
       <Header />
       <main class="space-y-6 p-6">
         <div class="flex items-center justify-between">
-          <h2 class="text-xl font-semibold">User Management</h2>
+          <h2 class="text-2xl font-semibold">Team Management</h2>
           <Button @click="openCreateModal">Add User</Button>
         </div>
         <p v-if="errorMessage" class="text-sm text-error">{{ errorMessage }}</p>
         <Card>
           <div v-if="loading" class="text-sm text-text-secondary">Loading users...</div>
-          <div v-else class="space-y-2">
+          <div v-else class="overflow-x-auto">
+            <div class="mb-2 grid min-w-[900px] grid-cols-[56px_1fr_1.2fr_120px_1.4fr_130px] px-3 py-2 text-xs font-medium uppercase tracking-wide text-text-secondary">
+              <span>Avatar</span>
+              <span>Username</span>
+              <span>Email</span>
+              <span>Role</span>
+              <span>Projects</span>
+              <span class="text-right">Actions</span>
+            </div>
             <div
               v-for="user in users"
               :key="user.id"
-              class="flex cursor-pointer items-center justify-between rounded-lg border border-dark-border bg-dark-bg px-3 py-2"
+              class="mb-2 grid min-w-[900px] cursor-pointer grid-cols-[56px_1fr_1.2fr_120px_1.4fr_130px] items-center rounded-lg border border-border bg-bg-darkest px-3 py-3 transition odd:bg-bg-card hover:border-primary/60"
               @click="openEditModal(user)"
             >
-              <div class="space-y-1">
-                <p class="text-sm font-semibold">{{ user.username }}</p>
-                <p class="text-xs text-text-secondary">{{ user.email }}</p>
-                <div class="flex flex-wrap gap-1">
-                  <Badge v-for="project in user.projects || []" :key="project.id" tone="success">
-                    {{ project.displayName }}
-                  </Badge>
-                </div>
+              <div class="flex h-9 w-9 items-center justify-center rounded-full bg-bg-elevated text-xs font-semibold">
+                {{ user.username.slice(0, 2).toUpperCase() }}
               </div>
-              <div class="flex items-center gap-2">
-                <Badge :tone="user.role === 'ADMIN' ? 'warning' : 'primary'">{{ user.role }}</Badge>
+              <p class="text-sm font-semibold">{{ user.username }}</p>
+              <p class="text-sm text-text-secondary">{{ user.email }}</p>
+              <Badge :tone="user.role === 'ADMIN' ? 'primary' : 'muted'">{{ user.role }}</Badge>
+              <div class="flex flex-wrap gap-1">
+                <Badge v-for="project in user.projects || []" :key="project.id" tone="success">{{ project.displayName }}</Badge>
+              </div>
+              <div class="flex items-center justify-end gap-2">
+                <Button variant="outlined" @click.stop="openEditModal(user)">Edit</Button>
                 <Button
                   variant="danger"
                   @click.stop="deleteUser(user)"
                 >
-                  Delete
+                  Del
                 </Button>
               </div>
             </div>
@@ -198,44 +207,44 @@ onMounted(async () => {
         <Modal :open="isModalOpen" :title="editingUserId ? 'Edit User' : 'Add User'" @close="closeModal">
           <form class="space-y-3" @submit.prevent="saveUser">
             <div>
-              <label class="mb-1 block text-xs text-text-secondary">Username</label>
+              <label class="field-label">Username</label>
               <input
                 v-model="form.username"
                 type="text"
                 required
-                class="w-full rounded-lg border border-dark-border bg-dark-bg px-3 py-2 text-sm"
+                class="h-10 w-full rounded-lg border border-border bg-bg-elevated px-3 text-sm"
               />
             </div>
             <div>
-              <label class="mb-1 block text-xs text-text-secondary">Email</label>
+              <label class="field-label">Email</label>
               <input
                 v-model="form.email"
                 type="email"
                 required
-                class="w-full rounded-lg border border-dark-border bg-dark-bg px-3 py-2 text-sm"
+                class="h-10 w-full rounded-lg border border-border bg-bg-elevated px-3 text-sm"
               />
             </div>
             <div>
-              <label class="mb-1 block text-xs text-text-secondary">
+              <label class="field-label">
                 {{ editingUserId ? 'Password (leave blank to keep)' : 'Password' }}
               </label>
               <input
                 v-model="form.password"
                 type="password"
                 :required="!editingUserId"
-                class="w-full rounded-lg border border-dark-border bg-dark-bg px-3 py-2 text-sm"
+                class="h-10 w-full rounded-lg border border-border bg-bg-elevated px-3 text-sm"
               />
             </div>
             <div>
-              <label class="mb-1 block text-xs text-text-secondary">Role</label>
-              <select v-model="form.role" class="w-full rounded-lg border border-dark-border bg-dark-bg px-3 py-2 text-sm">
+              <label class="field-label">Role</label>
+              <Dropdown v-model="form.role">
                 <option value="ADMIN">Admin</option>
                 <option value="INTERN">Intern</option>
-              </select>
+              </Dropdown>
             </div>
             <div>
-              <p class="mb-1 text-xs text-text-secondary">Projects</p>
-              <div class="max-h-40 space-y-2 overflow-auto rounded-lg border border-dark-border p-2">
+              <p class="field-label">Projects</p>
+              <div class="max-h-40 space-y-2 overflow-auto rounded-lg border border-border bg-bg-darkest p-2">
                 <label
                   v-for="project in projects"
                   :key="project.id"

@@ -4,6 +4,7 @@ import { useRoute } from 'vue-router';
 import Header from '@/components/layout/Header.vue';
 import Sidebar from '@/components/layout/Sidebar.vue';
 import Button from '@/components/common/Button.vue';
+import Badge from '@/components/common/Badge.vue';
 import CodeComparison from '@/components/findings/CodeComparison.vue';
 import ExplanationSection from '@/components/findings/ExplanationSection.vue';
 import { useFindingsStore } from '@/stores/findings';
@@ -82,21 +83,33 @@ function clearToast() {
 </script>
 
 <template>
-  <div class="flex min-h-screen bg-dark-bg">
+  <div class="app-shell flex">
     <Sidebar />
     <div class="flex min-h-screen flex-1 flex-col">
       <Header />
       <main v-if="finding" class="space-y-6 p-6">
-        <section class="flex items-center justify-between">
+        <section class="surface-card flex flex-wrap items-start justify-between gap-4 p-5">
           <div>
-            <h2 class="text-xl font-semibold">{{ finding.filePath }}</h2>
-            <p class="text-sm text-text-secondary">{{ finding.category }} - {{ finding.difficulty }}</p>
-            <p class="text-xs text-text-secondary">
-              {{ finding.review?.project?.displayName }} / {{ finding.review?.branch }} / {{ finding.review?.reviewDate }}
+            <p class="text-xs text-text-muted">
+              {{ finding.review?.project?.displayName }} / {{ finding.filePath }} -> {{ finding.review?.branch }}
             </p>
+            <h2 class="mt-1 text-xl font-semibold">{{ finding.filePath }}</h2>
+            <div class="mt-3 flex flex-wrap items-center gap-2">
+              <Badge
+                :tone="finding.category === 'SECURITY' ? 'security' : finding.category === 'PERFORMANCE' ? 'performance' : finding.category === 'CODE_STYLE' ? 'code-style' : finding.category === 'TESTING' ? 'testing' : 'muted'"
+              >
+                {{ finding.category.replace('_', ' ') }}
+              </Badge>
+              <Badge
+                :tone="finding.difficulty === 'ADVANCED' ? 'advanced' : finding.difficulty === 'INTERMEDIATE' ? 'intermediate' : 'beginner'"
+              >
+                {{ finding.difficulty }}
+              </Badge>
+              <Badge tone="muted">ID #{{ finding.id }}</Badge>
+            </div>
           </div>
           <div class="flex gap-3">
-            <Button variant="secondary" :disabled="actionLoading" @click="requestExplanation">
+            <Button variant="outlined" :disabled="actionLoading" @click="requestExplanation">
               {{ finding.explanationRequested ? 'Explanation Requested' : 'Request Explanation' }}
             </Button>
             <Button
@@ -141,7 +154,7 @@ function clearToast() {
         <ExplanationSection :explanation="finding.explanation" :references="references" />
         <div
           v-if="toastMessage"
-          class="fixed bottom-4 right-4 rounded-lg border border-success/50 bg-success/20 px-4 py-2 text-sm text-success"
+          class="fixed bottom-4 right-4 rounded-lg border border-success/50 bg-success/20 px-4 py-2 text-sm text-success shadow-lg"
           @click="clearToast"
         >
           {{ toastMessage }}

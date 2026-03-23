@@ -1,236 +1,341 @@
-# ReviewHub — Phase 4: Performance Insights
+# ReviewHub — Phase 5: UI Polish (Pixel-Perfect Match to Stitch Design)
 
 ## Overview
 
-Build the Performance Insights dashboard for admins. This page shows individual developer metrics, strengths, growth areas, code progression tracking, and personalized learning recommendations.
+Polish the UI to match the Stitch design exactly. The current implementation works but doesn't match the designer's vision. This phase is about visual refinement.
 
-## Current State
+**Stitch Design URL:** https://stitch.withgoogle.com/projects/1695881319703761493
 
-- ✅ Phase 1-3 complete
-- ✅ GitHub and Telegram tokens configured
-- Backend running on port 3000
-- Frontend running on port 5174
+## Design System Reference
 
-## Phase 4 Tasks
+### Colors (OpenClaw Dark)
+```css
+/* Primary palette */
+--primary: #58A6FF;        /* Cyan/blue - main accent */
+--primary-hover: #6CAEFF;  /* T70 */
+--primary-light: #A2C9FF;  /* T80 */
 
-### 1. Performance Metrics Calculation Service
+/* Secondary palette */
+--secondary: #5F799C;      /* Muted blue-gray */
+--secondary-light: #7992B7; /* T60 */
 
-**Backend: `backend/src/services/performance.ts`**
+/* Tertiary palette */
+--tertiary: #DA9600;       /* Gold/orange - warnings, highlights */
+--tertiary-light: #FFBA42; /* T80 */
 
-Implement the performance calculation logic:
+/* Neutral palette (backgrounds) */
+--bg-darkest: #0D1117;     /* Main background */
+--bg-dark: #181C22;        /* T10 - cards, sidebar */
+--bg-card: #161B22;        /* Card backgrounds */
+--bg-elevated: #2D3137;    /* T20 - elevated surfaces, inputs */
+--border: #30363D;         /* Borders */
 
-```typescript
-export interface PerformanceData {
-  userId: number;
-  projectId: number;
-  periodType: 'DAILY' | 'WEEKLY' | 'MONTHLY';
-  periodStart: Date;
-  periodEnd: Date;
-  commitCount: number;
-  findingCount: number;
-  findingsByCategory: Record<string, number>;
-  findingsByDifficulty: Record<string, number>;
-  strengths: string[];
-  growthAreas: string[];
-  recommendations: Recommendation[];
+/* Text colors */
+--text-primary: #FFFFFF;   /* White - headings */
+--text-secondary: #8B949E; /* Gray - body text */
+--text-muted: #6E7681;     /* Muted text */
+
+/* Status colors */
+--success: #3FB950;        /* Green */
+--error: #F85149;          /* Red */
+--warning: #D29922;        /* Yellow/orange */
+```
+
+### Typography
+- **Font Family:** Inter, system-ui, -apple-system, sans-serif
+- **Monospace:** JetBrains Mono, Consolas, monospace
+- **Headings:** Semi-bold (600), tracking slightly wider
+- **Body:** Regular (400)
+- **Labels/Badges:** Medium (500), uppercase for some labels
+
+### Spacing & Sizing
+- **Border radius:** 8px for cards, 6px for buttons, 4px for badges
+- **Padding:** 16px for cards, 12px for smaller elements
+- **Gap:** 16px between cards, 8px within groups
+
+## Screen-by-Screen Polish Requirements
+
+### 1. Login Page
+
+**Current issues:**
+- Logo design doesn't match (needs ReviewHub wordmark with code brackets icon)
+- Input fields styling
+- Button styling
+- Footer links missing
+
+**Design requirements:**
+- Left side: Logo + tagline "THE MONOLITH & THE LENS"
+- Center card with:
+  - "Welcome back" heading
+  - "Access your editorial code space" subtitle
+  - Username field with person icon
+  - Password field with lock icon + "Forgot?" link
+  - Blue "Sign In" button with arrow icon
+  - "New to the hub? Request Access" text
+- Bottom: GitHub and SSO login buttons
+- Footer: © 2024 ReviewHub | Documentation | System Status | Privacy
+
+**CSS changes needed:**
+```css
+/* Login card */
+.login-card {
+  background: var(--bg-card);
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  padding: 32px;
+  max-width: 400px;
 }
 
-interface Recommendation {
-  type: 'book' | 'article' | 'tutorial' | 'video';
-  title: string;
-  url: string;
-  category: string;
-  reason: string;
+/* Input fields */
+.input-field {
+  background: var(--bg-elevated);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 12px 16px;
+  padding-left: 44px; /* For icon */
 }
 
-export async function calculatePerformance(
-  userId: number,
-  projectId: number,
-  periodType: 'DAILY' | 'WEEKLY' | 'MONTHLY'
-): Promise<PerformanceData>
-```
-
-**Logic:**
-1. Get all findings for the user (by commitAuthor) in the period
-2. Count by category and difficulty
-3. Determine strengths: categories with 0-1 findings (they're doing well)
-4. Determine growth areas: categories with 3+ findings (needs improvement)
-5. Generate recommendations based on growth areas
-
-**Recommendations mapping (hardcoded for now):**
-```typescript
-const RECOMMENDATIONS: Record<string, Recommendation[]> = {
-  SECURITY: [
-    { type: 'book', title: 'Web Security for Developers', url: 'https://www.amazon.com/dp/1593279949', category: 'SECURITY', reason: 'Covers common vulnerabilities and prevention' },
-    { type: 'article', title: 'OWASP Top 10', url: 'https://owasp.org/Top10/', category: 'SECURITY', reason: 'Essential security knowledge' },
-  ],
-  PERFORMANCE: [
-    { type: 'book', title: 'High Performance JavaScript', url: 'https://www.amazon.com/dp/059680279X', category: 'PERFORMANCE', reason: 'Deep dive into JS performance' },
-    { type: 'article', title: 'Web.dev Performance Guide', url: 'https://web.dev/performance/', category: 'PERFORMANCE', reason: 'Modern performance best practices' },
-  ],
-  CODE_STYLE: [
-    { type: 'book', title: 'Clean Code', url: 'https://www.amazon.com/dp/0132350882', category: 'CODE_STYLE', reason: 'Industry standard for code quality' },
-    { type: 'article', title: 'Google Style Guides', url: 'https://google.github.io/styleguide/', category: 'CODE_STYLE', reason: 'Professional style guidelines' },
-  ],
-  TESTING: [
-    { type: 'book', title: 'Testing JavaScript Applications', url: 'https://www.amazon.com/dp/1617297917', category: 'TESTING', reason: 'Comprehensive testing guide' },
-    { type: 'tutorial', title: 'Jest Documentation', url: 'https://jestjs.io/docs/getting-started', category: 'TESTING', reason: 'Learn the most popular testing framework' },
-  ],
-  ARCHITECTURE: [
-    { type: 'book', title: 'Clean Architecture', url: 'https://www.amazon.com/dp/0134494164', category: 'ARCHITECTURE', reason: 'Fundamental architecture principles' },
-    { type: 'article', title: 'Patterns.dev', url: 'https://www.patterns.dev/', category: 'ARCHITECTURE', reason: 'Modern design patterns' },
-  ],
-  DOCUMENTATION: [
-    { type: 'article', title: 'Write the Docs Guide', url: 'https://www.writethedocs.org/guide/', category: 'DOCUMENTATION', reason: 'Documentation best practices' },
-  ],
-};
-```
-
-### 2. Code Progression Tracking
-
-**Add to performance service:**
-
-```typescript
-export async function getCodeProgression(
-  userId: number,
-  projectId: number
-): Promise<CodeProgression[]>
-
-interface CodeProgression {
-  weekStart: Date;
-  weekEnd: Date;
-  findingCount: number;
-  categories: Record<string, number>;
-  trend: 'improving' | 'stable' | 'declining';
+/* Sign In button */
+.btn-primary {
+  background: var(--primary);
+  color: white;
+  border-radius: 8px;
+  padding: 12px 24px;
+  font-weight: 600;
+  display: flex;
+  align-items: center;
+  gap: 8px;
 }
 ```
 
-Compare findings week-over-week to show if the developer is improving.
+### 2. Dashboard
 
-### 3. Performance API Endpoints
+**Current issues:**
+- Sidebar layout doesn't match
+- Calendar widget styling
+- Finding cards layout
+- Header styling
+- Filter dropdowns
 
-**Backend: `backend/src/routes/performance.ts`**
+**Design requirements from Stitch:**
 
-```typescript
-// GET /api/performance/:userId
-// Query: projectId, periodType (DAILY|WEEKLY|MONTHLY)
-// Returns: PerformanceData
+**Header:**
+- Logo on left (ReviewHub wordmark)
+- "Dashboard" text (active nav item)
+- Project selector dropdown (center)
+- User avatar on right
 
-// GET /api/performance/:userId/trends
-// Query: projectId, weeks (default 8)
-// Returns: CodeProgression[]
+**Sidebar (left, ~280px):**
+- "Activity" section header with calendar icon
+- Month calendar (March 2026)
+  - Days with findings highlighted in blue
+  - Grid layout with day names
+- Navigation items below:
+  - Dashboard (active - with blue indicator)
+  - Insights
+  - Team Management
+  - Settings (bottom)
+  - Support (bottom)
 
-// GET /api/performance/:userId/recommendations
-// Query: projectId
-// Returns: Recommendation[]
+**Main content:**
+- Date header: "Monday, March 23, 2026"
+- Stats line: "14 pending reviews across 3 active projects"
+- Filter bar: Category | Difficulty | Author dropdowns
+- Finding cards grid (2-3 columns):
+  - Card structure:
+    - File path with folder icon
+    - Branch badge (gray pill)
+    - Category badge (colored: Security=red, Performance=orange, etc.)
+    - Difficulty badge (Beginner=green, Intermediate=yellow, Advanced=red)
+    - Author section (avatar + name)
+    - 2-line description preview
+    - "View Details" button (text link style)
 
-// GET /api/performance/leaderboard
-// Query: projectId, periodType
-// Returns: Array of { userId, username, findingCount, improvementRate }
+**Card CSS:**
+```css
+.finding-card {
+  background: var(--bg-card);
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  padding: 20px;
+}
+
+.finding-card:hover {
+  border-color: var(--primary);
+}
+
+/* Category badges */
+.badge-security { background: rgba(248, 81, 73, 0.15); color: #F85149; }
+.badge-performance { background: rgba(210, 153, 34, 0.15); color: #D29922; }
+.badge-code-style { background: rgba(88, 166, 255, 0.15); color: #58A6FF; }
+.badge-testing { background: rgba(63, 185, 80, 0.15); color: #3FB950; }
+
+/* Difficulty badges */
+.badge-beginner { background: rgba(63, 185, 80, 0.15); color: #3FB950; }
+.badge-intermediate { background: rgba(210, 153, 34, 0.15); color: #D29922; }
+.badge-advanced { background: rgba(248, 81, 73, 0.15); color: #F85149; }
 ```
 
-### 4. Performance Insights UI
+### 3. Finding Detail
 
-**Frontend: `frontend/src/views/PerformanceView.vue`**
+**Current issues:**
+- Code comparison layout
+- Syntax highlighting colors
+- Line numbers styling
+- Action buttons placement
 
-Complete implementation:
+**Design requirements from Stitch:**
 
-**Header Section:**
-- Developer selector dropdown (fetch users)
-- Time period tabs: Daily | Weekly | Monthly
-- Project filter (if multiple projects)
+**Header:**
+- Breadcrumb: File path → Branch name
+- Badges: Category + Difficulty + Finding ID
 
-**Stats Cards Row:**
-- Total Commits (from findings count)
-- Total Findings
-- Fix Rate % (findings with prCreated / total)
-- Trend indicator (arrow up/down with color)
+**Code comparison (side-by-side):**
+- Two panels: "Original" and "Optimized"
+- Dark background for code blocks
+- Line numbers on left of each panel
+- Red highlight for problematic lines (left)
+- Green highlight for improved lines (right)
+- Proper syntax highlighting
 
-**Two-Column Section:**
-- Left: **Strengths** — green badges with checkmarks
-- Right: **Growth Areas** — orange badges with arrow icons
+**Below code:**
+- "Why This Is Better" section header
+- Explanation text
+- Checkmark list of benefits
+- Reference links
 
-**Chart Section:**
-- Line chart showing findings over time (by week)
-- Use a simple chart library or CSS-based visualization
-- X-axis: weeks, Y-axis: finding count
-- Show trend line
+**Actions row:**
+- Checkbox: "Mark as understood"
+- Button: "Request Explanation" (outlined)
+- Button: "Apply Fix & Create PR" (primary blue)
 
-**Recommendations Section:**
-- Cards for each recommendation:
-  - Icon based on type (book, video, article, tutorial)
-  - Title (clickable link)
-  - Category badge
-  - Reason text
-- Group by growth area
+**Code block CSS:**
+```css
+.code-panel {
+  background: #0D1117;
+  border-radius: 8px;
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 13px;
+  line-height: 1.6;
+}
 
-**Code Progression Section (New!):**
-- "Your Progress" header
-- Week-by-week comparison
-- Show "Week 1 vs Week 4" examples when available
-- Highlight categories where findings decreased
+.line-number {
+  color: var(--text-muted);
+  padding-right: 16px;
+  user-select: none;
+  text-align: right;
+  width: 40px;
+}
 
-### 5. Simple Chart Component
+.line-deleted {
+  background: rgba(248, 81, 73, 0.15);
+}
 
-**Frontend: `frontend/src/components/charts/TrendChart.vue`**
-
-Create a simple SVG-based line chart (no external dependencies):
-
-```vue
-<template>
-  <svg :viewBox="`0 0 ${width} ${height}`" class="w-full h-48">
-    <!-- Grid lines -->
-    <!-- Data points -->
-    <!-- Line connecting points -->
-    <!-- Labels -->
-  </svg>
-</template>
-```
-
-Or use a lightweight library like Chart.js if preferred.
-
-### 6. Frontend API Updates
-
-**Frontend: `frontend/src/composables/useApi.ts`**
-
-Add:
-```typescript
-performance: {
-  get: (userId: number, params: { projectId: number; periodType: string }) => 
-    axios.get(`/performance/${userId}`, { params }),
-  trends: (userId: number, params: { projectId: number; weeks?: number }) =>
-    axios.get(`/performance/${userId}/trends`, { params }),
-  recommendations: (userId: number, params: { projectId: number }) =>
-    axios.get(`/performance/${userId}/recommendations`, { params }),
+.line-added {
+  background: rgba(63, 185, 80, 0.15);
 }
 ```
+
+### 4. Performance Insights
+
+**Design requirements:**
+
+**Header:**
+- "Performance Insights" title
+- Developer selector dropdown
+- Period tabs: Daily | Weekly | Monthly
+
+**Stats cards row:**
+- 4 cards: Total Commits | Total Findings | Fix Rate | Trend
+- Each with icon, value, and label
+
+**Two-column layout:**
+- Left: "Strengths" with green checkmark badges
+- Right: "Growth Areas" with orange arrow-up badges
+
+**Chart:**
+- Line chart showing findings over time
+- X-axis: weeks
+- Y-axis: count
+- Blue line with area fill
+
+**Recommendations:**
+- Cards with resource icon, title, link, and relevance tag
+
+### 5. User Management
+
+**Design requirements:**
+
+**Header:**
+- "Team Management" title
+- "Add User" button (primary)
+
+**Table:**
+- Columns: Avatar | Username | Email | Role | Projects | Actions
+- Alternating row colors
+- Hover state
+- Role badges (Admin=blue, Intern=gray)
+- Project tags
+- Action icons (edit, delete)
+
+**Add/Edit Modal:**
+- Form fields: Username, Email, Password, Role dropdown
+- Projects checklist
+- Save/Cancel buttons
+
+## Components to Create/Update
+
+### Global Components
+- [ ] `Badge.vue` - Unified badge styling with variants
+- [ ] `Button.vue` - Primary, secondary, outlined, danger variants
+- [ ] `Card.vue` - Consistent card styling
+- [ ] `Input.vue` - With icon support
+- [ ] `Dropdown.vue` - Styled select component
+
+### Layout Components
+- [ ] `Sidebar.vue` - Match design exactly
+- [ ] `Header.vue` - Logo, nav, user menu
+
+### Page-Specific
+- [ ] `LoginView.vue` - Complete redesign
+- [ ] `DashboardView.vue` - Layout fixes, card grid
+- [ ] `FindingDetailView.vue` - Code panels, explanation section
+- [ ] `PerformanceView.vue` - Charts, stats cards
+- [ ] `UserManagementView.vue` - Table styling, modal
+
+## CSS Files to Update
+
+**`frontend/src/assets/styles/main.css`:**
+- Add all CSS custom properties
+- Add component base styles
+- Add utility classes
+
+**`frontend/tailwind.config.js`:**
+- Extend colors with design system
+- Add custom fonts
 
 ## Testing Checklist
 
-- [ ] Login as admin
-- [ ] Navigate to Performance Insights
-- [ ] Select a developer (alice or bob)
-- [ ] See stats cards with real data
-- [ ] See strengths (green) and growth areas (orange)
-- [ ] See trend chart with weekly data
-- [ ] See recommendations based on growth areas
-- [ ] Switch time period (Daily/Weekly/Monthly) and see data update
-- [ ] Switch developer and see different stats
+For each screen, verify:
+- [ ] Colors match exactly
+- [ ] Spacing/padding matches
+- [ ] Border radius matches
+- [ ] Typography matches
+- [ ] Icons are consistent
+- [ ] Hover/active states work
+- [ ] Responsive behavior (if applicable)
 
-## Files to Modify/Create
+## Logo Asset
 
-**Backend:**
-- `backend/src/services/performance.ts` — Full implementation
-- `backend/src/routes/performance.ts` — Complete endpoints
-
-**Frontend:**
-- `frontend/src/views/PerformanceView.vue` — Full implementation
-- `frontend/src/components/charts/TrendChart.vue` — Chart component
-- `frontend/src/composables/useApi.ts` — Add performance endpoints
+Create `frontend/src/assets/logo.svg` with the horizontal wordmark:
+- Code brackets icon (`</>`) with lightbulb symbol
+- "ReviewHub" text in Inter font
+- Primary blue color (#58A6FF)
 
 ## DO NOT
 
-- Do not add heavy chart libraries (keep it simple)
+- Do not change functionality (only visual)
+- Do not break existing API connections
 - Do not change database schema
-- Do not skip TypeScript types
-- Keep the UI consistent with existing dark theme
+- Do not remove existing features
+- Keep all TypeScript types intact

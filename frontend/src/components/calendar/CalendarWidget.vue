@@ -4,7 +4,7 @@ import Card from '@/components/common/Card.vue';
 import { api } from '@/composables/useApi';
 
 const days = ['Mo', 'Tu', 'We', 'Th', 'Fr', 'Sa', 'Su'];
-const props = defineProps<{ projectId: number | null }>();
+const props = defineProps<{ projectId: number | null; compact?: boolean }>();
 const emit = defineEmits<{ (e: 'select-date', date: string): void }>();
 
 const currentMonth = ref(new Date());
@@ -79,32 +79,32 @@ watch(monthKey, fetchCalendarDates);
 </script>
 
 <template>
-  <Card>
+  <Card :class="props.compact ? 'p-0' : ''">
     <div class="mb-3 flex items-center justify-between">
-      <h3 class="text-lg font-semibold">{{ monthLabel }}</h3>
+      <h3 :class="props.compact ? 'text-sm font-semibold' : 'text-lg font-semibold'">{{ monthLabel }}</h3>
       <div class="flex items-center gap-2">
-        <button class="rounded border border-dark-border px-2 py-1 text-xs hover:border-primary" @click="prevMonth">
-          Prev
+        <button class="rounded border border-border px-2 py-1 text-xs text-text-secondary transition hover:border-primary hover:text-primary" @click="prevMonth">
+          <
         </button>
-        <button class="rounded border border-dark-border px-2 py-1 text-xs hover:border-primary" @click="nextMonth">
-          Next
+        <button class="rounded border border-border px-2 py-1 text-xs text-text-secondary transition hover:border-primary hover:text-primary" @click="nextMonth">
+          >
         </button>
       </div>
     </div>
-    <div class="mb-3">
+    <div v-if="!props.compact" class="mb-3">
       <span class="text-sm text-text-secondary">Review activity</span>
     </div>
-    <div class="mb-2 grid grid-cols-7 gap-2 text-center text-xs text-text-secondary">
+    <div class="mb-2 grid grid-cols-7 gap-1 text-center text-[11px] text-text-secondary">
       <span v-for="day in days" :key="day">{{ day }}</span>
     </div>
-    <div class="grid grid-cols-7 gap-2">
+    <div class="grid grid-cols-7 gap-1">
       <button
         v-for="(day, index) in calendarCells"
         :key="`${monthKey}-${index}`"
         :disabled="!day"
         :class="[
-          'aspect-square rounded-md border text-sm',
-          day ? 'border-dark-border hover:border-primary hover:text-primary' : 'border-transparent',
+          props.compact ? 'aspect-square rounded border text-xs' : 'aspect-square rounded-md border text-sm',
+          day ? 'border-border text-text-secondary hover:border-primary hover:text-primary' : 'border-transparent',
           day && isHighlighted(day) && 'border-primary/80 bg-primary/20 text-primary',
           day && isSelected(day) && 'ring-2 ring-primary',
         ]"

@@ -69,7 +69,7 @@ const yTicks = computed(() => {
 <template>
   <Card>
     <h3 class="mb-3 text-lg font-semibold">{{ title }}</h3>
-    <div class="rounded-lg border border-dark-border bg-dark-bg p-3">
+    <div class="rounded-lg border border-border bg-bg-darkest p-3">
       <svg :viewBox="`0 0 ${width} ${height}`" class="h-56 w-full">
         <line
           v-for="tick in yTicks"
@@ -78,7 +78,7 @@ const yTicks = computed(() => {
           :x2="width - padding.right"
           :y1="tick.y"
           :y2="tick.y"
-          stroke="#374151"
+          stroke="#30363D"
           stroke-width="1"
           stroke-dasharray="4 4"
         />
@@ -87,28 +87,28 @@ const yTicks = computed(() => {
           :key="`label-${tick.y}`"
           :x="padding.left - 8"
           :y="tick.y + 4"
-          fill="#9CA3AF"
+          fill="#8B949E"
           font-size="10"
           text-anchor="end"
         >
           {{ tick.value }}
         </text>
-        <path v-if="areaPath" :d="areaPath" fill="rgba(34, 211, 238, 0.15)" />
-        <path v-if="linePath" :d="linePath" fill="none" stroke="#22d3ee" stroke-width="2.5" />
+        <path v-if="areaPath" :d="areaPath" fill="rgba(88, 166, 255, 0.16)" />
+        <path v-if="linePath" :d="linePath" fill="none" stroke="#58A6FF" stroke-width="2.5" />
         <circle
           v-for="point in chartPoints"
           :key="point.label"
           :cx="point.x"
           :cy="point.y"
           r="3.5"
-          fill="#22d3ee"
+          fill="#58A6FF"
         />
         <text
           v-for="point in chartPoints"
           :key="`x-${point.label}`"
           :x="point.x"
           :y="height - 14"
-          fill="#9CA3AF"
+          fill="#8B949E"
           font-size="10"
           text-anchor="middle"
         >

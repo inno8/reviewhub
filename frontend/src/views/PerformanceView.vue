@@ -3,6 +3,7 @@ import { computed, onMounted, ref, watch } from 'vue';
 import Header from '@/components/layout/Header.vue';
 import Sidebar from '@/components/layout/Sidebar.vue';
 import Card from '@/components/common/Card.vue';
+import Dropdown from '@/components/common/Dropdown.vue';
 import TrendChart from '@/components/charts/TrendChart.vue';
 import { api } from '@/composables/useApi';
 import { useProjectsStore } from '@/stores/projects';
@@ -184,45 +185,32 @@ watch(
 </script>
 
 <template>
-  <div class="flex min-h-screen bg-dark-bg">
+  <div class="app-shell flex">
     <Sidebar />
     <div class="flex min-h-screen flex-1 flex-col">
       <Header />
       <main class="space-y-6 p-6">
         <section class="space-y-4">
-          <h2 class="text-xl font-semibold">Performance Insights</h2>
+          <h2 class="text-2xl font-semibold">Performance Insights</h2>
           <div class="flex flex-wrap items-end gap-3">
             <div>
-              <label class="mb-1 block text-xs text-text-secondary">Developer</label>
-              <select
-                v-model="selectedUserId"
-                class="rounded-lg border border-dark-border bg-dark-card px-3 py-2 text-sm"
+              <label class="field-label">Developer</label>
+              <Dropdown
+                :model-value="selectedUserId"
+                @update:model-value="selectedUserId = $event ? Number($event) : null"
               >
                 <option :value="null" disabled>Select developer</option>
                 <option v-for="user in users" :key="user.id" :value="user.id">{{ user.username }}</option>
-              </select>
+              </Dropdown>
             </div>
             <div>
-              <label class="mb-1 block text-xs text-text-secondary">Project</label>
-              <select
-                :value="projectsStore.selectedProjectId ?? ''"
-                class="rounded-lg border border-dark-border bg-dark-card px-3 py-2 text-sm"
-                @change="projectsStore.setSelectedProject(($event.target as HTMLSelectElement).value ? Number(($event.target as HTMLSelectElement).value) : null)"
-              >
-                <option disabled value="">Select project</option>
-                <option v-for="project in projectsStore.projects" :key="project.id" :value="project.id">
-                  {{ project.displayName }}
-                </option>
-              </select>
-            </div>
-            <div>
-              <label class="mb-1 block text-xs text-text-secondary">Period</label>
-              <div class="flex overflow-hidden rounded-lg border border-dark-border bg-dark-card text-sm">
+              <label class="field-label">Period</label>
+              <div class="flex overflow-hidden rounded-lg border border-border bg-bg-card text-sm">
                 <button
                   v-for="period in ['DAILY', 'WEEKLY', 'MONTHLY']"
                   :key="period"
-                  class="px-3 py-2"
-                  :class="periodType === period ? 'bg-primary/20 text-primary' : 'text-text-secondary'"
+                  class="px-3 py-2 transition"
+                  :class="periodType === period ? 'bg-primary/20 text-primary' : 'text-text-secondary hover:text-text-primary'"
                   @click="periodType = period as PeriodType"
                 >
                   {{ period.charAt(0) + period.slice(1).toLowerCase() }}
@@ -234,19 +222,19 @@ watch(
 
         <section class="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
           <Card>
-            <p class="text-xs text-text-secondary">Total Commits</p>
+            <p class="text-xs uppercase tracking-wide text-text-secondary">Total Commits</p>
             <p class="mt-2 text-2xl font-semibold">{{ performance?.commitCount ?? 0 }}</p>
           </Card>
           <Card>
-            <p class="text-xs text-text-secondary">Total Findings</p>
+            <p class="text-xs uppercase tracking-wide text-text-secondary">Total Findings</p>
             <p class="mt-2 text-2xl font-semibold">{{ performance?.findingCount ?? 0 }}</p>
           </Card>
           <Card>
-            <p class="text-xs text-text-secondary">Fix Rate</p>
+            <p class="text-xs uppercase tracking-wide text-text-secondary">Fix Rate</p>
             <p class="mt-2 text-2xl font-semibold">{{ performance?.fixRate ?? 0 }}%</p>
           </Card>
           <Card>
-            <p class="text-xs text-text-secondary">Trend</p>
+            <p class="text-xs uppercase tracking-wide text-text-secondary">Trend</p>
             <p class="mt-2 text-xl font-semibold" :class="trendColor">
               <span v-if="trendDirection === 'up'">UP</span>
               <span v-else-if="trendDirection === 'down'">DOWN</span>
@@ -263,9 +251,9 @@ watch(
               <span
                 v-for="category in performance.strengths"
                 :key="`strength-${category}`"
-                class="rounded-full border border-success/30 bg-success/10 px-3 py-1 text-sm text-success"
+                class="rounded border border-success/30 bg-success/10 px-2.5 py-1 text-xs text-success"
               >
-                OK {{ formatCategory(category) }}
+                ✓ {{ formatCategory(category) }}
               </span>
             </div>
             <p v-else class="text-sm text-text-secondary">No strengths identified yet.</p>
@@ -276,9 +264,9 @@ watch(
               <span
                 v-for="category in performance.growthAreas"
                 :key="`growth-${category}`"
-                class="rounded-full border border-warning/30 bg-warning/10 px-3 py-1 text-sm text-warning"
+                class="rounded border border-warning/30 bg-warning/10 px-2.5 py-1 text-xs text-warning"
               >
-                NEXT {{ formatCategory(category) }}
+                ↑ {{ formatCategory(category) }}
               </span>
             </div>
             <p v-else class="text-sm text-text-secondary">No growth areas right now.</p>
@@ -289,14 +277,14 @@ watch(
 
         <section class="space-y-4">
           <h3 class="text-lg font-semibold">Recommendations</h3>
-          <div v-if="!Object.keys(groupedRecommendations).length" class="rounded-xl border border-dark-border bg-dark-card p-4 text-sm text-text-secondary">
+          <div v-if="!Object.keys(groupedRecommendations).length" class="rounded-lg border border-border bg-bg-card p-4 text-sm text-text-secondary">
             No recommendations yet. Great work keeping findings low.
           </div>
           <div v-else class="space-y-4">
             <Card v-for="(items, category) in groupedRecommendations" :key="`rec-${category}`">
               <h4 class="mb-3 text-base font-semibold">
                 {{ formatCategory(category) }}
-                <span class="ml-2 rounded-full border border-dark-border px-2 py-0.5 text-xs text-text-secondary">
+                <span class="ml-2 rounded border border-border px-2 py-0.5 text-xs text-text-secondary">
                   {{ items.length }} items
                 </span>
               </h4>
@@ -307,7 +295,7 @@ watch(
                   :href="item.url"
                   target="_blank"
                   rel="noopener noreferrer"
-                  class="rounded-lg border border-dark-border bg-dark-bg p-3 transition hover:border-primary/60"
+                  class="rounded-lg border border-border bg-bg-darkest p-3 transition hover:border-primary/60"
                 >
                   <p class="text-sm">
                     <span class="mr-1">{{ iconForRecommendation(item.type) }}</span>
@@ -340,7 +328,7 @@ watch(
               <div
                 v-for="comparison in progressionComparisons"
                 :key="comparison.label"
-                class="rounded-lg border border-dark-border bg-dark-bg p-3"
+                class="rounded-lg border border-border bg-bg-darkest p-3"
               >
                 <p class="text-sm font-medium">{{ comparison.label }}</p>
                 <p class="mt-1 text-sm text-text-secondary">
