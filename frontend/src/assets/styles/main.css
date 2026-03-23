@@ -173,3 +173,38 @@ h6 {
 .hljs-quote {
   color: #8b949e;
 }
+
+/* Filter buttons - Stitch style */
+.filter-button {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 0.5rem 0.75rem;
+  background-color: transparent;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-button);
+  color: var(--text-secondary);
+  font-size: 0.875rem;
+  cursor: pointer;
+  transition: border-color 0.15s ease;
+}
+
+.filter-button:hover {
+  border-color: var(--text-secondary);
+}
+
+.filter-select {
+  appearance: none;
+  background: transparent;
+  border: none;
+  color: var(--text-secondary);
+  font-size: 0.875rem;
+  cursor: pointer;
+  outline: none;
+  padding-right: 0.25rem;
+}
+
+.filter-select option {
+  background-color: var(--bg-card);
+  color: var(--text-primary);
+}

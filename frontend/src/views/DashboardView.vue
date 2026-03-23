@@ -3,7 +3,6 @@ import { computed, onMounted, reactive, watch } from 'vue';
 import Header from '@/components/layout/Header.vue';
 import Sidebar from '@/components/layout/Sidebar.vue';
 import FindingCard from '@/components/findings/FindingCard.vue';
-import Dropdown from '@/components/common/Dropdown.vue';
 import { useFindingsStore } from '@/stores/findings';
 import { useProjectsStore } from '@/stores/projects';
 
@@ -69,47 +68,64 @@ watch(
           </p>
         </section>
 
-        <section class="surface-card p-4">
-          <div class="grid gap-3 md:grid-cols-4">
-            <div>
-              <label class="field-label">Date</label>
-              <input
-                v-model="filters.date"
-                type="date"
-                class="h-10 w-full rounded-lg border border-border bg-bg-elevated px-3 text-sm text-text-primary outline-none transition focus:border-primary focus:ring-1 focus:ring-primary"
-              />
-            </div>
-            <div>
-              <label class="field-label">Category</label>
-              <Dropdown v-model="filters.category">
-                <option value="">All categories</option>
+        <!-- Filter bar - Stitch style -->
+        <section class="flex items-center justify-between">
+          <div class="flex items-center gap-3">
+            <!-- Category filter -->
+            <div class="filter-button">
+              <svg class="h-4 w-4 text-text-secondary" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 4a1 1 0 011-1h16a1 1 0 011 1v2.586a1 1 0 01-.293.707l-6.414 6.414a1 1 0 00-.293.707V17l-4 4v-6.586a1 1 0 00-.293-.707L3.293 7.293A1 1 0 013 6.586V4z" />
+              </svg>
+              <select v-model="filters.category" class="filter-select">
+                <option value="">Category: All</option>
                 <option value="SECURITY">Security</option>
                 <option value="PERFORMANCE">Performance</option>
                 <option value="CODE_STYLE">Code Style</option>
                 <option value="TESTING">Testing</option>
                 <option value="ARCHITECTURE">Architecture</option>
                 <option value="DOCUMENTATION">Documentation</option>
-              </Dropdown>
+              </select>
+              <svg class="h-4 w-4 text-text-secondary" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7" />
+              </svg>
             </div>
-            <div>
-              <label class="field-label">Difficulty</label>
-              <Dropdown v-model="filters.difficulty">
-                <option value="">All levels</option>
+
+            <!-- Difficulty filter -->
+            <div class="filter-button">
+              <svg class="h-4 w-4 text-text-secondary" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z" />
+              </svg>
+              <select v-model="filters.difficulty" class="filter-select">
+                <option value="">Difficulty: All</option>
                 <option value="BEGINNER">Beginner</option>
                 <option value="INTERMEDIATE">Intermediate</option>
                 <option value="ADVANCED">Advanced</option>
-              </Dropdown>
+              </select>
+              <svg class="h-4 w-4 text-text-secondary" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7" />
+              </svg>
             </div>
-            <div>
-              <label class="field-label">Author</label>
-              <input
-                v-model="filters.author"
-                type="text"
-                placeholder="e.g. alice"
-                class="h-10 w-full rounded-lg border border-border bg-bg-elevated px-3 text-sm text-text-primary outline-none transition focus:border-primary focus:ring-1 focus:ring-primary"
-              />
+
+            <!-- Author filter -->
+            <div class="filter-button">
+              <svg class="h-4 w-4 text-text-secondary" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z" />
+              </svg>
+              <select v-model="filters.author" class="filter-select">
+                <option value="">Author: All</option>
+                <option value="alice">alice</option>
+                <option value="bob">bob</option>
+              </select>
+              <svg class="h-4 w-4 text-text-secondary" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7" />
+              </svg>
             </div>
           </div>
+
+          <!-- Results count -->
+          <span class="text-xs uppercase tracking-wider text-text-secondary">
+            Showing {{ findingsStore.findings.length }} of {{ findingsStore.total }} findings
+          </span>
         </section>
 
         <section class="space-y-4">

@@ -4,7 +4,7 @@ import { useRouter } from 'vue-router';
 import Button from '@/components/common/Button.vue';
 import Card from '@/components/common/Card.vue';
 import Input from '@/components/common/Input.vue';
-import logo from '@/assets/logo.svg';
+import logo from '@/assets/logo-horizontal.svg';
 import { useAuthStore } from '@/stores/auth';
 
 const auth = useAuthStore();
