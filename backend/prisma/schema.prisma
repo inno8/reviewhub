@@ -1,0 +1,143 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+model User {
+  id             Int               @id @default(autoincrement())
+  username       String            @unique
+  email          String            @unique
+  passwordHash   String
+  role           Role              @default(INTERN)
+  telegramChatId String?
+  createdAt      DateTime          @default(now())
+  updatedAt      DateTime          @updatedAt
+
+  projects    UserProject[]
+  findings    UserFinding[]
+  performance PerformanceMetric[]
+}
+
+enum Role {
+  ADMIN
+  INTERN
+}
+
+model Project {
+  id                Int      @id @default(autoincrement())
+  name              String   @unique
+  displayName       String
+  githubOwner       String
+  githubRepo        String
+  codeReviewEnabled Boolean  @default(true)
+  createdAt         DateTime @default(now())
+
+  users       UserProject[]
+  reviews     Review[]
+  performance PerformanceMetric[]
+}
+
+model UserProject {
+  userId    Int
+  projectId Int
+  user      User    @relation(fields: [userId], references: [id], onDelete: Cascade)
+  project   Project @relation(fields: [projectId], references: [id], onDelete: Cascade)
+
+  @@id([userId, projectId])
+}
+
+model Review {
+  id          Int      @id @default(autoincrement())
+  projectId   Int
+  branch      String
+  reviewDate  DateTime @db.Date
+  rawMarkdown String?  @db.Text
+  createdAt   DateTime @default(now())
+
+  project  Project   @relation(fields: [projectId], references: [id])
+  findings Finding[]
+
+  @@unique([projectId, branch, reviewDate])
+}
+
+model Finding {
+  id            Int        @id @default(autoincrement())
+  reviewId      Int
+  commitSha     String?
+  commitAuthor  String?
+  filePath      String
+  lineStart     Int?
+  lineEnd       Int?
+  originalCode  String     @db.Text
+  optimizedCode String     @db.Text
+  explanation   String     @db.Text
+  references    Json?
+  category      Category
+  difficulty    Difficulty
+  prCreated     Boolean    @default(false)
+  prUrl         String?
+  createdAt     DateTime   @default(now())
+
+  review       Review        @relation(fields: [reviewId], references: [id], onDelete: Cascade)
+  userFindings UserFinding[]
+}
+
+enum Category {
+  SECURITY
+  PERFORMANCE
+  CODE_STYLE
+  TESTING
+  ARCHITECTURE
+  DOCUMENTATION
+}
+
+enum Difficulty {
+  BEGINNER
+  INTERMEDIATE
+  ADVANCED
+}
+
+model UserFinding {
+  userId                 Int
+  findingId              Int
+  markedUnderstood       Boolean   @default(false)
+  explanationRequested   Boolean   @default(false)
+  explanationRequestedAt DateTime?
+
+  user    User    @relation(fields: [userId], references: [id], onDelete: Cascade)
+  finding Finding @relation(fields: [findingId], references: [id], onDelete: Cascade)
+
+  @@id([userId, findingId])
+}
+
+model PerformanceMetric {
+  id                   Int        @id @default(autoincrement())
+  userId               Int
+  projectId            Int
+  periodType           PeriodType
+  periodStart          DateTime   @db.Date
+  periodEnd            DateTime   @db.Date
+  commitCount          Int        @default(0)
+  findingCount         Int        @default(0)
+  findingsByCategory   Json?
+  findingsByDifficulty Json?
+  strengths            Json?
+  growthAreas          Json?
+  recommendations      Json?
+  calculatedAt         DateTime   @default(now())
+
+  user    User    @relation(fields: [userId], references: [id])
+  project Project @relation(fields: [projectId], references: [id])
+
+  @@unique([userId, projectId, periodType, periodStart])
+}
+
+enum PeriodType {
+  DAILY
+  WEEKLY
+  MONTHLY
+}
