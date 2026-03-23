@@ -1,12 +1,6 @@
 <script setup lang="ts">
 import { onMounted, ref } from 'vue';
-import Header from '@/components/layout/Header.vue';
-import Sidebar from '@/components/layout/Sidebar.vue';
-import Card from '@/components/common/Card.vue';
-import Badge from '@/components/common/Badge.vue';
-import Button from '@/components/common/Button.vue';
-import Dropdown from '@/components/common/Dropdown.vue';
-import Modal from '@/components/common/Modal.vue';
+import AppShell from '@/components/layout/AppShell.vue';
 import { api } from '@/composables/useApi';
 
 interface User {
@@ -109,7 +103,7 @@ async function saveUser() {
   errorMessage.value = '';
   try {
     if (editingUserId.value) {
-      const payload = {
+      const payload: any = {
         username: form.value.username,
         email: form.value.email,
         role: form.value.role,
@@ -155,119 +149,215 @@ onMounted(async () => {
 </script>
 
 <template>
-  <div class="app-shell flex">
-    <Sidebar />
-    <div class="flex min-h-screen flex-1 flex-col">
-      <Header />
-      <main class="space-y-6 p-6">
-        <div class="flex items-center justify-between">
-          <h2 class="text-2xl font-semibold">Team Management</h2>
-          <Button @click="openCreateModal">Add User</Button>
-        </div>
-        <p v-if="errorMessage" class="text-sm text-error">{{ errorMessage }}</p>
-        <Card>
-          <div v-if="loading" class="text-sm text-text-secondary">Loading users...</div>
-          <div v-else class="overflow-x-auto">
-            <div class="mb-2 grid min-w-[900px] grid-cols-[56px_1fr_1.2fr_120px_1.4fr_130px] px-3 py-2 text-xs font-medium uppercase tracking-wide text-text-secondary">
-              <span>Avatar</span>
-              <span>Username</span>
-              <span>Email</span>
-              <span>Role</span>
-              <span>Projects</span>
-              <span class="text-right">Actions</span>
-            </div>
-            <div
-              v-for="user in users"
-              :key="user.id"
-              class="mb-2 grid min-w-[900px] cursor-pointer grid-cols-[56px_1fr_1.2fr_120px_1.4fr_130px] items-center rounded-lg border border-border bg-bg-darkest px-3 py-3 transition odd:bg-bg-card hover:border-primary/60"
-              @click="openEditModal(user)"
-            >
-              <div class="flex h-9 w-9 items-center justify-center rounded-full bg-bg-elevated text-xs font-semibold">
-                {{ user.username.slice(0, 2).toUpperCase() }}
-              </div>
-              <p class="text-sm font-semibold">{{ user.username }}</p>
-              <p class="text-sm text-text-secondary">{{ user.email }}</p>
-              <Badge :tone="user.role === 'ADMIN' ? 'primary' : 'muted'">{{ user.role }}</Badge>
-              <div class="flex flex-wrap gap-1">
-                <Badge v-for="project in user.projects || []" :key="project.id" tone="success">{{ project.displayName }}</Badge>
-              </div>
-              <div class="flex items-center justify-end gap-2">
-                <Button variant="outlined" @click.stop="openEditModal(user)">Edit</Button>
-                <Button
-                  variant="danger"
-                  @click.stop="deleteUser(user)"
-                >
-                  Del
-                </Button>
-              </div>
-            </div>
+  <AppShell>
+    <div class="p-8 flex-1">
+      <div class="max-w-6xl mx-auto">
+        <!-- Header Section -->
+        <div class="flex justify-between items-end mb-10">
+          <div>
+            <h1 class="text-4xl font-extrabold text-on-surface tracking-tight">Team Management</h1>
+            <p class="text-on-surface-variant mt-2 max-w-lg">
+              Manage pedagogical access, review assignments, and system-wide collaborator permissions.
+            </p>
           </div>
-        </Card>
+          <button
+            class="primary-gradient text-on-primary px-6 py-3 rounded-lg font-bold flex items-center gap-2 shadow-lg shadow-primary/10 hover:shadow-primary/20 transition-all active:scale-95"
+            @click="openCreateModal"
+          >
+            <span class="material-symbols-outlined">person_add</span>
+            Add User
+          </button>
+        </div>
 
-        <Modal :open="isModalOpen" :title="editingUserId ? 'Edit User' : 'Add User'" @close="closeModal">
-          <form class="space-y-3" @submit.prevent="saveUser">
-            <div>
-              <label class="field-label">Username</label>
-              <input
-                v-model="form.username"
-                type="text"
-                required
-                class="h-10 w-full rounded-lg border border-border bg-bg-elevated px-3 text-sm"
-              />
+        <p v-if="errorMessage" class="text-sm text-error mb-4">{{ errorMessage }}</p>
+
+        <!-- User Table Container -->
+        <div class="bg-surface-container-low rounded-xl overflow-hidden border border-outline-variant/10">
+          <div v-if="loading" class="p-8 text-center text-outline">Loading users...</div>
+          <div v-else class="overflow-x-auto">
+            <table class="w-full text-left border-collapse">
+              <thead>
+                <tr class="bg-surface-container text-outline text-xs uppercase tracking-widest font-semibold">
+                  <th class="px-6 py-4">Collaborator</th>
+                  <th class="px-6 py-4">Role</th>
+                  <th class="px-6 py-4">Active Projects</th>
+                  <th class="px-6 py-4 text-right">Actions</th>
+                </tr>
+              </thead>
+              <tbody class="divide-y divide-outline-variant/5">
+                <tr
+                  v-for="user in users"
+                  :key="user.id"
+                  class="hover:bg-surface-container-high/40 transition-colors group"
+                >
+                  <td class="px-6 py-5">
+                    <div class="flex items-center gap-4">
+                      <div class="h-10 w-10 rounded-lg bg-secondary-container flex items-center justify-center overflow-hidden border border-outline-variant/20 text-sm font-bold text-primary">
+                        {{ user.username.slice(0, 2).toUpperCase() }}
+                      </div>
+                      <div>
+                        <div class="text-sm font-bold text-on-surface">{{ user.username }}</div>
+                        <div class="text-xs text-on-surface-variant">{{ user.email }}</div>
+                      </div>
+                    </div>
+                  </td>
+                  <td class="px-6 py-5">
+                    <span
+                      :class="[
+                        'px-2 py-1 rounded-full text-[10px] font-bold uppercase tracking-wider border',
+                        user.role === 'ADMIN'
+                          ? 'bg-primary/10 text-primary border-primary/20'
+                          : 'bg-tertiary/10 text-tertiary border-tertiary/20'
+                      ]"
+                    >
+                      {{ user.role }}
+                    </span>
+                  </td>
+                  <td class="px-6 py-5">
+                    <div class="flex gap-2 flex-wrap">
+                      <span
+                        v-for="project in user.projects || []"
+                        :key="project.id"
+                        class="text-[11px] bg-surface-container-highest px-2 py-0.5 rounded text-on-surface-variant"
+                      >
+                        {{ project.displayName }}
+                      </span>
+                      <span v-if="!user.projects?.length" class="text-[11px] text-outline">No projects</span>
+                    </div>
+                  </td>
+                  <td class="px-6 py-5 text-right">
+                    <div class="flex justify-end gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
+                      <button
+                        class="p-2 hover:bg-surface-container-highest rounded-lg text-on-surface-variant hover:text-primary transition-colors"
+                        @click="openEditModal(user)"
+                      >
+                        <span class="material-symbols-outlined text-[20px]">edit</span>
+                      </button>
+                      <button
+                        class="p-2 hover:bg-error/10 rounded-lg text-on-surface-variant hover:text-error transition-colors"
+                        @click="deleteUser(user)"
+                      >
+                        <span class="material-symbols-outlined text-[20px]">delete</span>
+                      </button>
+                    </div>
+                  </td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Modal Overlay -->
+    <div
+      v-if="isModalOpen"
+      class="fixed inset-0 z-[100] flex items-center justify-center p-6 bg-background/80 backdrop-blur-sm"
+    >
+      <div class="glass-panel w-full max-w-lg rounded-xl overflow-hidden shadow-2xl">
+        <!-- Modal Header -->
+        <div class="px-8 py-6 border-b border-outline-variant/10 flex justify-between items-center">
+          <h3 class="text-xl font-bold text-on-surface">
+            {{ editingUserId ? 'Edit User' : 'Add User' }}
+          </h3>
+          <button class="text-outline hover:text-on-surface transition-colors" @click="closeModal">
+            <span class="material-symbols-outlined">close</span>
+          </button>
+        </div>
+
+        <!-- Modal Content -->
+        <form class="p-8 space-y-6" @submit.prevent="saveUser">
+          <div class="space-y-4">
+            <!-- Text Inputs -->
+            <div class="grid grid-cols-2 gap-4">
+              <div class="space-y-1.5">
+                <label class="text-xs font-bold uppercase tracking-widest text-outline">Username</label>
+                <input
+                  v-model="form.username"
+                  type="text"
+                  required
+                  placeholder="e.g. jdoe"
+                  class="w-full bg-surface-container-lowest border-none rounded-lg text-on-surface placeholder:text-outline/40 focus:ring-1 focus:ring-primary/50 py-3 px-4"
+                />
+              </div>
+              <div class="space-y-1.5">
+                <label class="text-xs font-bold uppercase tracking-widest text-outline">Role</label>
+                <select
+                  v-model="form.role"
+                  class="w-full bg-surface-container-lowest border-none rounded-lg text-on-surface focus:ring-1 focus:ring-primary/50 py-3 px-4"
+                >
+                  <option value="ADMIN">Admin</option>
+                  <option value="INTERN">Intern</option>
+                </select>
+              </div>
             </div>
-            <div>
-              <label class="field-label">Email</label>
+
+            <div class="space-y-1.5">
+              <label class="text-xs font-bold uppercase tracking-widest text-outline">Email Address</label>
               <input
                 v-model="form.email"
                 type="email"
                 required
-                class="h-10 w-full rounded-lg border border-border bg-bg-elevated px-3 text-sm"
+                placeholder="john.doe@company.com"
+                class="w-full bg-surface-container-lowest border-none rounded-lg text-on-surface placeholder:text-outline/40 focus:ring-1 focus:ring-primary/50 py-3 px-4"
               />
             </div>
-            <div>
-              <label class="field-label">
+
+            <div class="space-y-1.5">
+              <label class="text-xs font-bold uppercase tracking-widest text-outline">
                 {{ editingUserId ? 'Password (leave blank to keep)' : 'Password' }}
               </label>
               <input
                 v-model="form.password"
                 type="password"
                 :required="!editingUserId"
-                class="h-10 w-full rounded-lg border border-border bg-bg-elevated px-3 text-sm"
+                placeholder="••••••••"
+                class="w-full bg-surface-container-lowest border-none rounded-lg text-on-surface placeholder:text-outline/40 focus:ring-1 focus:ring-primary/50 py-3 px-4"
               />
             </div>
-            <div>
-              <label class="field-label">Role</label>
-              <Dropdown v-model="form.role">
-                <option value="ADMIN">Admin</option>
-                <option value="INTERN">Intern</option>
-              </Dropdown>
-            </div>
-            <div>
-              <p class="field-label">Projects</p>
-              <div class="max-h-40 space-y-2 overflow-auto rounded-lg border border-border bg-bg-darkest p-2">
+
+            <!-- Project Checkboxes -->
+            <div class="space-y-3">
+              <label class="text-xs font-bold uppercase tracking-widest text-outline">Assign Projects</label>
+              <div class="grid grid-cols-2 gap-3 p-4 bg-surface-container-lowest rounded-lg">
                 <label
                   v-for="project in projects"
                   :key="project.id"
-                  class="flex items-center gap-2 text-sm"
+                  class="flex items-center gap-3 cursor-pointer group"
                 >
                   <input
                     type="checkbox"
                     :checked="form.projectIds.includes(project.id)"
+                    class="w-4 h-4 rounded border-outline-variant bg-surface-container text-primary focus:ring-offset-background"
                     @change="toggleProject(project.id)"
                   />
-                  {{ project.displayName }}
+                  <span class="text-sm text-on-surface-variant group-hover:text-on-surface transition-colors">
+                    {{ project.displayName }}
+                  </span>
                 </label>
               </div>
             </div>
-            <div class="flex justify-end gap-2 pt-2">
-              <Button variant="secondary" :disabled="saving" @click="closeModal">Cancel</Button>
-              <Button type="submit" :disabled="saving">
-                {{ saving ? 'Saving...' : 'Save' }}
-              </Button>
-            </div>
-          </form>
-        </Modal>
-      </main>
+          </div>
+
+          <!-- Modal Actions -->
+          <div class="flex gap-4 pt-4">
+            <button
+              type="button"
+              class="flex-1 bg-surface-container-highest text-on-surface font-bold py-3 rounded-lg hover:bg-outline-variant transition-colors"
+              @click="closeModal"
+            >
+              Cancel
+            </button>
+            <button
+              type="submit"
+              :disabled="saving"
+              class="flex-1 primary-gradient text-on-primary font-bold py-3 rounded-lg hover:opacity-90 transition-all active:scale-95 shadow-lg shadow-primary/20 disabled:opacity-50"
+            >
+              {{ saving ? 'Saving...' : 'Save User' }}
+            </button>
+          </div>
+        </form>
+      </div>
     </div>
-  </div>
+  </AppShell>
 </template>

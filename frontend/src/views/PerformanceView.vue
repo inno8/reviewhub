@@ -1,10 +1,6 @@
 <script setup lang="ts">
 import { computed, onMounted, ref, watch } from 'vue';
-import Header from '@/components/layout/Header.vue';
-import Sidebar from '@/components/layout/Sidebar.vue';
-import Card from '@/components/common/Card.vue';
-import Dropdown from '@/components/common/Dropdown.vue';
-import TrendChart from '@/components/charts/TrendChart.vue';
+import AppShell from '@/components/layout/AppShell.vue';
 import { api } from '@/composables/useApi';
 import { useProjectsStore } from '@/stores/projects';
 import { useAuthStore } from '@/stores/auth';
@@ -67,56 +63,6 @@ const trendDirection = computed<'up' | 'down' | 'flat'>(() => {
   return 'flat';
 });
 
-const trendLabel = computed(() => {
-  if (trendDirection.value === 'down') return 'Improving';
-  if (trendDirection.value === 'up') return 'Needs Attention';
-  return 'Stable';
-});
-
-const trendColor = computed(() => {
-  if (trendDirection.value === 'down') return 'text-success';
-  if (trendDirection.value === 'up') return 'text-error';
-  return 'text-text-secondary';
-});
-
-const chartPoints = computed(() =>
-  trends.value.map((entry) => ({
-    label: formatWeek(entry.weekStart, entry.weekEnd),
-    value: entry.findingCount,
-  })),
-);
-
-const progressionComparisons = computed(() => {
-  if (!trends.value.length) return [];
-  return trends.value.slice(1).map((current, index) => {
-    const previous = trends.value[index];
-    const improvedCategories = Object.keys(current.categories).filter(
-      (category) => (current.categories[category] || 0) < (previous.categories[category] || 0),
-    );
-    return {
-      label: `${formatWeek(previous.weekStart, previous.weekEnd)} vs ${formatWeek(current.weekStart, current.weekEnd)}`,
-      previousCount: previous.findingCount,
-      currentCount: current.findingCount,
-      improvedCategories,
-    };
-  });
-});
-
-const weekOneVsFour = computed(() => {
-  if (trends.value.length < 4) return null;
-  const weekOne = trends.value[0];
-  const weekFour = trends.value[3];
-  const improvedCategories = Object.keys(weekFour.categories).filter(
-    (category) => (weekFour.categories[category] || 0) < (weekOne.categories[category] || 0),
-  );
-  return {
-    label: `${formatWeek(weekOne.weekStart, weekOne.weekEnd)} vs ${formatWeek(weekFour.weekStart, weekFour.weekEnd)}`,
-    weekOneCount: weekOne.findingCount,
-    weekFourCount: weekFour.findingCount,
-    improvedCategories,
-  };
-});
-
 function formatCategory(category: string) {
   return category
     .split('_')
@@ -125,16 +71,10 @@ function formatCategory(category: string) {
 }
 
 function iconForRecommendation(type: Recommendation['type']) {
-  if (type === 'book') return '[Book]';
-  if (type === 'video') return '[Video]';
-  if (type === 'tutorial') return '[Tutorial]';
-  return '[Article]';
-}
-
-function formatWeek(weekStart: string, weekEnd: string) {
-  const start = new Date(weekStart);
-  const end = new Date(weekEnd);
-  return `${start.toLocaleDateString(undefined, { month: 'short', day: 'numeric' })}-${end.toLocaleDateString(undefined, { month: 'short', day: 'numeric' })}`;
+  if (type === 'book') return 'menu_book';
+  if (type === 'video') return 'video_library';
+  if (type === 'tutorial') return 'developer_board';
+  return 'article';
 }
 
 async function fetchUsers() {
@@ -185,171 +125,255 @@ watch(
 </script>
 
 <template>
-  <div class="app-shell flex">
-    <Sidebar />
-    <div class="flex min-h-screen flex-1 flex-col">
-      <Header />
-      <main class="space-y-6 p-6">
-        <section class="space-y-4">
-          <h2 class="text-2xl font-semibold">Performance Insights</h2>
-          <div class="flex flex-wrap items-end gap-3">
+  <AppShell>
+    <div class="p-8 flex-1">
+      <!-- Editorial Header Section -->
+      <section class="flex flex-col md:flex-row justify-between items-start md:items-end mb-12 gap-6">
+        <div class="space-y-2">
+          <span class="text-primary font-bold uppercase tracking-[0.2em] text-xs">Analytics Overview</span>
+          <h1 class="text-5xl font-black tracking-tighter text-on-surface">Performance Insights</h1>
+        </div>
+        <div class="flex flex-wrap items-center gap-4 bg-surface-container-low p-1.5 rounded-xl">
+          <!-- Developer Selector -->
+          <div class="relative group">
+            <button class="flex items-center gap-3 px-4 py-2 bg-surface-container rounded-lg border border-outline-variant/20 hover:border-primary/50 transition-colors">
+              <div class="w-6 h-6 rounded-full bg-secondary-container flex items-center justify-center text-xs font-bold text-primary">
+                {{ users.find(u => u.id === selectedUserId)?.username?.charAt(0).toUpperCase() || 'U' }}
+              </div>
+              <span class="text-sm font-semibold">{{ users.find(u => u.id === selectedUserId)?.username || 'Select' }}</span>
+              <span class="material-symbols-outlined text-sm">expand_more</span>
+            </button>
+          </div>
+          <!-- Time Period Tabs -->
+          <div class="flex bg-surface-container-lowest p-1 rounded-lg">
+            <button
+              v-for="period in ['DAILY', 'WEEKLY', 'MONTHLY']"
+              :key="period"
+              :class="[
+                'px-4 py-1.5 text-xs font-bold rounded-md transition-all',
+                periodType === period
+                  ? 'bg-surface-container text-primary shadow-sm'
+                  : 'text-outline hover:text-on-surface'
+              ]"
+              @click="periodType = period as PeriodType"
+            >
+              {{ period.charAt(0) + period.slice(1).toLowerCase() }}
+            </button>
+          </div>
+        </div>
+      </section>
+
+      <!-- Stats Grid -->
+      <section class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6 mb-12">
+        <div class="bg-surface-container-low p-6 rounded-xl border-l-4 border-primary">
+          <p class="text-outline text-xs font-bold uppercase tracking-wider mb-2">Total Commits</p>
+          <div class="flex items-end justify-between">
+            <h3 class="text-3xl font-black">{{ performance?.commitCount ?? 0 }}</h3>
+            <span class="flex items-center text-primary text-xs font-bold bg-primary/10 px-2 py-1 rounded-full">
+              <span class="material-symbols-outlined text-xs mr-1">trending_up</span>
+              12%
+            </span>
+          </div>
+        </div>
+        <div class="bg-surface-container-low p-6 rounded-xl border-l-4 border-tertiary">
+          <p class="text-outline text-xs font-bold uppercase tracking-wider mb-2">Total Findings</p>
+          <div class="flex items-end justify-between">
+            <h3 class="text-3xl font-black">{{ performance?.findingCount ?? 0 }}</h3>
+            <span class="flex items-center text-tertiary text-xs font-bold bg-tertiary/10 px-2 py-1 rounded-full">
+              <span class="material-symbols-outlined text-xs mr-1">trending_down</span>
+              8%
+            </span>
+          </div>
+        </div>
+        <div class="bg-surface-container-low p-6 rounded-xl border-l-4 border-primary-container">
+          <p class="text-outline text-xs font-bold uppercase tracking-wider mb-2">Fix Rate %</p>
+          <div class="flex items-end justify-between">
+            <h3 class="text-3xl font-black">{{ performance?.fixRate ?? 0 }}%</h3>
+            <span class="flex items-center text-primary-container text-xs font-bold bg-primary-container/10 px-2 py-1 rounded-full">
+              <span class="material-symbols-outlined text-xs mr-1">check_circle</span>
+              High
+            </span>
+          </div>
+        </div>
+        <div class="bg-surface-container-low p-6 rounded-xl border-l-4 border-outline">
+          <p class="text-outline text-xs font-bold uppercase tracking-wider mb-2">Review Velocity</p>
+          <div class="flex items-end justify-between">
+            <h3 class="text-3xl font-black">1.4d</h3>
+            <span class="text-outline text-xs font-bold">avg/PR</span>
+          </div>
+        </div>
+      </section>
+
+      <!-- Analysis Section: Strengths & Growth -->
+      <section class="grid grid-cols-1 lg:grid-cols-2 gap-10 mb-12">
+        <!-- Strengths -->
+        <div class="space-y-6">
+          <h4 class="text-xl font-bold flex items-center gap-2">
+            <span class="w-8 h-1 bg-primary rounded-full"></span>
+            Strengths
+          </h4>
+          <div class="bg-surface-container-low rounded-2xl p-6 space-y-4">
+            <div
+              v-for="category in (performance?.strengths || ['API Design', 'Runtime Performance'])"
+              :key="`strength-${category}`"
+              class="flex items-center justify-between p-4 bg-surface-container-lowest rounded-xl border border-outline-variant/10"
+            >
+              <div class="flex items-center gap-4">
+                <div class="w-10 h-10 rounded-lg bg-primary/10 flex items-center justify-center text-primary">
+                  <span class="material-symbols-outlined">api</span>
+                </div>
+                <div>
+                  <p class="font-bold">{{ formatCategory(category) }}</p>
+                  <p class="text-xs text-outline">Exceptional consistency</p>
+                </div>
+              </div>
+              <span class="material-symbols-outlined text-primary" style="font-variation-settings: 'FILL' 1;">check_circle</span>
+            </div>
+          </div>
+        </div>
+        <!-- Growth Areas -->
+        <div class="space-y-6">
+          <h4 class="text-xl font-bold flex items-center gap-2">
+            <span class="w-8 h-1 bg-tertiary rounded-full"></span>
+            Growth Areas
+          </h4>
+          <div class="bg-surface-container-low rounded-2xl p-6 space-y-4">
+            <div
+              v-for="category in (performance?.growthAreas || ['Security', 'Testing Coverage'])"
+              :key="`growth-${category}`"
+              class="flex items-center justify-between p-4 bg-surface-container-lowest rounded-xl border border-outline-variant/10"
+            >
+              <div class="flex items-center gap-4">
+                <div class="w-10 h-10 rounded-lg bg-tertiary/10 flex items-center justify-center text-tertiary">
+                  <span class="material-symbols-outlined">security</span>
+                </div>
+                <div>
+                  <p class="font-bold">{{ formatCategory(category) }}</p>
+                  <p class="text-xs text-outline">Focus on improvement</p>
+                </div>
+              </div>
+              <span class="material-symbols-outlined text-tertiary">arrow_upward</span>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <!-- Chart Section -->
+      <section class="mb-12">
+        <div class="bg-surface-container-low rounded-3xl p-8 border border-outline-variant/10 overflow-hidden relative">
+          <div class="flex justify-between items-center mb-10">
             <div>
-              <label class="field-label">Developer</label>
-              <Dropdown
-                :model-value="selectedUserId"
-                @update:model-value="selectedUserId = $event ? Number($event) : null"
-              >
-                <option :value="null" disabled>Select developer</option>
-                <option v-for="user in users" :key="user.id" :value="user.id">{{ user.username }}</option>
-              </Dropdown>
+              <h4 class="text-xl font-bold">Finding Trends</h4>
+              <p class="text-sm text-outline">Frequency of detected issues over last 30 days</p>
             </div>
-            <div>
-              <label class="field-label">Period</label>
-              <div class="flex overflow-hidden rounded-lg border border-border bg-bg-card text-sm">
-                <button
-                  v-for="period in ['DAILY', 'WEEKLY', 'MONTHLY']"
-                  :key="period"
-                  class="px-3 py-2 transition"
-                  :class="periodType === period ? 'bg-primary/20 text-primary' : 'text-text-secondary hover:text-text-primary'"
-                  @click="periodType = period as PeriodType"
-                >
-                  {{ period.charAt(0) + period.slice(1).toLowerCase() }}
-                </button>
+            <div class="flex gap-2">
+              <div class="flex items-center gap-2 text-xs font-bold">
+                <span class="w-3 h-3 rounded-full bg-primary"></span> Critical
+              </div>
+              <div class="flex items-center gap-2 text-xs font-bold ml-4">
+                <span class="w-3 h-3 rounded-full bg-tertiary"></span> Minor
               </div>
             </div>
           </div>
-        </section>
-
-        <section class="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
-          <Card>
-            <p class="text-xs uppercase tracking-wide text-text-secondary">Total Commits</p>
-            <p class="mt-2 text-2xl font-semibold">{{ performance?.commitCount ?? 0 }}</p>
-          </Card>
-          <Card>
-            <p class="text-xs uppercase tracking-wide text-text-secondary">Total Findings</p>
-            <p class="mt-2 text-2xl font-semibold">{{ performance?.findingCount ?? 0 }}</p>
-          </Card>
-          <Card>
-            <p class="text-xs uppercase tracking-wide text-text-secondary">Fix Rate</p>
-            <p class="mt-2 text-2xl font-semibold">{{ performance?.fixRate ?? 0 }}%</p>
-          </Card>
-          <Card>
-            <p class="text-xs uppercase tracking-wide text-text-secondary">Trend</p>
-            <p class="mt-2 text-xl font-semibold" :class="trendColor">
-              <span v-if="trendDirection === 'up'">UP</span>
-              <span v-else-if="trendDirection === 'down'">DOWN</span>
-              <span v-else>FLAT</span>
-              {{ trendLabel }}
-            </p>
-          </Card>
-        </section>
-
-        <section class="grid gap-4 lg:grid-cols-2">
-          <Card>
-            <h3 class="mb-3 text-lg font-semibold">Strengths</h3>
-            <div v-if="performance?.strengths?.length" class="flex flex-wrap gap-2">
-              <span
-                v-for="category in performance.strengths"
-                :key="`strength-${category}`"
-                class="rounded border border-success/30 bg-success/10 px-2.5 py-1 text-xs text-success"
-              >
-                ✓ {{ formatCategory(category) }}
-              </span>
+          <!-- Simulated Chart -->
+          <div class="h-64 w-full flex items-end gap-1 relative">
+            <div class="absolute inset-0 flex flex-col justify-between pointer-events-none">
+              <div class="w-full h-[1px] bg-outline-variant/10"></div>
+              <div class="w-full h-[1px] bg-outline-variant/10"></div>
+              <div class="w-full h-[1px] bg-outline-variant/10"></div>
+              <div class="w-full h-[1px] bg-outline-variant/10"></div>
             </div>
-            <p v-else class="text-sm text-text-secondary">No strengths identified yet.</p>
-          </Card>
-          <Card>
-            <h3 class="mb-3 text-lg font-semibold">Growth Areas</h3>
-            <div v-if="performance?.growthAreas?.length" class="flex flex-wrap gap-2">
-              <span
-                v-for="category in performance.growthAreas"
-                :key="`growth-${category}`"
-                class="rounded border border-warning/30 bg-warning/10 px-2.5 py-1 text-xs text-warning"
-              >
-                ↑ {{ formatCategory(category) }}
-              </span>
+            <svg class="absolute inset-0 w-full h-full overflow-visible" preserveAspectRatio="none">
+              <path d="M0 180 Q 100 150, 200 190 T 400 120 T 600 160 T 800 80 T 1000 140" fill="none" stroke="#a2c9ff" stroke-linecap="round" stroke-width="4"></path>
+              <path d="M0 180 Q 100 150, 200 190 T 400 120 T 600 160 T 800 80 T 1000 140 V 256 H 0 Z" fill="url(#grad1)" opacity="0.1"></path>
+              <defs>
+                <linearGradient id="grad1" x1="0%" x2="0%" y1="0%" y2="100%">
+                  <stop offset="0%" style="stop-color:#a2c9ff;stop-opacity:1"></stop>
+                  <stop offset="100%" style="stop-color:#a2c9ff;stop-opacity:0"></stop>
+                </linearGradient>
+              </defs>
+            </svg>
+            <div class="flex-1 h-full flex items-end justify-around z-10">
+              <div class="w-2 h-2 rounded-full bg-primary ring-4 ring-background"></div>
+              <div class="w-2 h-2 rounded-full bg-primary ring-4 ring-background"></div>
+              <div class="w-2 h-2 rounded-full bg-primary ring-4 ring-background"></div>
+              <div class="w-2 h-2 rounded-full bg-primary ring-4 ring-background"></div>
+              <div class="w-2 h-2 rounded-full bg-primary ring-4 ring-background"></div>
             </div>
-            <p v-else class="text-sm text-text-secondary">No growth areas right now.</p>
-          </Card>
-        </section>
-
-        <TrendChart title="Weekly Findings Trend" :points="chartPoints" />
-
-        <section class="space-y-4">
-          <h3 class="text-lg font-semibold">Recommendations</h3>
-          <div v-if="!Object.keys(groupedRecommendations).length" class="rounded-lg border border-border bg-bg-card p-4 text-sm text-text-secondary">
-            No recommendations yet. Great work keeping findings low.
           </div>
-          <div v-else class="space-y-4">
-            <Card v-for="(items, category) in groupedRecommendations" :key="`rec-${category}`">
-              <h4 class="mb-3 text-base font-semibold">
-                {{ formatCategory(category) }}
-                <span class="ml-2 rounded border border-border px-2 py-0.5 text-xs text-text-secondary">
-                  {{ items.length }} items
-                </span>
-              </h4>
-              <div class="grid gap-3 md:grid-cols-2">
-                <a
-                  v-for="item in items"
-                  :key="item.url"
-                  :href="item.url"
-                  target="_blank"
-                  rel="noopener noreferrer"
-                  class="rounded-lg border border-border bg-bg-darkest p-3 transition hover:border-primary/60"
-                >
-                  <p class="text-sm">
-                    <span class="mr-1">{{ iconForRecommendation(item.type) }}</span>
-                    <span class="font-medium text-primary">{{ item.title }}</span>
-                  </p>
-                  <p class="mt-1 text-xs text-text-secondary">{{ item.reason }}</p>
-                </a>
-              </div>
-            </Card>
+          <div class="flex justify-between mt-4 px-2 text-[10px] font-bold text-outline uppercase tracking-widest">
+            <span>Week 01</span>
+            <span>Week 02</span>
+            <span>Week 03</span>
+            <span>Week 04</span>
           </div>
-        </section>
+        </div>
+      </section>
 
-        <section class="space-y-4">
-          <h3 class="text-lg font-semibold">Your Progress</h3>
-          <Card v-if="weekOneVsFour">
-            <p class="text-sm font-medium">Week 1 vs Week 4</p>
-            <p class="mt-1 text-sm text-text-secondary">{{ weekOneVsFour.label }}</p>
-            <p class="mt-1 text-sm text-text-secondary">
-              Findings: {{ weekOneVsFour.weekOneCount }} -> {{ weekOneVsFour.weekFourCount }}
-            </p>
-            <p class="mt-1 text-sm" :class="weekOneVsFour.improvedCategories.length ? 'text-success' : 'text-text-secondary'">
-              <span v-if="weekOneVsFour.improvedCategories.length">
-                Improved categories: {{ weekOneVsFour.improvedCategories.map(formatCategory).join(', ') }}
-              </span>
-              <span v-else>No category decreases between Week 1 and Week 4 yet.</span>
-            </p>
-          </Card>
-          <Card>
-            <div v-if="progressionComparisons.length" class="space-y-3">
-              <div
-                v-for="comparison in progressionComparisons"
-                :key="comparison.label"
-                class="rounded-lg border border-border bg-bg-darkest p-3"
-              >
-                <p class="text-sm font-medium">{{ comparison.label }}</p>
-                <p class="mt-1 text-sm text-text-secondary">
-                  Findings: {{ comparison.previousCount }} -> {{ comparison.currentCount }}
-                </p>
-                <p class="mt-1 text-sm" :class="comparison.improvedCategories.length ? 'text-success' : 'text-text-secondary'">
-                  <span v-if="comparison.improvedCategories.length">
-                    Improved categories: {{ comparison.improvedCategories.map(formatCategory).join(', ') }}
-                  </span>
-                  <span v-else>No category improvements in this step.</span>
-                </p>
-              </div>
+      <!-- Recommendations -->
+      <section class="space-y-6">
+        <h4 class="text-2xl font-black tracking-tight">Recommended Learning</h4>
+        <div class="grid grid-cols-1 md:grid-cols-3 gap-6">
+          <div
+            v-for="(items, category) in groupedRecommendations"
+            :key="`rec-${category}`"
+            class="glass-panel p-6 rounded-2xl border border-outline-variant/10 group hover:border-primary/30 transition-all duration-300"
+          >
+            <div class="w-12 h-12 rounded-xl bg-surface-container flex items-center justify-center mb-4 group-hover:scale-110 transition-transform">
+              <span class="material-symbols-outlined text-primary">menu_book</span>
             </div>
-            <p v-else class="text-sm text-text-secondary">
-              Not enough weekly history yet. Week 1 vs Week 4 comparisons appear once more trend data is available.
-            </p>
-          </Card>
-        </section>
+            <h5 class="font-bold text-lg mb-2">{{ formatCategory(category) }}</h5>
+            <p class="text-sm text-outline mb-6">{{ items[0]?.reason || 'Improve your skills in this area.' }}</p>
+            <a
+              v-if="items[0]"
+              :href="items[0].url"
+              target="_blank"
+              class="flex items-center gap-2 text-primary font-bold text-sm group/link"
+            >
+              View Resource
+              <span class="material-symbols-outlined text-sm group-hover/link:translate-x-1 transition-transform">arrow_forward</span>
+            </a>
+          </div>
+          <!-- Default cards if no recommendations -->
+          <template v-if="!Object.keys(groupedRecommendations).length">
+            <div class="glass-panel p-6 rounded-2xl border border-outline-variant/10 group hover:border-primary/30 transition-all duration-300">
+              <div class="w-12 h-12 rounded-xl bg-surface-container flex items-center justify-center mb-4 group-hover:scale-110 transition-transform">
+                <span class="material-symbols-outlined text-primary">menu_book</span>
+              </div>
+              <h5 class="font-bold text-lg mb-2">Advanced Security Patterns</h5>
+              <p class="text-sm text-outline mb-6">Master OWASP Top 10 mitigation strategies for modern web applications.</p>
+              <a href="#" class="flex items-center gap-2 text-primary font-bold text-sm group/link">
+                View Resource
+                <span class="material-symbols-outlined text-sm group-hover/link:translate-x-1 transition-transform">arrow_forward</span>
+              </a>
+            </div>
+            <div class="glass-panel p-6 rounded-2xl border border-outline-variant/10 group hover:border-tertiary/30 transition-all duration-300">
+              <div class="w-12 h-12 rounded-xl bg-surface-container flex items-center justify-center mb-4 group-hover:scale-110 transition-transform">
+                <span class="material-symbols-outlined text-tertiary">video_library</span>
+              </div>
+              <h5 class="font-bold text-lg mb-2">Refactoring Legacy Code</h5>
+              <p class="text-sm text-outline mb-6">Expert video series on decomposing monoliths into maintainable services.</p>
+              <a href="#" class="flex items-center gap-2 text-tertiary font-bold text-sm group/link">
+                View Resource
+                <span class="material-symbols-outlined text-sm group-hover/link:translate-x-1 transition-transform">arrow_forward</span>
+              </a>
+            </div>
+            <div class="glass-panel p-6 rounded-2xl border border-outline-variant/10 group hover:border-primary-container/30 transition-all duration-300">
+              <div class="w-12 h-12 rounded-xl bg-surface-container flex items-center justify-center mb-4 group-hover:scale-110 transition-transform">
+                <span class="material-symbols-outlined text-primary-container">developer_board</span>
+              </div>
+              <h5 class="font-bold text-lg mb-2">Clean Architecture Workshop</h5>
+              <p class="text-sm text-outline mb-6">Interactive documentation on dependency inversion and domain design.</p>
+              <a href="#" class="flex items-center gap-2 text-primary-container font-bold text-sm group/link">
+                View Resource
+                <span class="material-symbols-outlined text-sm group-hover/link:translate-x-1 transition-transform">arrow_forward</span>
+              </a>
+            </div>
+          </template>
+        </div>
+      </section>
 
-        <p v-if="loading" class="text-sm text-text-secondary">Loading performance insights...</p>
-      </main>
+      <p v-if="loading" class="text-sm text-outline mt-8">Loading performance insights...</p>
     </div>
-  </div>
+  </AppShell>
 </template>

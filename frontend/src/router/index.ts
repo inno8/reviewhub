@@ -12,8 +12,8 @@ const router = createRouter({
     { path: '/login', name: 'login', component: LoginView, meta: { public: true } },
     { path: '/', name: 'dashboard', component: DashboardView },
     { path: '/findings/:id', name: 'finding-detail', component: FindingDetailView, props: true },
-    { path: '/performance', name: 'performance', component: PerformanceView },
-    { path: '/users', name: 'users', component: UserManagementView, meta: { admin: true } },
+    { path: '/insights', name: 'insights', component: PerformanceView },
+    { path: '/team', name: 'team', component: UserManagementView, meta: { admin: true } },
   ],
 });
 
