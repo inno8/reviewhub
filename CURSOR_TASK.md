@@ -1,203 +1,236 @@
-# ReviewHub — Phase 3: GitHub PR Creation & Telegram Notifications
+# ReviewHub — Phase 4: Performance Insights
 
 ## Overview
 
-Implement the "Apply Fix & Create PR" functionality and Telegram notifications for explanation requests. This phase makes the admin actions work end-to-end.
+Build the Performance Insights dashboard for admins. This page shows individual developer metrics, strengths, growth areas, code progression tracking, and personalized learning recommendations.
 
 ## Current State
 
-- ✅ Phase 1: Foundation complete
-- ✅ Phase 2: Core Dashboard complete (API wired, login, filters, code comparison)
+- ✅ Phase 1-3 complete
+- ✅ GitHub and Telegram tokens configured
 - Backend running on port 3000
 - Frontend running on port 5174
-- SQLite database with seed data
 
-## Phase 3 Tasks
+## Phase 4 Tasks
 
-### 1. GitHub Integration — Apply Fix & Create PR
+### 1. Performance Metrics Calculation Service
 
-**Backend: `backend/src/services/github.ts`**
+**Backend: `backend/src/services/performance.ts`**
 
-Implement the full GitHub flow:
+Implement the performance calculation logic:
 
 ```typescript
-export async function applyFixAndCreatePR(finding: Finding, review: Review, project: Project): Promise<string> {
-  // 1. Get the file content from the source branch
-  // 2. Create a new branch: fix/finding-{id}-{timestamp}
-  // 3. Update the file with optimizedCode
-  // 4. Commit the change
-  // 5. Create PR to main
-  // 6. Return PR URL
+export interface PerformanceData {
+  userId: number;
+  projectId: number;
+  periodType: 'DAILY' | 'WEEKLY' | 'MONTHLY';
+  periodStart: Date;
+  periodEnd: Date;
+  commitCount: number;
+  findingCount: number;
+  findingsByCategory: Record<string, number>;
+  findingsByDifficulty: Record<string, number>;
+  strengths: string[];
+  growthAreas: string[];
+  recommendations: Recommendation[];
+}
+
+interface Recommendation {
+  type: 'book' | 'article' | 'tutorial' | 'video';
+  title: string;
+  url: string;
+  category: string;
+  reason: string;
+}
+
+export async function calculatePerformance(
+  userId: number,
+  projectId: number,
+  periodType: 'DAILY' | 'WEEKLY' | 'MONTHLY'
+): Promise<PerformanceData>
+```
+
+**Logic:**
+1. Get all findings for the user (by commitAuthor) in the period
+2. Count by category and difficulty
+3. Determine strengths: categories with 0-1 findings (they're doing well)
+4. Determine growth areas: categories with 3+ findings (needs improvement)
+5. Generate recommendations based on growth areas
+
+**Recommendations mapping (hardcoded for now):**
+```typescript
+const RECOMMENDATIONS: Record<string, Recommendation[]> = {
+  SECURITY: [
+    { type: 'book', title: 'Web Security for Developers', url: 'https://www.amazon.com/dp/1593279949', category: 'SECURITY', reason: 'Covers common vulnerabilities and prevention' },
+    { type: 'article', title: 'OWASP Top 10', url: 'https://owasp.org/Top10/', category: 'SECURITY', reason: 'Essential security knowledge' },
+  ],
+  PERFORMANCE: [
+    { type: 'book', title: 'High Performance JavaScript', url: 'https://www.amazon.com/dp/059680279X', category: 'PERFORMANCE', reason: 'Deep dive into JS performance' },
+    { type: 'article', title: 'Web.dev Performance Guide', url: 'https://web.dev/performance/', category: 'PERFORMANCE', reason: 'Modern performance best practices' },
+  ],
+  CODE_STYLE: [
+    { type: 'book', title: 'Clean Code', url: 'https://www.amazon.com/dp/0132350882', category: 'CODE_STYLE', reason: 'Industry standard for code quality' },
+    { type: 'article', title: 'Google Style Guides', url: 'https://google.github.io/styleguide/', category: 'CODE_STYLE', reason: 'Professional style guidelines' },
+  ],
+  TESTING: [
+    { type: 'book', title: 'Testing JavaScript Applications', url: 'https://www.amazon.com/dp/1617297917', category: 'TESTING', reason: 'Comprehensive testing guide' },
+    { type: 'tutorial', title: 'Jest Documentation', url: 'https://jestjs.io/docs/getting-started', category: 'TESTING', reason: 'Learn the most popular testing framework' },
+  ],
+  ARCHITECTURE: [
+    { type: 'book', title: 'Clean Architecture', url: 'https://www.amazon.com/dp/0134494164', category: 'ARCHITECTURE', reason: 'Fundamental architecture principles' },
+    { type: 'article', title: 'Patterns.dev', url: 'https://www.patterns.dev/', category: 'ARCHITECTURE', reason: 'Modern design patterns' },
+  ],
+  DOCUMENTATION: [
+    { type: 'article', title: 'Write the Docs Guide', url: 'https://www.writethedocs.org/guide/', category: 'DOCUMENTATION', reason: 'Documentation best practices' },
+  ],
+};
+```
+
+### 2. Code Progression Tracking
+
+**Add to performance service:**
+
+```typescript
+export async function getCodeProgression(
+  userId: number,
+  projectId: number
+): Promise<CodeProgression[]>
+
+interface CodeProgression {
+  weekStart: Date;
+  weekEnd: Date;
+  findingCount: number;
+  categories: Record<string, number>;
+  trend: 'improving' | 'stable' | 'declining';
 }
 ```
 
-**Steps:**
-1. Use Octokit to authenticate with GitHub token from env
-2. Get current file content from the branch where issue was found
-3. Create new branch from that branch
-4. Replace the code between lineStart and lineEnd with optimizedCode
-5. Commit with message: `fix: Apply code review suggestion for ${filePath}`
-6. Create PR with:
-   - Title: `Fix: ${category} issue in ${filePath}`
-   - Body: Include explanation and link to finding
-   - Base: main
-   - Head: fix branch
+Compare findings week-over-week to show if the developer is improving.
 
-**Backend: `backend/src/routes/findings.ts`**
+### 3. Performance API Endpoints
 
-Add endpoint:
+**Backend: `backend/src/routes/performance.ts`**
+
 ```typescript
-// POST /api/findings/:id/apply-fix
-// Admin only
-// Returns: { prUrl: string }
+// GET /api/performance/:userId
+// Query: projectId, periodType (DAILY|WEEKLY|MONTHLY)
+// Returns: PerformanceData
+
+// GET /api/performance/:userId/trends
+// Query: projectId, weeks (default 8)
+// Returns: CodeProgression[]
+
+// GET /api/performance/:userId/recommendations
+// Query: projectId
+// Returns: Recommendation[]
+
+// GET /api/performance/leaderboard
+// Query: projectId, periodType
+// Returns: Array of { userId, username, findingCount, improvementRate }
 ```
 
-**Frontend: `frontend/src/views/FindingDetailView.vue`**
+### 4. Performance Insights UI
 
-Wire up the "Apply Fix & Create PR" button:
-- Show loading state while creating PR
-- On success: show PR URL as clickable link
-- On error: show error message
-- Update finding.prCreated and finding.prUrl in state
+**Frontend: `frontend/src/views/PerformanceView.vue`**
 
-### 2. Telegram Notifications
+Complete implementation:
 
-**Backend: `backend/src/services/telegram.ts`**
+**Header Section:**
+- Developer selector dropdown (fetch users)
+- Time period tabs: Daily | Weekly | Monthly
+- Project filter (if multiple projects)
 
-Implement actual Telegram sending:
+**Stats Cards Row:**
+- Total Commits (from findings count)
+- Total Findings
+- Fix Rate % (findings with prCreated / total)
+- Trend indicator (arrow up/down with color)
 
+**Two-Column Section:**
+- Left: **Strengths** — green badges with checkmarks
+- Right: **Growth Areas** — orange badges with arrow icons
+
+**Chart Section:**
+- Line chart showing findings over time (by week)
+- Use a simple chart library or CSS-based visualization
+- X-axis: weeks, Y-axis: finding count
+- Show trend line
+
+**Recommendations Section:**
+- Cards for each recommendation:
+  - Icon based on type (book, video, article, tutorial)
+  - Title (clickable link)
+  - Category badge
+  - Reason text
+- Group by growth area
+
+**Code Progression Section (New!):**
+- "Your Progress" header
+- Week-by-week comparison
+- Show "Week 1 vs Week 4" examples when available
+- Highlight categories where findings decreased
+
+### 5. Simple Chart Component
+
+**Frontend: `frontend/src/components/charts/TrendChart.vue`**
+
+Create a simple SVG-based line chart (no external dependencies):
+
+```vue
+<template>
+  <svg :viewBox="`0 0 ${width} ${height}`" class="w-full h-48">
+    <!-- Grid lines -->
+    <!-- Data points -->
+    <!-- Line connecting points -->
+    <!-- Labels -->
+  </svg>
+</template>
+```
+
+Or use a lightweight library like Chart.js if preferred.
+
+### 6. Frontend API Updates
+
+**Frontend: `frontend/src/composables/useApi.ts`**
+
+Add:
 ```typescript
-import TelegramBot from 'node-telegram-bot-api';
-
-const bot = process.env.TELEGRAM_BOT_TOKEN 
-  ? new TelegramBot(process.env.TELEGRAM_BOT_TOKEN)
-  : null;
-
-export async function notifyExplanationRequested(
-  intern: User,
-  finding: Finding,
-  project: Project
-): Promise<void> {
-  if (!bot || !process.env.TELEGRAM_ADMIN_CHAT_ID) {
-    console.log('[Telegram] Bot not configured, skipping notification');
-    return;
-  }
-
-  const message = `📞 *Explanation Requested*
-
-*Intern:* ${intern.username}
-*Project:* ${project.displayName}
-*File:* \`${finding.filePath}\`
-*Category:* ${finding.category}
-*Difficulty:* ${finding.difficulty}
-
-The intern would like a live explanation of this code review finding.`;
-
-  await bot.sendMessage(process.env.TELEGRAM_ADMIN_CHAT_ID, message, {
-    parse_mode: 'Markdown',
-  });
+performance: {
+  get: (userId: number, params: { projectId: number; periodType: string }) => 
+    axios.get(`/performance/${userId}`, { params }),
+  trends: (userId: number, params: { projectId: number; weeks?: number }) =>
+    axios.get(`/performance/${userId}/trends`, { params }),
+  recommendations: (userId: number, params: { projectId: number }) =>
+    axios.get(`/performance/${userId}/recommendations`, { params }),
 }
 ```
-
-**Backend: `backend/src/routes/findings.ts`**
-
-Update the request-explanation endpoint to actually send Telegram notification:
-- Get the current user (intern)
-- Get the finding with project info
-- Call notifyExplanationRequested()
-- Handle errors gracefully (don't fail if Telegram fails)
-
-### 3. User Management (Admin)
-
-**Backend: `backend/src/routes/users.ts`**
-
-Ensure these endpoints work properly:
-
-```typescript
-// GET /api/users - List all users (admin only)
-// POST /api/users - Create user (admin only)
-//   Body: { username, email, password, role, projectIds }
-// PATCH /api/users/:id - Update user (admin only)
-//   Body: { username?, email?, password?, role?, projectIds? }
-// DELETE /api/users/:id - Delete user (admin only)
-// GET /api/users/:id/projects - Get user's assigned projects
-// POST /api/users/:id/projects - Assign projects to user
-//   Body: { projectIds: number[] }
-```
-
-**Frontend: `frontend/src/views/UserManagementView.vue`**
-
-Wire up the user management UI:
-- Fetch and display users list
-- "Add User" button opens modal
-- Add User modal:
-  - Username, email, password fields
-  - Role dropdown (Admin/Intern)
-  - Project multi-select checkboxes
-  - Save creates user and assigns projects
-- Edit user (click row or edit icon)
-- Delete user (with confirmation)
-- Show assigned projects as badges
-
-### 4. Environment Setup
-
-**Backend `.env` additions needed for full functionality:**
-```
-# GitHub - Personal Access Token with repo scope
-GITHUB_TOKEN=ghp_xxxxxxxxxxxxxxxxxxxx
-
-# Telegram Bot
-TELEGRAM_BOT_TOKEN=123456789:ABCdefGHIjklMNOpqrsTUVwxyz
-TELEGRAM_ADMIN_CHAT_ID=123456789
-```
-
-### 5. Error Handling
-
-- GitHub API errors: Return meaningful error messages
-- Telegram errors: Log but don't fail the request
-- User management: Validate unique username/email
 
 ## Testing Checklist
 
-### GitHub PR Flow
-- [ ] Configure GITHUB_TOKEN in .env
-- [ ] Click "Apply Fix & Create PR" on a finding
-- [ ] Verify new branch created in GitHub
-- [ ] Verify PR created with correct title/body
-- [ ] Verify finding.prUrl updated in database
-- [ ] Verify button shows PR link after creation
-
-### Telegram Notifications
-- [ ] Configure TELEGRAM_BOT_TOKEN and TELEGRAM_ADMIN_CHAT_ID
-- [ ] Login as intern (alice/intern123)
-- [ ] Click "Request Explanation" on a finding
-- [ ] Verify Telegram message received by admin
-
-### User Management
 - [ ] Login as admin
-- [ ] Navigate to User Management
-- [ ] See list of users with their roles and projects
-- [ ] Add new intern user
-- [ ] Assign projects to user
-- [ ] Edit user role
-- [ ] Delete user (with confirmation)
+- [ ] Navigate to Performance Insights
+- [ ] Select a developer (alice or bob)
+- [ ] See stats cards with real data
+- [ ] See strengths (green) and growth areas (orange)
+- [ ] See trend chart with weekly data
+- [ ] See recommendations based on growth areas
+- [ ] Switch time period (Daily/Weekly/Monthly) and see data update
+- [ ] Switch developer and see different stats
 
-## Files to Modify
+## Files to Modify/Create
 
 **Backend:**
-- `backend/src/services/github.ts` — Full implementation
-- `backend/src/services/telegram.ts` — Full implementation
-- `backend/src/routes/findings.ts` — Add apply-fix endpoint
-- `backend/src/routes/users.ts` — Complete CRUD + project assignment
+- `backend/src/services/performance.ts` — Full implementation
+- `backend/src/routes/performance.ts` — Complete endpoints
 
 **Frontend:**
-- `frontend/src/views/FindingDetailView.vue` — Wire up Apply Fix button
-- `frontend/src/views/UserManagementView.vue` — Full implementation
-- `frontend/src/composables/useApi.ts` — Add missing endpoints if needed
+- `frontend/src/views/PerformanceView.vue` — Full implementation
+- `frontend/src/components/charts/TrendChart.vue` — Chart component
+- `frontend/src/composables/useApi.ts` — Add performance endpoints
 
 ## DO NOT
 
-- Do not change the database schema
-- Do not commit real tokens to git
-- Do not skip error handling
-- Do not make GitHub calls without checking for token
+- Do not add heavy chart libraries (keep it simple)
+- Do not change database schema
+- Do not skip TypeScript types
+- Keep the UI consistent with existing dark theme

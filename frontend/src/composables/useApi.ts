@@ -30,10 +30,8 @@ export interface UpdateUser {
 }
 
 export interface PerformanceParams {
-  projectId?: number;
-  periodType?: 'DAILY' | 'WEEKLY' | 'MONTHLY';
-  startDate?: string;
-  endDate?: string;
+  projectId: number;
+  periodType: 'DAILY' | 'WEEKLY' | 'MONTHLY';
 }
 
 const client = axios.create({
@@ -94,6 +92,12 @@ export const api = {
   },
   performance: {
     get: (userId: number, params: PerformanceParams) => client.get(`/performance/${userId}`, { params }),
+    trends: (userId: number, params: { projectId: number; weeks?: number }) =>
+      client.get(`/performance/${userId}/trends`, { params }),
+    recommendations: (userId: number, params: { projectId: number }) =>
+      client.get(`/performance/${userId}/recommendations`, { params }),
+    leaderboard: (params: { projectId: number; periodType: 'DAILY' | 'WEEKLY' | 'MONTHLY' }) =>
+      client.get('/performance/leaderboard', { params }),
   },
 };
 
