@@ -1,11 +1,12 @@
+// PRODUCTION SCHEMA - PostgreSQL
+// To use: copy this file to schema.prisma before deploying to production
+
 generator client {
   provider = "prisma-client-js"
 }
 
-// Development: SQLite
-// For production, change provider to "postgresql"
 datasource db {
-  provider = "sqlite"
+  provider = "postgresql"
   url      = env("DATABASE_URL")
 }
 
@@ -56,8 +57,8 @@ model Review {
   id          Int      @id @default(autoincrement())
   projectId   Int
   branch      String
-  reviewDate  DateTime
-  rawMarkdown String?
+  reviewDate  DateTime @db.Date
+  rawMarkdown String?  @db.Text
   createdAt   DateTime @default(now())
 
   project  Project   @relation(fields: [projectId], references: [id])
@@ -74,10 +75,10 @@ model Finding {
   filePath      String
   lineStart     Int?
   lineEnd       Int?
-  originalCode  String
-  optimizedCode String
-  explanation   String
-  references    String?    // JSON stored as string for SQLite compatibility
+  originalCode  String     @db.Text
+  optimizedCode String     @db.Text
+  explanation   String     @db.Text
+  references    Json?
   category      Category
   difficulty    Difficulty
   prCreated     Boolean    @default(false)
@@ -121,15 +122,15 @@ model PerformanceMetric {
   userId               Int
   projectId            Int
   periodType           PeriodType
-  periodStart          DateTime
-  periodEnd            DateTime
+  periodStart          DateTime   @db.Date
+  periodEnd            DateTime   @db.Date
   commitCount          Int        @default(0)
   findingCount         Int        @default(0)
-  findingsByCategory   String?    // JSON stored as string for SQLite compatibility
-  findingsByDifficulty String?    // JSON stored as string for SQLite compatibility
-  strengths            String?    // JSON stored as string for SQLite compatibility
-  growthAreas          String?    // JSON stored as string for SQLite compatibility
-  recommendations      String?    // JSON stored as string for SQLite compatibility
+  findingsByCategory   Json?
+  findingsByDifficulty Json?
+  strengths            Json?
+  growthAreas          Json?
+  recommendations      Json?
   calculatedAt         DateTime   @default(now())
 
   user    User    @relation(fields: [userId], references: [id])
