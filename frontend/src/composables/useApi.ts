@@ -17,13 +17,16 @@ export interface CreateUser {
   email: string;
   password: string;
   role?: 'ADMIN' | 'INTERN';
+  projectIds?: number[];
 }
 
 export interface UpdateUser {
   username?: string;
   email?: string;
+  password?: string;
   role?: 'ADMIN' | 'INTERN';
   telegramChatId?: string | null;
+  projectIds?: number[];
 }
 
 export interface PerformanceParams {
@@ -79,12 +82,15 @@ export const api = {
     get: (id: number) => client.get(`/findings/${id}`),
     markUnderstood: (id: number) => client.patch(`/findings/${id}/understood`),
     requestExplanation: (id: number) => client.post(`/findings/${id}/request-explanation`),
+    applyFix: (id: number) => client.post(`/findings/${id}/apply-fix`),
   },
   users: {
     list: () => client.get('/users'),
     create: (data: CreateUser) => client.post('/users', data),
     update: (id: number, data: UpdateUser) => client.patch(`/users/${id}`, data),
     delete: (id: number) => client.delete(`/users/${id}`),
+    getProjects: (id: number) => client.get(`/users/${id}/projects`),
+    assignProjects: (id: number, projectIds: number[]) => client.post(`/users/${id}/projects`, { projectIds }),
   },
   performance: {
     get: (userId: number, params: PerformanceParams) => client.get(`/performance/${userId}`, { params }),

@@ -15,6 +15,8 @@ const findingsStore = useFindingsStore();
 const auth = useAuthStore();
 const toastMessage = ref('');
 const actionLoading = ref(false);
+const applyFixLoading = ref(false);
+const errorMessage = ref('');
 
 const findingId = computed(() => Number(route.params.id));
 const finding = computed(() => findingsStore.selectedFinding);
@@ -58,6 +60,22 @@ async function requestExplanation() {
   }
 }
 
+async function applyFixAndCreatePr() {
+  if (!findingId.value || !finding.value) return;
+  applyFixLoading.value = true;
+  errorMessage.value = '';
+  try {
+    const { data } = await api.findings.applyFix(findingId.value);
+    finding.value.prCreated = true;
+    finding.value.prUrl = data.prUrl;
+    toastMessage.value = 'Pull request created successfully.';
+  } catch (error: any) {
+    errorMessage.value = error?.response?.data?.error || 'Failed to create pull request.';
+  } finally {
+    applyFixLoading.value = false;
+  }
+}
+
 function clearToast() {
   toastMessage.value = '';
 }
@@ -81,9 +99,29 @@ function clearToast() {
             <Button variant="secondary" :disabled="actionLoading" @click="requestExplanation">
               {{ finding.explanationRequested ? 'Explanation Requested' : 'Request Explanation' }}
             </Button>
-            <Button v-if="auth.isAdmin" :disabled="true">Apply Fix & Create PR</Button>
+            <Button
+              v-if="auth.isAdmin"
+              :disabled="applyFixLoading || !!finding.prCreated"
+              @click="applyFixAndCreatePr"
+            >
+              {{
+                finding.prCreated
+                  ? 'PR Created'
+                  : applyFixLoading
+                    ? 'Creating PR...'
+                    : 'Apply Fix & Create PR'
+              }}
+            </Button>
           </div>
         </section>
+
+        <p v-if="finding.prUrl" class="text-sm text-success">
+          Pull request:
+          <a :href="finding.prUrl" target="_blank" rel="noopener noreferrer" class="underline hover:opacity-80">
+            {{ finding.prUrl }}
+          </a>
+        </p>
+        <p v-if="errorMessage" class="text-sm text-error">{{ errorMessage }}</p>
 
         <label class="inline-flex items-center gap-2 text-sm">
           <input

@@ -1,6 +1,8 @@
 import { Router, Request, Response } from 'express';
 import { PrismaClient } from '@prisma/client';
 import { authMiddleware } from '../middleware/auth';
+import { adminMiddleware } from '../middleware/admin';
+import { applyFixAndCreatePR } from '../services/github';
 import { notifyExplanationRequested } from '../services/telegram';
 
 const router = Router();
@@ -138,35 +140,66 @@ router.post('/:id/request-explanation', async (req: Request, res: Response): Pro
     },
   });
 
-  const [intern, finding] = await Promise.all([
+  const [intern, findingWithProject] = await Promise.all([
     prisma.user.findUnique({
       where: { id: userId },
-      select: { username: true },
     }),
     prisma.finding.findUnique({
       where: { id: findingId },
-      select: {
-        filePath: true,
+      include: {
         review: {
           include: {
-            project: {
-              select: { displayName: true },
-            },
+            project: true,
           },
         },
       },
     }),
   ]);
 
-  if (intern && finding) {
-    await notifyExplanationRequested(
-      intern.username,
-      finding.filePath,
-      finding.review.project.displayName,
-    );
+  if (intern && findingWithProject) {
+    try {
+      await notifyExplanationRequested(intern, findingWithProject, findingWithProject.review.project);
+    } catch (err) {
+      console.error('[Telegram] Failed to send explanation notification:', err);
+    }
   }
 
   res.json({ success: true, explanationRequested: userFinding.explanationRequested });
+});
+
+router.post('/:id/apply-fix', adminMiddleware, async (req: Request, res: Response): Promise<void> => {
+  const findingId = parseInt(req.params.id);
+  const finding = await prisma.finding.findUnique({
+    where: { id: findingId },
+    include: {
+      review: {
+        include: {
+          project: true,
+        },
+      },
+    },
+  });
+
+  if (!finding) {
+    res.status(404).json({ error: 'Finding not found' });
+    return;
+  }
+
+  try {
+    const prUrl = await applyFixAndCreatePR(finding, finding.review, finding.review.project);
+
+    await prisma.finding.update({
+      where: { id: finding.id },
+      data: {
+        prCreated: true,
+        prUrl,
+      },
+    });
+
+    res.json({ prUrl });
+  } catch (error: any) {
+    res.status(500).json({ error: error?.message || 'Failed to apply fix and create PR' });
+  }
 });
 
 export default router;

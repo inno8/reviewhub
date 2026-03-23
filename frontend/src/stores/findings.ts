@@ -11,6 +11,8 @@ export interface Finding {
   difficulty: string;
   originalCode: string;
   optimizedCode: string;
+  prCreated?: boolean;
+  prUrl?: string | null;
   markedUnderstood?: boolean;
   explanationRequested?: boolean;
   references?: Array<{ type: 'docs' | 'article' | 'tutorial'; title: string; url: string }>;

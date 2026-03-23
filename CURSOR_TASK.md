@@ -1,175 +1,203 @@
-# ReviewHub — Phase 2: Core Dashboard
+# ReviewHub — Phase 3: GitHub PR Creation & Telegram Notifications
 
 ## Overview
 
-Wire up the frontend to the backend API. Replace all mock/placeholder data with real API calls. Make the dashboard fully functional with working filters, calendar navigation, and code display.
+Implement the "Apply Fix & Create PR" functionality and Telegram notifications for explanation requests. This phase makes the admin actions work end-to-end.
 
 ## Current State
 
-- ✅ Backend running on port 3000
-- ✅ Frontend running on port 5174
-- ✅ SQLite database with seed data (3 findings, 3 users, 1 project)
-- ✅ Auth endpoints working
-- ✅ UI components scaffolded
+- ✅ Phase 1: Foundation complete
+- ✅ Phase 2: Core Dashboard complete (API wired, login, filters, code comparison)
+- Backend running on port 3000
+- Frontend running on port 5174
+- SQLite database with seed data
 
-## Phase 2 Tasks
+## Phase 3 Tasks
 
-### 1. API Integration Setup
+### 1. GitHub Integration — Apply Fix & Create PR
 
-**Update `frontend/src/composables/useApi.ts`:**
-- Configure axios with base URL (`http://localhost:3000/api`)
-- Add JWT token interceptor (read from localStorage)
-- Add response interceptor for 401 → redirect to login
-- Export typed API methods
+**Backend: `backend/src/services/github.ts`**
+
+Implement the full GitHub flow:
 
 ```typescript
-// Example structure
-export const api = {
-  auth: {
-    login: (email: string, password: string) => axios.post('/auth/login', { email, password }),
-    me: () => axios.get('/auth/me'),
-    logout: () => axios.post('/auth/logout'),
-  },
-  projects: {
-    list: () => axios.get('/projects'),
-    get: (id: number) => axios.get(`/projects/${id}`),
-  },
-  reviews: {
-    list: (params: ReviewFilters) => axios.get('/reviews', { params }),
-    calendar: (projectId: number, month: string) => axios.get('/reviews/calendar', { params: { projectId, month } }),
-  },
-  findings: {
-    list: (params: FindingFilters) => axios.get('/findings', { params }),
-    get: (id: number) => axios.get(`/findings/${id}`),
-    markUnderstood: (id: number) => axios.patch(`/findings/${id}/understood`),
-    requestExplanation: (id: number) => axios.post(`/findings/${id}/request-explanation`),
-  },
-  users: {
-    list: () => axios.get('/users'),
-    create: (data: CreateUser) => axios.post('/users', data),
-    update: (id: number, data: UpdateUser) => axios.patch(`/users/${id}`, data),
-    delete: (id: number) => axios.delete(`/users/${id}`),
-  },
-  performance: {
-    get: (userId: number, params: PerformanceParams) => axios.get(`/performance/${userId}`, { params }),
-  },
-};
+export async function applyFixAndCreatePR(finding: Finding, review: Review, project: Project): Promise<string> {
+  // 1. Get the file content from the source branch
+  // 2. Create a new branch: fix/finding-{id}-{timestamp}
+  // 3. Update the file with optimizedCode
+  // 4. Commit the change
+  // 5. Create PR to main
+  // 6. Return PR URL
+}
 ```
 
-### 2. Auth Store (`frontend/src/stores/auth.ts`)
+**Steps:**
+1. Use Octokit to authenticate with GitHub token from env
+2. Get current file content from the branch where issue was found
+3. Create new branch from that branch
+4. Replace the code between lineStart and lineEnd with optimizedCode
+5. Commit with message: `fix: Apply code review suggestion for ${filePath}`
+6. Create PR with:
+   - Title: `Fix: ${category} issue in ${filePath}`
+   - Body: Include explanation and link to finding
+   - Base: main
+   - Head: fix branch
 
-- Implement login/logout with API calls
-- Store JWT in localStorage
-- Load user on app init (check if token exists)
-- Expose `isAdmin` computed property
+**Backend: `backend/src/routes/findings.ts`**
 
-### 3. Projects Store (`frontend/src/stores/projects.ts`)
-
-- Fetch projects from API on init
-- Store selected project ID
-- Persist selection in localStorage
-
-### 4. Findings Store (`frontend/src/stores/findings.ts`)
-
-- Fetch findings with filters (project, date, category, difficulty, author)
-- Implement pagination
-- Cache finding details
-
-### 5. Login View (`frontend/src/views/LoginView.vue`)
-
-- Wire up form to auth store
-- Handle errors (show message)
-- Redirect to dashboard on success
-- Show loading state during login
-
-### 6. Dashboard View (`frontend/src/views/DashboardView.vue`)
-
-- Fetch findings on mount and when filters change
-- Working project selector (dropdown)
-- Working date picker (calendar component)
-- Working filters (category, difficulty, author)
-- Show loading skeleton while fetching
-- Show "No findings" message when empty
-
-### 7. Calendar Widget (`frontend/src/components/calendar/CalendarWidget.vue`)
-
-- Fetch calendar data from API (dates with reviews)
-- Highlight dates that have findings
-- Emit selected date to parent
-- Navigate months (prev/next buttons)
-
-### 8. Finding Card (`frontend/src/components/findings/FindingCard.vue`)
-
-- Display real data from API
-- Show author avatar (or initials fallback)
-- Click navigates to finding detail
-
-### 9. Finding Detail View (`frontend/src/views/FindingDetailView.vue`)
-
-- Fetch finding by ID from route params
-- Display full original and optimized code with syntax highlighting
-- Parse and display references (links to docs/articles)
-- "Mark as understood" checkbox → API call
-- "Request Explanation" button → API call + success toast
-- "Apply Fix & Create PR" button (admin only) → placeholder for Phase 3
-
-### 10. Code Comparison Component (`frontend/src/components/findings/CodeComparison.vue`)
-
-- Use highlight.js for syntax highlighting
-- Detect language from file extension
-- Show line numbers
-- Highlight changed lines (red for original problems, green for fixes)
-- Full file view with scroll
-
-### 11. Backend Fixes (if needed)
-
-**Check and fix these endpoints:**
-
-`GET /api/reviews/calendar`
-- Input: `projectId`, `month` (YYYY-MM)
-- Output: `{ dates: ['2026-03-23', '2026-03-22', ...] }` (dates with findings)
-
-`GET /api/findings`
-- Input: `projectId`, `date`, `category`, `difficulty`, `author`, `page`, `limit`
-- Output: `{ findings: [...], total: number, page: number, totalPages: number }`
-
-`GET /api/findings/:id`
-- Include full code (originalCode, optimizedCode)
-- Include parsed references
-- Include review info (branch, date)
-
-`PATCH /api/findings/:id/understood`
-- Toggle `markedUnderstood` for current user
-- Return updated state
-
-`POST /api/findings/:id/request-explanation`
-- Set `explanationRequested: true` for current user
-- Send Telegram notification (skip if no bot token configured)
-- Return success
-
-### 12. Environment
-
-**Frontend `.env`:**
+Add endpoint:
+```typescript
+// POST /api/findings/:id/apply-fix
+// Admin only
+// Returns: { prUrl: string }
 ```
-VITE_API_URL=http://localhost:3000/api
+
+**Frontend: `frontend/src/views/FindingDetailView.vue`**
+
+Wire up the "Apply Fix & Create PR" button:
+- Show loading state while creating PR
+- On success: show PR URL as clickable link
+- On error: show error message
+- Update finding.prCreated and finding.prUrl in state
+
+### 2. Telegram Notifications
+
+**Backend: `backend/src/services/telegram.ts`**
+
+Implement actual Telegram sending:
+
+```typescript
+import TelegramBot from 'node-telegram-bot-api';
+
+const bot = process.env.TELEGRAM_BOT_TOKEN 
+  ? new TelegramBot(process.env.TELEGRAM_BOT_TOKEN)
+  : null;
+
+export async function notifyExplanationRequested(
+  intern: User,
+  finding: Finding,
+  project: Project
+): Promise<void> {
+  if (!bot || !process.env.TELEGRAM_ADMIN_CHAT_ID) {
+    console.log('[Telegram] Bot not configured, skipping notification');
+    return;
+  }
+
+  const message = `📞 *Explanation Requested*
+
+*Intern:* ${intern.username}
+*Project:* ${project.displayName}
+*File:* \`${finding.filePath}\`
+*Category:* ${finding.category}
+*Difficulty:* ${finding.difficulty}
+
+The intern would like a live explanation of this code review finding.`;
+
+  await bot.sendMessage(process.env.TELEGRAM_ADMIN_CHAT_ID, message, {
+    parse_mode: 'Markdown',
+  });
+}
 ```
+
+**Backend: `backend/src/routes/findings.ts`**
+
+Update the request-explanation endpoint to actually send Telegram notification:
+- Get the current user (intern)
+- Get the finding with project info
+- Call notifyExplanationRequested()
+- Handle errors gracefully (don't fail if Telegram fails)
+
+### 3. User Management (Admin)
+
+**Backend: `backend/src/routes/users.ts`**
+
+Ensure these endpoints work properly:
+
+```typescript
+// GET /api/users - List all users (admin only)
+// POST /api/users - Create user (admin only)
+//   Body: { username, email, password, role, projectIds }
+// PATCH /api/users/:id - Update user (admin only)
+//   Body: { username?, email?, password?, role?, projectIds? }
+// DELETE /api/users/:id - Delete user (admin only)
+// GET /api/users/:id/projects - Get user's assigned projects
+// POST /api/users/:id/projects - Assign projects to user
+//   Body: { projectIds: number[] }
+```
+
+**Frontend: `frontend/src/views/UserManagementView.vue`**
+
+Wire up the user management UI:
+- Fetch and display users list
+- "Add User" button opens modal
+- Add User modal:
+  - Username, email, password fields
+  - Role dropdown (Admin/Intern)
+  - Project multi-select checkboxes
+  - Save creates user and assigns projects
+- Edit user (click row or edit icon)
+- Delete user (with confirmation)
+- Show assigned projects as badges
+
+### 4. Environment Setup
+
+**Backend `.env` additions needed for full functionality:**
+```
+# GitHub - Personal Access Token with repo scope
+GITHUB_TOKEN=ghp_xxxxxxxxxxxxxxxxxxxx
+
+# Telegram Bot
+TELEGRAM_BOT_TOKEN=123456789:ABCdefGHIjklMNOpqrsTUVwxyz
+TELEGRAM_ADMIN_CHAT_ID=123456789
+```
+
+### 5. Error Handling
+
+- GitHub API errors: Return meaningful error messages
+- Telegram errors: Log but don't fail the request
+- User management: Validate unique username/email
 
 ## Testing Checklist
 
-- [ ] Login with admin@reviewhub.dev / admin123
-- [ ] See dashboard with project selector
-- [ ] Calendar shows March 23 highlighted (has findings)
-- [ ] Click date → findings list updates
-- [ ] Filter by category → list filters
-- [ ] Click finding card → detail view opens
-- [ ] See code comparison with syntax highlighting
-- [ ] Click "Mark as understood" → checkbox saves
-- [ ] Click "Request Explanation" → toast shows success
-- [ ] Logout → redirects to login
+### GitHub PR Flow
+- [ ] Configure GITHUB_TOKEN in .env
+- [ ] Click "Apply Fix & Create PR" on a finding
+- [ ] Verify new branch created in GitHub
+- [ ] Verify PR created with correct title/body
+- [ ] Verify finding.prUrl updated in database
+- [ ] Verify button shows PR link after creation
+
+### Telegram Notifications
+- [ ] Configure TELEGRAM_BOT_TOKEN and TELEGRAM_ADMIN_CHAT_ID
+- [ ] Login as intern (alice/intern123)
+- [ ] Click "Request Explanation" on a finding
+- [ ] Verify Telegram message received by admin
+
+### User Management
+- [ ] Login as admin
+- [ ] Navigate to User Management
+- [ ] See list of users with their roles and projects
+- [ ] Add new intern user
+- [ ] Assign projects to user
+- [ ] Edit user role
+- [ ] Delete user (with confirmation)
+
+## Files to Modify
+
+**Backend:**
+- `backend/src/services/github.ts` — Full implementation
+- `backend/src/services/telegram.ts` — Full implementation
+- `backend/src/routes/findings.ts` — Add apply-fix endpoint
+- `backend/src/routes/users.ts` — Complete CRUD + project assignment
+
+**Frontend:**
+- `frontend/src/views/FindingDetailView.vue` — Wire up Apply Fix button
+- `frontend/src/views/UserManagementView.vue` — Full implementation
+- `frontend/src/composables/useApi.ts` — Add missing endpoints if needed
 
 ## DO NOT
 
 - Do not change the database schema
-- Do not add new dependencies without need
-- Do not skip TypeScript types
-- Do not hardcode API URLs (use env variable)
+- Do not commit real tokens to git
+- Do not skip error handling
+- Do not make GitHub calls without checking for token
