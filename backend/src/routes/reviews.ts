@@ -22,6 +22,45 @@ router.get('/', async (req: Request, res: Response): Promise<void> => {
   res.json({ reviews });
 });
 
+router.get('/calendar', async (req: Request, res: Response): Promise<void> => {
+  const { projectId, month } = req.query;
+  const parsedProjectId = Number(projectId);
+
+  if (!parsedProjectId || !month || !/^\d{4}-\d{2}$/.test(month as string)) {
+    res.status(400).json({ error: 'projectId and month (YYYY-MM) are required' });
+    return;
+  }
+
+  const [year, monthNumber] = (month as string).split('-').map(Number);
+  const start = new Date(year, monthNumber - 1, 1);
+  const end = new Date(year, monthNumber, 1);
+
+  const findings = await prisma.finding.findMany({
+    where: {
+      review: {
+        projectId: parsedProjectId,
+        reviewDate: {
+          gte: start,
+          lt: end,
+        },
+      },
+    },
+    select: {
+      review: {
+        select: {
+          reviewDate: true,
+        },
+      },
+    },
+  });
+
+  const dates = Array.from(
+    new Set(findings.map((finding) => finding.review.reviewDate.toISOString().slice(0, 10))),
+  );
+
+  res.json({ dates });
+});
+
 router.get('/:id', async (req: Request, res: Response): Promise<void> => {
   const review = await prisma.review.findUnique({
     where: { id: parseInt(req.params.id) },

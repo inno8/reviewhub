@@ -114,4 +114,8 @@ router.get('/me', authMiddleware, async (req: Request, res: Response): Promise<v
   res.json({ user });
 });
 
+router.post('/logout', authMiddleware, async (_req: Request, res: Response): Promise<void> => {
+  res.json({ success: true });
+});
+
 export default router;

@@ -1,8 +1,15 @@
 <script setup lang="ts">
+import { useRouter } from 'vue-router';
 import Button from '@/components/common/Button.vue';
 import { useAuthStore } from '@/stores/auth';
 
 const auth = useAuthStore();
+const router = useRouter();
+
+async function onLogout() {
+  await auth.logout();
+  await router.push('/login');
+}
 </script>
 
 <template>
@@ -16,7 +23,7 @@ const auth = useAuthStore();
         <p class="font-semibold">{{ auth.user?.username }}</p>
         <p class="text-text-secondary">{{ auth.user?.role }}</p>
       </div>
-      <Button variant="secondary" @click="auth.logout()">Logout</Button>
+      <Button variant="secondary" @click="onLogout">Logout</Button>
     </div>
   </header>
 </template>

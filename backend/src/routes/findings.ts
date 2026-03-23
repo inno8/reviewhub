@@ -8,27 +8,69 @@ const prisma = new PrismaClient();
 
 router.use(authMiddleware);
 
-router.get('/', async (req: Request, res: Response): Promise<void> => {
-  const { projectId, category, difficulty } = req.query;
+function parseReferences(references: string | null) {
+  if (!references) return [];
+  try {
+    const parsed = JSON.parse(references);
+    return Array.isArray(parsed) ? parsed : [];
+  } catch {
+    return [];
+  }
+}
 
-  const findings = await prisma.finding.findMany({
+router.get('/', async (req: Request, res: Response): Promise<void> => {
+  const { projectId, date, category, difficulty, author, page = '1', limit = '10' } = req.query;
+  const parsedPage = Math.max(1, Number(page));
+  const parsedLimit = Math.max(1, Number(limit));
+  const parsedProjectId = projectId ? Number(projectId) : undefined;
+
+  const where = {
     where: {
-      ...(projectId && { review: { projectId: parseInt(projectId as string) } }),
+      ...(parsedProjectId && { review: { projectId: parsedProjectId } }),
+      ...(date && {
+        review: {
+          ...(parsedProjectId ? { projectId: parsedProjectId } : {}),
+          reviewDate: {
+            gte: new Date(`${date as string}T00:00:00.000Z`),
+            lt: new Date(`${date as string}T23:59:59.999Z`),
+          },
+        },
+      }),
       ...(category && { category: category as any }),
       ...(difficulty && { difficulty: difficulty as any }),
+      ...(author && { commitAuthor: { equals: author as string } }),
     },
-    include: {
-      review: {
-        include: { project: { select: { name: true, displayName: true } } },
-      },
-      userFindings: {
-        where: { userId: req.user!.userId },
-      },
-    },
-    orderBy: { createdAt: 'desc' },
-  });
+  };
 
-  res.json({ findings });
+  const [findings, total] = await Promise.all([
+    prisma.finding.findMany({
+      ...where,
+      include: {
+        review: {
+          include: { project: { select: { name: true, displayName: true } } },
+        },
+        userFindings: {
+          where: { userId: req.user!.userId },
+        },
+      },
+      orderBy: { createdAt: 'desc' },
+      skip: (parsedPage - 1) * parsedLimit,
+      take: parsedLimit,
+    }),
+    prisma.finding.count(where),
+  ]);
+
+  res.json({
+    findings: findings.map((finding) => ({
+      ...finding,
+      references: parseReferences(finding.references),
+      markedUnderstood: finding.userFindings[0]?.markedUnderstood ?? false,
+      explanationRequested: finding.userFindings[0]?.explanationRequested ?? false,
+    })),
+    total,
+    page: parsedPage,
+    totalPages: Math.max(1, Math.ceil(total / parsedLimit)),
+  });
 });
 
 router.get('/:id', async (req: Request, res: Response): Promise<void> => {
@@ -36,7 +78,7 @@ router.get('/:id', async (req: Request, res: Response): Promise<void> => {
     where: { id: parseInt(req.params.id) },
     include: {
       review: {
-        include: { project: true },
+        include: { project: { select: { id: true, name: true, displayName: true } } },
       },
       userFindings: {
         where: { userId: req.user!.userId },
@@ -49,20 +91,36 @@ router.get('/:id', async (req: Request, res: Response): Promise<void> => {
     return;
   }
 
-  res.json({ finding });
+  res.json({
+    finding: {
+      ...finding,
+      references: parseReferences(finding.references),
+      markedUnderstood: finding.userFindings[0]?.markedUnderstood ?? false,
+      explanationRequested: finding.userFindings[0]?.explanationRequested ?? false,
+      review: {
+        ...finding.review,
+        reviewDate: finding.review.reviewDate.toISOString().slice(0, 10),
+      },
+    },
+  });
 });
 
-router.post('/:id/understand', async (req: Request, res: Response): Promise<void> => {
+router.patch('/:id/understood', async (req: Request, res: Response): Promise<void> => {
   const findingId = parseInt(req.params.id);
   const userId = req.user!.userId;
 
+  const existing = await prisma.userFinding.findUnique({
+    where: { userId_findingId: { userId, findingId } },
+  });
+  const nextState = !(existing?.markedUnderstood ?? false);
+
   const userFinding = await prisma.userFinding.upsert({
     where: { userId_findingId: { userId, findingId } },
-    update: { markedUnderstood: true },
-    create: { userId, findingId, markedUnderstood: true },
+    update: { markedUnderstood: nextState },
+    create: { userId, findingId, markedUnderstood: nextState },
   });
 
-  res.json({ userFinding });
+  res.json({ markedUnderstood: userFinding.markedUnderstood });
 });
 
 router.post('/:id/request-explanation', async (req: Request, res: Response): Promise<void> => {
@@ -108,7 +166,7 @@ router.post('/:id/request-explanation', async (req: Request, res: Response): Pro
     );
   }
 
-  res.json({ userFinding });
+  res.json({ success: true, explanationRequested: userFinding.explanationRequested });
 });
 
 export default router;

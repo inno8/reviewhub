@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, onMounted } from 'vue';
+import { computed, onMounted, ref } from 'vue';
 import { useRoute } from 'vue-router';
 import Header from '@/components/layout/Header.vue';
 import Sidebar from '@/components/layout/Sidebar.vue';
@@ -7,11 +7,14 @@ import Button from '@/components/common/Button.vue';
 import CodeComparison from '@/components/findings/CodeComparison.vue';
 import ExplanationSection from '@/components/findings/ExplanationSection.vue';
 import { useFindingsStore } from '@/stores/findings';
-import { useApi } from '@/composables/useApi';
+import { useAuthStore } from '@/stores/auth';
+import { api } from '@/composables/useApi';
 
 const route = useRoute();
 const findingsStore = useFindingsStore();
-const api = useApi();
+const auth = useAuthStore();
+const toastMessage = ref('');
+const actionLoading = ref(false);
 
 const findingId = computed(() => Number(route.params.id));
 const finding = computed(() => findingsStore.selectedFinding);
@@ -29,12 +32,34 @@ onMounted(async () => {
 
 async function markUnderstood() {
   if (!findingId.value) return;
-  await api.post(`/findings/${findingId.value}/understand`);
+  actionLoading.value = true;
+  try {
+    const { data } = await api.findings.markUnderstood(findingId.value);
+    if (finding.value) {
+      finding.value.markedUnderstood = data.markedUnderstood;
+    }
+    toastMessage.value = 'Understanding state saved.';
+  } finally {
+    actionLoading.value = false;
+  }
 }
 
 async function requestExplanation() {
   if (!findingId.value) return;
-  await api.post(`/findings/${findingId.value}/request-explanation`);
+  actionLoading.value = true;
+  try {
+    await api.findings.requestExplanation(findingId.value);
+    if (finding.value) {
+      finding.value.explanationRequested = true;
+    }
+    toastMessage.value = 'Explanation requested successfully.';
+  } finally {
+    actionLoading.value = false;
+  }
+}
+
+function clearToast() {
+  toastMessage.value = '';
 }
 </script>
 
@@ -48,15 +73,41 @@ async function requestExplanation() {
           <div>
             <h2 class="text-xl font-semibold">{{ finding.filePath }}</h2>
             <p class="text-sm text-text-secondary">{{ finding.category }} - {{ finding.difficulty }}</p>
+            <p class="text-xs text-text-secondary">
+              {{ finding.review?.project?.displayName }} / {{ finding.review?.branch }} / {{ finding.review?.reviewDate }}
+            </p>
           </div>
           <div class="flex gap-3">
-            <Button variant="secondary" @click="requestExplanation">Request Explanation</Button>
-            <Button @click="markUnderstood">Mark Understood</Button>
+            <Button variant="secondary" :disabled="actionLoading" @click="requestExplanation">
+              {{ finding.explanationRequested ? 'Explanation Requested' : 'Request Explanation' }}
+            </Button>
+            <Button v-if="auth.isAdmin" :disabled="true">Apply Fix & Create PR</Button>
           </div>
         </section>
 
-        <CodeComparison :original-code="finding.originalCode" :optimized-code="finding.optimizedCode" />
+        <label class="inline-flex items-center gap-2 text-sm">
+          <input
+            type="checkbox"
+            :checked="!!finding.markedUnderstood"
+            :disabled="actionLoading"
+            @change="markUnderstood"
+          />
+          Mark as understood
+        </label>
+
+        <CodeComparison
+          :original-code="finding.originalCode"
+          :optimized-code="finding.optimizedCode"
+          :file-path="finding.filePath"
+        />
         <ExplanationSection :explanation="finding.explanation" :references="references" />
+        <div
+          v-if="toastMessage"
+          class="fixed bottom-4 right-4 rounded-lg border border-success/50 bg-success/20 px-4 py-2 text-sm text-success"
+          @click="clearToast"
+        >
+          {{ toastMessage }}
+        </div>
       </main>
     </div>
   </div>

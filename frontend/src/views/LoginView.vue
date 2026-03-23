@@ -15,8 +15,8 @@ async function onSubmit() {
   try {
     await auth.login(form.email, form.password);
     await router.push('/');
-  } catch {
-    error.value = 'Invalid credentials.';
+  } catch (err: any) {
+    error.value = err?.response?.data?.error || 'Invalid credentials.';
   }
 }
 </script>
@@ -47,7 +47,9 @@ async function onSubmit() {
           />
         </div>
         <p v-if="error" class="text-sm text-error">{{ error }}</p>
-        <Button type="submit" :disabled="auth.loading" class="w-full">Login</Button>
+        <Button type="submit" :disabled="auth.loading" class="w-full">
+          {{ auth.loading ? 'Signing in...' : 'Login' }}
+        </Button>
       </form>
     </Card>
   </main>

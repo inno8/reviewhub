@@ -24,3 +24,29 @@ body {
 #app {
   @apply min-h-screen;
 }
+
+.hljs-keyword,
+.hljs-selector-tag,
+.hljs-literal,
+.hljs-section,
+.hljs-link {
+  color: #ff7b72;
+}
+
+.hljs-string,
+.hljs-attr,
+.hljs-template-tag,
+.hljs-template-variable {
+  color: #a5d6ff;
+}
+
+.hljs-number,
+.hljs-title,
+.hljs-class .hljs-title {
+  color: #79c0ff;
+}
+
+.hljs-comment,
+.hljs-quote {
+  color: #8b949e;
+}
