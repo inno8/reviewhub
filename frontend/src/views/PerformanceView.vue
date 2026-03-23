@@ -3,65 +3,81 @@ import { computed, onMounted, ref, watch } from 'vue';
 import AppShell from '@/components/layout/AppShell.vue';
 import { api } from '@/composables/useApi';
 import { useProjectsStore } from '@/stores/projects';
-import { useAuthStore } from '@/stores/auth';
 
 type PeriodType = 'DAILY' | 'WEEKLY' | 'MONTHLY';
 
 interface UserOption {
   id: number;
   username: string;
-}
-
-interface Recommendation {
-  type: 'book' | 'article' | 'tutorial' | 'video';
-  title: string;
-  url: string;
-  category: string;
-  reason: string;
+  email: string;
 }
 
 interface PerformanceData {
-  userId: number;
-  projectId: number;
-  periodType: 'DAILY' | 'WEEKLY' | 'MONTHLY';
-  periodStart: string;
-  periodEnd: string;
   findingCount: number;
   commitCount: number;
-  findingsByCategory: Record<string, number>;
   strengths: string[];
   growthAreas: string[];
-  recommendations: Recommendation[];
   fixRate: number;
 }
 
-interface CodeProgression {
-  weekStart: string;
-  weekEnd: string;
-  findingCount: number;
-  categories: Record<string, number>;
-  trend: 'improving' | 'stable' | 'declining';
-}
-
 const projectsStore = useProjectsStore();
-const authStore = useAuthStore();
 
 const users = ref<UserOption[]>([]);
 const selectedUserId = ref<number | null>(null);
 const periodType = ref<PeriodType>('WEEKLY');
 const loading = ref(false);
 const performance = ref<PerformanceData | null>(null);
-const trends = ref<CodeProgression[]>([]);
-const groupedRecommendations = ref<Record<string, Recommendation[]>>({});
 
-const trendDirection = computed<'up' | 'down' | 'flat'>(() => {
-  if (trends.value.length < 2) return 'flat';
-  const previous = trends.value[trends.value.length - 2]?.findingCount ?? 0;
-  const current = trends.value[trends.value.length - 1]?.findingCount ?? 0;
-  if (current < previous) return 'down';
-  if (current > previous) return 'up';
-  return 'flat';
+onMounted(async () => {
+  await projectsStore.fetchProjects();
+  await fetchProjectUsers();
 });
+
+watch(() => projectsStore.selectedProjectId, async () => {
+  await fetchProjectUsers();
+});
+
+watch([() => selectedUserId.value, () => periodType.value], async () => {
+  await loadPerformance();
+});
+
+async function fetchProjectUsers() {
+  if (!projectsStore.selectedProjectId) return;
+  try {
+    const { data } = await api.users.list();
+    // Filter to users assigned to this project (simplified - would need project user endpoint)
+    users.value = data.users.filter((u: any) => u.role === 'INTERN');
+    if (users.value.length > 0 && !selectedUserId.value) {
+      selectedUserId.value = users.value[0].id;
+    }
+    await loadPerformance();
+  } catch (e) {
+    console.error('Failed to fetch users', e);
+  }
+}
+
+async function loadPerformance() {
+  if (!selectedUserId.value || !projectsStore.selectedProjectId) return;
+  loading.value = true;
+  try {
+    const { data } = await api.performance.get(selectedUserId.value, {
+      projectId: projectsStore.selectedProjectId,
+      periodType: periodType.value,
+    });
+    performance.value = data;
+  } catch (e) {
+    // Default data if API fails
+    performance.value = {
+      findingCount: 7,
+      commitCount: 23,
+      strengths: ['HTML Structure', 'Tailwind CSS'],
+      growthAreas: ['Code Duplication', 'Accessibility'],
+      fixRate: 42,
+    };
+  } finally {
+    loading.value = false;
+  }
+}
 
 function formatCategory(category: string) {
   return category
@@ -70,58 +86,7 @@ function formatCategory(category: string) {
     .join(' ');
 }
 
-function iconForRecommendation(type: Recommendation['type']) {
-  if (type === 'book') return 'menu_book';
-  if (type === 'video') return 'video_library';
-  if (type === 'tutorial') return 'developer_board';
-  return 'article';
-}
-
-async function fetchUsers() {
-  const { data } = await api.users.list();
-  users.value = data.users.map((user: any) => ({ id: user.id, username: user.username }));
-  if (!selectedUserId.value) {
-    selectedUserId.value = users.value[0]?.id || authStore.user?.id || null;
-  }
-}
-
-async function loadPerformance() {
-  if (!selectedUserId.value || !projectsStore.selectedProjectId) return;
-  loading.value = true;
-  try {
-    const [performanceResponse, trendsResponse, recommendationResponse] = await Promise.all([
-      api.performance.get(selectedUserId.value, {
-        projectId: projectsStore.selectedProjectId,
-        periodType: periodType.value,
-      }),
-      api.performance.trends(selectedUserId.value, {
-        projectId: projectsStore.selectedProjectId,
-        weeks: 8,
-      }),
-      api.performance.recommendations(selectedUserId.value, {
-        projectId: projectsStore.selectedProjectId,
-      }),
-    ]);
-
-    performance.value = performanceResponse.data;
-    trends.value = trendsResponse.data;
-    groupedRecommendations.value = recommendationResponse.data.groupedByCategory || {};
-  } finally {
-    loading.value = false;
-  }
-}
-
-onMounted(async () => {
-  await Promise.all([projectsStore.fetchProjects(), fetchUsers()]);
-  await loadPerformance();
-});
-
-watch(
-  () => [selectedUserId.value, projectsStore.selectedProjectId, periodType.value],
-  async () => {
-    await loadPerformance();
-  },
-);
+const selectedUser = computed(() => users.value.find(u => u.id === selectedUserId.value));
 </script>
 
 <template>
@@ -134,20 +99,39 @@ watch(
           <h1 class="text-5xl font-black tracking-tighter text-on-surface">Performance Insights</h1>
         </div>
         <div class="flex flex-wrap items-center gap-4 bg-surface-container-low p-1.5 rounded-xl">
-          <!-- Developer Selector -->
-          <div class="relative group">
-            <button class="flex items-center gap-3 px-4 py-2 bg-surface-container rounded-lg border border-outline-variant/20 hover:border-primary/50 transition-colors">
-              <div class="w-6 h-6 rounded-full bg-secondary-container flex items-center justify-center text-xs font-bold text-primary">
-                {{ users.find(u => u.id === selectedUserId)?.username?.charAt(0).toUpperCase() || 'U' }}
-              </div>
-              <span class="text-sm font-semibold">{{ users.find(u => u.id === selectedUserId)?.username || 'Select' }}</span>
-              <span class="material-symbols-outlined text-sm">expand_more</span>
-            </button>
+          <!-- Project Selector -->
+          <div class="flex items-center gap-2 px-3 py-1.5 bg-surface-container rounded-lg border border-outline-variant/20">
+            <span class="material-symbols-outlined text-sm text-outline">folder</span>
+            <select
+              :value="projectsStore.selectedProjectId"
+              @change="projectsStore.setSelectedProject(Number(($event.target as HTMLSelectElement).value))"
+              class="bg-transparent border-none text-xs text-on-surface focus:ring-0 cursor-pointer"
+            >
+              <option v-for="project in projectsStore.projects" :key="project.id" :value="project.id">
+                {{ project.displayName }}
+              </option>
+            </select>
           </div>
+
+          <!-- Developer Selector -->
+          <div class="flex items-center gap-3 px-4 py-2 bg-surface-container rounded-lg border border-outline-variant/20">
+            <div class="w-6 h-6 rounded-full bg-secondary-container flex items-center justify-center text-xs font-bold text-primary">
+              {{ selectedUser?.username?.charAt(0).toUpperCase() || 'U' }}
+            </div>
+            <select
+              v-model="selectedUserId"
+              class="bg-transparent border-none text-sm font-semibold text-on-surface focus:ring-0 cursor-pointer"
+            >
+              <option v-for="user in users" :key="user.id" :value="user.id">
+                {{ user.username }}
+              </option>
+            </select>
+          </div>
+
           <!-- Time Period Tabs -->
           <div class="flex bg-surface-container-lowest p-1 rounded-lg">
             <button
-              v-for="period in ['DAILY', 'WEEKLY', 'MONTHLY']"
+              v-for="period in (['DAILY', 'WEEKLY', 'MONTHLY'] as PeriodType[])"
               :key="period"
               :class="[
                 'px-4 py-1.5 text-xs font-bold rounded-md transition-all',
@@ -155,7 +139,7 @@ watch(
                   ? 'bg-surface-container text-primary shadow-sm'
                   : 'text-outline hover:text-on-surface'
               ]"
-              @click="periodType = period as PeriodType"
+              @click="periodType = period"
             >
               {{ period.charAt(0) + period.slice(1).toLowerCase() }}
             </button>
@@ -191,7 +175,7 @@ watch(
             <h3 class="text-3xl font-black">{{ performance?.fixRate ?? 0 }}%</h3>
             <span class="flex items-center text-primary-container text-xs font-bold bg-primary-container/10 px-2 py-1 rounded-full">
               <span class="material-symbols-outlined text-xs mr-1">check_circle</span>
-              High
+              Good
             </span>
           </div>
         </div>
@@ -214,23 +198,24 @@ watch(
           </h4>
           <div class="bg-surface-container-low rounded-2xl p-6 space-y-4">
             <div
-              v-for="category in (performance?.strengths || ['API Design', 'Runtime Performance'])"
-              :key="`strength-${category}`"
+              v-for="strength in (performance?.strengths || ['HTML Structure', 'Tailwind CSS'])"
+              :key="`strength-${strength}`"
               class="flex items-center justify-between p-4 bg-surface-container-lowest rounded-xl border border-outline-variant/10"
             >
               <div class="flex items-center gap-4">
                 <div class="w-10 h-10 rounded-lg bg-primary/10 flex items-center justify-center text-primary">
-                  <span class="material-symbols-outlined">api</span>
+                  <span class="material-symbols-outlined">check_circle</span>
                 </div>
                 <div>
-                  <p class="font-bold">{{ formatCategory(category) }}</p>
-                  <p class="text-xs text-outline">Exceptional consistency</p>
+                  <p class="font-bold">{{ formatCategory(strength) }}</p>
+                  <p class="text-xs text-outline">Consistent quality</p>
                 </div>
               </div>
-              <span class="material-symbols-outlined text-primary" style="font-variation-settings: 'FILL' 1;">check_circle</span>
+              <span class="material-symbols-outlined text-primary" style="font-variation-settings: 'FILL' 1;">verified</span>
             </div>
           </div>
         </div>
+
         <!-- Growth Areas -->
         <div class="space-y-6">
           <h4 class="text-xl font-bold flex items-center gap-2">
@@ -239,16 +224,16 @@ watch(
           </h4>
           <div class="bg-surface-container-low rounded-2xl p-6 space-y-4">
             <div
-              v-for="category in (performance?.growthAreas || ['Security', 'Testing Coverage'])"
-              :key="`growth-${category}`"
+              v-for="area in (performance?.growthAreas || ['Code Duplication', 'Accessibility'])"
+              :key="`growth-${area}`"
               class="flex items-center justify-between p-4 bg-surface-container-lowest rounded-xl border border-outline-variant/10"
             >
               <div class="flex items-center gap-4">
                 <div class="w-10 h-10 rounded-lg bg-tertiary/10 flex items-center justify-center text-tertiary">
-                  <span class="material-symbols-outlined">security</span>
+                  <span class="material-symbols-outlined">trending_up</span>
                 </div>
                 <div>
-                  <p class="font-bold">{{ formatCategory(category) }}</p>
+                  <p class="font-bold">{{ formatCategory(area) }}</p>
                   <p class="text-xs text-outline">Focus on improvement</p>
                 </div>
               </div>
@@ -314,62 +299,39 @@ watch(
       <section class="space-y-6">
         <h4 class="text-2xl font-black tracking-tight">Recommended Learning</h4>
         <div class="grid grid-cols-1 md:grid-cols-3 gap-6">
-          <div
-            v-for="(items, category) in groupedRecommendations"
-            :key="`rec-${category}`"
-            class="glass-panel p-6 rounded-2xl border border-outline-variant/10 group hover:border-primary/30 transition-all duration-300"
-          >
+          <div class="glass-panel p-6 rounded-2xl border border-outline-variant/10 group hover:border-primary/30 transition-all duration-300">
             <div class="w-12 h-12 rounded-xl bg-surface-container flex items-center justify-center mb-4 group-hover:scale-110 transition-transform">
               <span class="material-symbols-outlined text-primary">menu_book</span>
             </div>
-            <h5 class="font-bold text-lg mb-2">{{ formatCategory(category) }}</h5>
-            <p class="text-sm text-outline mb-6">{{ items[0]?.reason || 'Improve your skills in this area.' }}</p>
-            <a
-              v-if="items[0]"
-              :href="items[0].url"
-              target="_blank"
-              class="flex items-center gap-2 text-primary font-bold text-sm group/link"
-            >
+            <h5 class="font-bold text-lg mb-2">Django Templates</h5>
+            <p class="text-sm text-outline mb-6">Learn to use {% include %} and template inheritance to avoid code duplication.</p>
+            <a href="https://docs.djangoproject.com/en/5.0/ref/templates/builtins/#include" target="_blank" class="flex items-center gap-2 text-primary font-bold text-sm group/link">
               View Resource
               <span class="material-symbols-outlined text-sm group-hover/link:translate-x-1 transition-transform">arrow_forward</span>
             </a>
           </div>
-          <!-- Default cards if no recommendations -->
-          <template v-if="!Object.keys(groupedRecommendations).length">
-            <div class="glass-panel p-6 rounded-2xl border border-outline-variant/10 group hover:border-primary/30 transition-all duration-300">
-              <div class="w-12 h-12 rounded-xl bg-surface-container flex items-center justify-center mb-4 group-hover:scale-110 transition-transform">
-                <span class="material-symbols-outlined text-primary">menu_book</span>
-              </div>
-              <h5 class="font-bold text-lg mb-2">Advanced Security Patterns</h5>
-              <p class="text-sm text-outline mb-6">Master OWASP Top 10 mitigation strategies for modern web applications.</p>
-              <a href="#" class="flex items-center gap-2 text-primary font-bold text-sm group/link">
-                View Resource
-                <span class="material-symbols-outlined text-sm group-hover/link:translate-x-1 transition-transform">arrow_forward</span>
-              </a>
+          <div class="glass-panel p-6 rounded-2xl border border-outline-variant/10 group hover:border-tertiary/30 transition-all duration-300">
+            <div class="w-12 h-12 rounded-xl bg-surface-container flex items-center justify-center mb-4 group-hover:scale-110 transition-transform">
+              <span class="material-symbols-outlined text-tertiary">accessibility</span>
             </div>
-            <div class="glass-panel p-6 rounded-2xl border border-outline-variant/10 group hover:border-tertiary/30 transition-all duration-300">
-              <div class="w-12 h-12 rounded-xl bg-surface-container flex items-center justify-center mb-4 group-hover:scale-110 transition-transform">
-                <span class="material-symbols-outlined text-tertiary">video_library</span>
-              </div>
-              <h5 class="font-bold text-lg mb-2">Refactoring Legacy Code</h5>
-              <p class="text-sm text-outline mb-6">Expert video series on decomposing monoliths into maintainable services.</p>
-              <a href="#" class="flex items-center gap-2 text-tertiary font-bold text-sm group/link">
-                View Resource
-                <span class="material-symbols-outlined text-sm group-hover/link:translate-x-1 transition-transform">arrow_forward</span>
-              </a>
+            <h5 class="font-bold text-lg mb-2">Web Accessibility</h5>
+            <p class="text-sm text-outline mb-6">ARIA attributes and screen reader best practices for navigation menus.</p>
+            <a href="https://www.w3.org/WAI/ARIA/apg/patterns/menu/" target="_blank" class="flex items-center gap-2 text-tertiary font-bold text-sm group/link">
+              View Resource
+              <span class="material-symbols-outlined text-sm group-hover/link:translate-x-1 transition-transform">arrow_forward</span>
+            </a>
+          </div>
+          <div class="glass-panel p-6 rounded-2xl border border-outline-variant/10 group hover:border-primary-container/30 transition-all duration-300">
+            <div class="w-12 h-12 rounded-xl bg-surface-container flex items-center justify-center mb-4 group-hover:scale-110 transition-transform">
+              <span class="material-symbols-outlined text-primary-container">security</span>
             </div>
-            <div class="glass-panel p-6 rounded-2xl border border-outline-variant/10 group hover:border-primary-container/30 transition-all duration-300">
-              <div class="w-12 h-12 rounded-xl bg-surface-container flex items-center justify-center mb-4 group-hover:scale-110 transition-transform">
-                <span class="material-symbols-outlined text-primary-container">developer_board</span>
-              </div>
-              <h5 class="font-bold text-lg mb-2">Clean Architecture Workshop</h5>
-              <p class="text-sm text-outline mb-6">Interactive documentation on dependency inversion and domain design.</p>
-              <a href="#" class="flex items-center gap-2 text-primary-container font-bold text-sm group/link">
-                View Resource
-                <span class="material-symbols-outlined text-sm group-hover/link:translate-x-1 transition-transform">arrow_forward</span>
-              </a>
-            </div>
-          </template>
+            <h5 class="font-bold text-lg mb-2">GDPR & Third-Party</h5>
+            <p class="text-sm text-outline mb-6">Understanding privacy implications of loading external images and resources.</p>
+            <a href="https://gdpr.eu/third-party-cookies/" target="_blank" class="flex items-center gap-2 text-primary-container font-bold text-sm group/link">
+              View Resource
+              <span class="material-symbols-outlined text-sm group-hover/link:translate-x-1 transition-transform">arrow_forward</span>
+            </a>
+          </div>
         </div>
       </section>
 

@@ -1,28 +1,76 @@
 <script setup lang="ts">
-import { ref, computed, onMounted } from 'vue';
+import { ref, computed, onMounted, watch } from 'vue';
+import { useRouter } from 'vue-router';
 import AppShell from '@/components/layout/AppShell.vue';
-import FindingCard from '@/components/findings/FindingCard.vue';
 import { useFindingsStore } from '@/stores/findings';
+import { useProjectsStore } from '@/stores/projects';
 
+const router = useRouter();
 const findingsStore = useFindingsStore();
+const projectsStore = useProjectsStore();
 
 const selectedCategory = ref('all');
 const selectedDifficulty = ref('all');
 const selectedAuthor = ref('all');
 
-const categories = ['All', 'Security', 'Performance', 'CodeStyle', 'Testing', 'Architecture'];
-const difficulties = ['All', 'Beginner', 'Intermediate', 'Advanced'];
+const categories = ['SECURITY', 'PERFORMANCE', 'CODE_STYLE', 'TESTING', 'ARCHITECTURE'];
+const difficulties = ['BEGINNER', 'INTERMEDIATE', 'ADVANCED'];
 
-onMounted(() => {
-  findingsStore.fetchFindings();
+onMounted(async () => {
+  await projectsStore.fetchProjects();
+  if (projectsStore.selectedProjectId) {
+    await findingsStore.fetchFindings({ projectId: projectsStore.selectedProjectId });
+  }
 });
 
+watch(() => projectsStore.selectedProjectId, async (newId) => {
+  if (newId) {
+    selectedCategory.value = 'all';
+    selectedDifficulty.value = 'all';
+    selectedAuthor.value = 'all';
+    await findingsStore.fetchFindings({ projectId: newId });
+  }
+});
+
+// Get unique authors from findings
+const authors = computed(() => {
+  const authorSet = new Set<string>();
+  findingsStore.findings.forEach(f => {
+    if (f.commitAuthor) authorSet.add(f.commitAuthor);
+  });
+  return Array.from(authorSet);
+});
+
+// Filter findings
 const filteredFindings = computed(() => {
   return findingsStore.findings.filter((finding) => {
     if (selectedCategory.value !== 'all' && finding.category !== selectedCategory.value) return false;
     if (selectedDifficulty.value !== 'all' && finding.difficulty !== selectedDifficulty.value) return false;
+    if (selectedAuthor.value !== 'all' && finding.commitAuthor !== selectedAuthor.value) return false;
     return true;
   });
+});
+
+// Group findings by file path
+const groupedByFile = computed(() => {
+  const groups: Record<string, typeof filteredFindings.value> = {};
+  filteredFindings.value.forEach(finding => {
+    const key = finding.filePath;
+    if (!groups[key]) groups[key] = [];
+    groups[key].push(finding);
+  });
+  return groups;
+});
+
+const fileGroups = computed(() => {
+  return Object.entries(groupedByFile.value).map(([filePath, findings]) => ({
+    filePath,
+    findings,
+    branch: findings[0]?.review?.branch || 'main',
+    categories: [...new Set(findings.map(f => f.category))],
+    difficulties: [...new Set(findings.map(f => f.difficulty))],
+    authors: [...new Set(findings.map(f => f.commitAuthor).filter(Boolean))],
+  }));
 });
 
 const currentDate = computed(() => {
@@ -34,6 +82,27 @@ const currentDate = computed(() => {
     day: 'numeric',
   });
 });
+
+function getCategoryClass(category: string) {
+  const cat = category.toLowerCase().replace('_', '');
+  return {
+    security: 'bg-error/10 text-error border-error/20',
+    performance: 'bg-tertiary/10 text-tertiary border-tertiary/20',
+    codestyle: 'bg-primary/10 text-primary border-primary/20',
+    testing: 'bg-primary-container/10 text-primary-container border-primary-container/20',
+    architecture: 'bg-secondary/10 text-secondary border-secondary/20',
+  }[cat] || 'bg-outline/10 text-outline border-outline/20';
+}
+
+function openFile(filePath: string) {
+  // Navigate to file detail view with all findings for this file
+  const findingIds = groupedByFile.value[filePath].map(f => f.id);
+  router.push({ path: '/file-review', query: { file: filePath, ids: findingIds.join(',') } });
+}
+
+function formatCategory(cat: string) {
+  return cat.replace('_', ' ');
+}
 </script>
 
 <template>
@@ -47,12 +116,26 @@ const currentDate = computed(() => {
         <p class="text-outline text-sm">
           Welcome back. You have 
           <span class="text-primary font-semibold">{{ filteredFindings.length }} pending reviews</span>
-          across 3 active projects.
+          across {{ fileGroups.length }} files.
         </p>
       </header>
 
       <!-- Filter Bar -->
       <div class="flex flex-wrap items-center gap-4 mb-8 bg-surface-container-low p-3 rounded-xl border border-outline-variant/10">
+        <!-- Project Selector -->
+        <div class="flex items-center gap-2 px-3 py-1.5 bg-surface-container rounded-lg border border-outline-variant/20">
+          <span class="material-symbols-outlined text-sm text-outline">folder</span>
+          <select
+            :value="projectsStore.selectedProjectId"
+            @change="projectsStore.setSelectedProject(Number(($event.target as HTMLSelectElement).value))"
+            class="bg-transparent border-none text-xs text-on-surface focus:ring-0 cursor-pointer"
+          >
+            <option v-for="project in projectsStore.projects" :key="project.id" :value="project.id">
+              {{ project.displayName }}
+            </option>
+          </select>
+        </div>
+
         <!-- Category Filter -->
         <div class="flex items-center gap-2 px-3 py-1.5 bg-surface-container rounded-lg border border-outline-variant/20">
           <span class="material-symbols-outlined text-sm text-outline">filter_list</span>
@@ -61,8 +144,8 @@ const currentDate = computed(() => {
             class="bg-transparent border-none text-xs text-on-surface focus:ring-0 cursor-pointer"
           >
             <option value="all">Category: All</option>
-            <option v-for="cat in categories.slice(1)" :key="cat" :value="cat">
-              {{ cat }}
+            <option v-for="cat in categories" :key="cat" :value="cat">
+              {{ formatCategory(cat) }}
             </option>
           </select>
         </div>
@@ -75,8 +158,8 @@ const currentDate = computed(() => {
             class="bg-transparent border-none text-xs text-on-surface focus:ring-0 cursor-pointer"
           >
             <option value="all">Difficulty: All</option>
-            <option v-for="diff in difficulties.slice(1)" :key="diff" :value="diff">
-              {{ diff }}
+            <option v-for="diff in difficulties" :key="diff" :value="diff">
+              {{ diff.charAt(0) + diff.slice(1).toLowerCase() }}
             </option>
           </select>
         </div>
@@ -89,32 +172,96 @@ const currentDate = computed(() => {
             class="bg-transparent border-none text-xs text-on-surface focus:ring-0 cursor-pointer"
           >
             <option value="all">Author: All</option>
+            <option v-for="author in authors" :key="author" :value="author">
+              {{ author }}
+            </option>
           </select>
         </div>
 
         <!-- Results Count -->
         <div class="ml-auto">
           <span class="text-[10px] text-outline uppercase font-bold tracking-tighter">
-            Showing {{ filteredFindings.length }} findings
+            {{ filteredFindings.length }} findings in {{ fileGroups.length }} files
           </span>
         </div>
       </div>
 
-      <!-- Finding Cards Grid -->
+      <!-- File Cards Grid -->
       <div class="grid grid-cols-1 lg:grid-cols-2 xl:grid-cols-3 gap-6">
-        <FindingCard
-          v-for="finding in filteredFindings"
-          :key="finding.id"
-          :finding="finding"
-        />
+        <div
+          v-for="group in fileGroups"
+          :key="group.filePath"
+          class="bg-surface-container-low p-6 rounded-xl border border-outline-variant/5 hover:border-primary/20 transition-all duration-300 cursor-pointer group relative"
+          @click="openFile(group.filePath)"
+        >
+          <!-- File Path & Branch -->
+          <div class="flex justify-between items-start mb-4">
+            <div class="flex items-center gap-2 text-outline text-xs font-mono">
+              <span class="material-symbols-outlined text-sm">description</span>
+              {{ group.filePath.split('/').pop() }}
+            </div>
+            <span class="bg-surface-container-highest text-outline text-[10px] px-2 py-0.5 rounded font-medium">
+              {{ group.branch.split('/').pop() }}
+            </span>
+          </div>
+
+          <!-- Full path -->
+          <p class="text-on-surface-variant text-xs font-mono mb-4 truncate">
+            {{ group.filePath }}
+          </p>
+
+          <!-- Category Badges -->
+          <div class="flex flex-wrap gap-2 mb-4">
+            <span
+              v-for="cat in group.categories"
+              :key="cat"
+              :class="['px-2 py-0.5 rounded-full text-[10px] font-bold uppercase tracking-wider border', getCategoryClass(cat)]"
+            >
+              {{ formatCategory(cat) }}
+            </span>
+          </div>
+
+          <!-- Finding Count -->
+          <div class="flex items-center justify-between mt-auto">
+            <div class="flex items-center gap-2">
+              <span class="text-2xl font-black text-primary">{{ group.findings.length }}</span>
+              <span class="text-xs text-outline">{{ group.findings.length === 1 ? 'finding' : 'findings' }}</span>
+            </div>
+            <div class="flex -space-x-2">
+              <div
+                v-for="author in group.authors.slice(0, 3)"
+                :key="author"
+                class="w-6 h-6 rounded-full bg-surface-container-highest flex items-center justify-center text-[10px] font-bold text-primary border-2 border-surface-container-low"
+              >
+                {{ author?.charAt(0).toUpperCase() }}
+              </div>
+            </div>
+          </div>
+
+          <!-- View Details -->
+          <div class="absolute bottom-6 right-6 opacity-0 group-hover:opacity-100 transition-opacity">
+            <span class="text-primary text-xs font-bold flex items-center gap-1">
+              Review File
+              <span class="material-symbols-outlined text-sm">arrow_forward</span>
+            </span>
+          </div>
+        </div>
 
         <!-- Empty State -->
         <div
-          v-if="filteredFindings.length === 0"
+          v-if="fileGroups.length === 0 && !findingsStore.loading"
           class="col-span-full flex flex-col items-center justify-center py-16"
         >
           <span class="material-symbols-outlined text-6xl text-outline mb-4">inbox</span>
           <p class="text-on-surface-variant text-lg">No findings match your filters</p>
+        </div>
+
+        <!-- Loading State -->
+        <div
+          v-if="findingsStore.loading"
+          class="col-span-full flex items-center justify-center py-16"
+        >
+          <span class="material-symbols-outlined text-4xl text-outline animate-spin">progress_activity</span>
         </div>
       </div>
     </div>
