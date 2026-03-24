@@ -4,14 +4,21 @@ import { useRouter } from 'vue-router';
 import AppShell from '@/components/layout/AppShell.vue';
 import { useFindingsStore } from '@/stores/findings';
 import { useProjectsStore } from '@/stores/projects';
+import { useAuthStore } from '@/stores/auth';
+import { api } from '@/composables/useApi';
 
 const router = useRouter();
 const findingsStore = useFindingsStore();
 const projectsStore = useProjectsStore();
+const authStore = useAuthStore();
 
 const selectedCategory = ref('all');
 const selectedDifficulty = ref('all');
 const selectedAuthor = ref('all');
+
+// Sync state
+const syncing = ref(false);
+const syncMessage = ref<{ type: 'success' | 'error'; text: string } | null>(null);
 
 const categories = ['SECURITY', 'PERFORMANCE', 'CODE_STYLE', 'TESTING', 'ARCHITECTURE'];
 const difficulties = ['BEGINNER', 'INTERMEDIATE', 'ADVANCED'];
@@ -103,6 +110,37 @@ function openFile(filePath: string) {
 function formatCategory(cat: string) {
   return cat.replace('_', ' ');
 }
+
+// Sync/refresh function for admins
+async function triggerSync() {
+  if (!projectsStore.selectedProjectId || syncing.value) return;
+  
+  syncing.value = true;
+  syncMessage.value = null;
+  
+  try {
+    const { data } = await api.reviews.trigger(projectsStore.selectedProjectId);
+    syncMessage.value = {
+      type: 'success',
+      text: data.totalFindings > 0 
+        ? `Synced! Found ${data.totalFindings} new findings.`
+        : 'Synced. No new issues found.'
+    };
+    // Refresh findings list
+    await findingsStore.fetchFindings({ projectId: projectsStore.selectedProjectId });
+  } catch (error: any) {
+    syncMessage.value = {
+      type: 'error',
+      text: error?.response?.data?.error || 'Sync failed. Please try again.'
+    };
+  } finally {
+    syncing.value = false;
+    // Auto-hide message after 5 seconds
+    setTimeout(() => {
+      syncMessage.value = null;
+    }, 5000);
+  }
+}
 </script>
 
 <template>
@@ -176,6 +214,39 @@ function formatCategory(cat: string) {
               {{ author }}
             </option>
           </select>
+        </div>
+
+        <!-- Sync Button (Admin Only) -->
+        <button
+          v-if="authStore.isAdmin"
+          @click="triggerSync"
+          :disabled="syncing || !projectsStore.selectedProjectId"
+          class="flex items-center gap-2 px-3 py-1.5 bg-primary/10 hover:bg-primary/20 rounded-lg border border-primary/20 transition-all duration-200 disabled:opacity-50 disabled:cursor-not-allowed"
+        >
+          <span 
+            :class="['material-symbols-outlined text-sm text-primary', { 'animate-spin': syncing }]"
+          >
+            {{ syncing ? 'progress_activity' : 'sync' }}
+          </span>
+          <span class="text-xs text-primary font-medium">
+            {{ syncing ? 'Syncing...' : 'Refresh' }}
+          </span>
+        </button>
+
+        <!-- Sync Message -->
+        <div
+          v-if="syncMessage"
+          :class="[
+            'flex items-center gap-2 px-3 py-1.5 rounded-lg text-xs font-medium transition-all',
+            syncMessage.type === 'success' 
+              ? 'bg-green-500/10 text-green-400 border border-green-500/20' 
+              : 'bg-error/10 text-error border border-error/20'
+          ]"
+        >
+          <span class="material-symbols-outlined text-sm">
+            {{ syncMessage.type === 'success' ? 'check_circle' : 'error' }}
+          </span>
+          {{ syncMessage.text }}
         </div>
 
         <!-- Results Count -->
