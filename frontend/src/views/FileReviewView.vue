@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, onMounted, ref } from 'vue';
+import { computed, onMounted, ref, watch, nextTick } from 'vue';
 import { useRoute, useRouter } from 'vue-router';
 import AppShell from '@/components/layout/AppShell.vue';
 import { useFindingsStore, type Finding } from '@/stores/findings';
@@ -17,6 +17,9 @@ const loading = ref(true);
 const selectedFindingId = ref<number | null>(null);
 const actionLoading = ref(false);
 const toastMessage = ref('');
+
+// Track line ranges for each finding
+const findingLineRanges = ref<Map<number, { start: number; end: number }>>(new Map());
 
 const filePath = computed(() => route.query.file as string);
 const findingIds = computed(() => (route.query.ids as string)?.split(',').map(Number) || []);
@@ -43,11 +46,42 @@ onMounted(async () => {
         // Use original code as fallback - combine all snippets
         fileContent.value = findings.value.map(f => f.originalCode).join('\n\n// --- Next Issue ---\n\n');
       }
+      
+      // Calculate line ranges for all findings
+      calculateLineRanges();
     }
   } finally {
     loading.value = false;
   }
 });
+
+function calculateLineRanges() {
+  const content = fileContent.value;
+  const fileLines = content.split('\n');
+  const ranges = new Map<number, { start: number; end: number }>();
+  
+  findings.value.forEach(finding => {
+    const snippetLines = finding.originalCode.split('\n');
+    
+    // Try to find the snippet in the file content
+    for (let i = 0; i <= fileLines.length - snippetLines.length; i++) {
+      let match = true;
+      for (let j = 0; j < snippetLines.length; j++) {
+        // Compare trimmed lines for more flexible matching
+        if (fileLines[i + j]?.trim() !== snippetLines[j]?.trim()) {
+          match = false;
+          break;
+        }
+      }
+      if (match) {
+        ranges.set(finding.id, { start: i, end: i + snippetLines.length - 1 });
+        break;
+      }
+    }
+  });
+  
+  findingLineRanges.value = ranges;
+}
 
 const selectedFinding = computed(() => 
   findings.value.find(f => f.id === selectedFindingId.value) || null
@@ -59,37 +93,28 @@ const branch = computed(() => selectedFinding.value?.review?.branch || 'main');
 const originalLines = computed(() => {
   const content = fileContent.value || selectedFinding.value?.originalCode || '';
   const lines = content.split('\n');
+  const currentSelectedId = selectedFindingId.value;
   
-  // Find which lines belong to each finding's snippet
-  const issueRanges: Map<number, number> = new Map(); // lineIndex -> findingId
-  
-  findings.value.forEach(finding => {
-    const snippetLines = finding.originalCode.split('\n');
-    const fileLines = content.split('\n');
+  return lines.map((lineContent, idx) => {
+    let lineFindingId: number | null = null;
+    let isSelected = false;
     
-    for (let i = 0; i <= fileLines.length - snippetLines.length; i++) {
-      let match = true;
-      for (let j = 0; j < snippetLines.length; j++) {
-        if (fileLines[i + j]?.trim() !== snippetLines[j]?.trim()) {
-          match = false;
-          break;
-        }
-      }
-      if (match) {
-        for (let j = 0; j < snippetLines.length; j++) {
-          issueRanges.set(i + j, finding.id);
-        }
+    // Check if this line belongs to any finding
+    for (const [findingId, range] of findingLineRanges.value.entries()) {
+      if (idx >= range.start && idx <= range.end) {
+        lineFindingId = findingId;
+        isSelected = findingId === currentSelectedId;
         break;
       }
     }
+    
+    return {
+      number: idx + 1,
+      content: lineContent,
+      findingId: lineFindingId,
+      isSelected,
+    };
   });
-  
-  return lines.map((content, idx) => ({
-    number: idx + 1,
-    content,
-    findingId: issueRanges.get(idx) || null,
-    isSelected: issueRanges.get(idx) === selectedFindingId.value,
-  }));
 });
 
 // Optimized code lines (for the selected finding)
@@ -100,6 +125,15 @@ const optimizedLines = computed(() => {
     content,
   }));
 });
+
+// Get line range for display
+function getLineRange(findingId: number): string {
+  const range = findingLineRanges.value.get(findingId);
+  if (range) {
+    return `Lines ${range.start + 1}-${range.end + 1}`;
+  }
+  return '';
+}
 
 function getCategoryClass(category: string) {
   const cat = category?.toLowerCase().replace('_', '');
@@ -112,12 +146,16 @@ function getCategoryClass(category: string) {
   }[cat] || 'bg-outline/10 text-outline border-outline/20';
 }
 
-function scrollToIssue(findingId: number) {
+async function scrollToIssue(findingId: number) {
   selectedFindingId.value = findingId;
+  
+  // Wait for DOM to update
+  await nextTick();
+  
   // Find first line of this issue
-  const lineIdx = originalLines.value.findIndex(l => l.findingId === findingId);
-  if (lineIdx >= 0) {
-    const element = document.getElementById(`line-${lineIdx + 1}`);
+  const range = findingLineRanges.value.get(findingId);
+  if (range) {
+    const element = document.getElementById(`line-${range.start + 1}`);
     element?.scrollIntoView({ behavior: 'smooth', block: 'center' });
   }
 }
@@ -228,7 +266,8 @@ function goBack() {
                   {{ finding.explanation.slice(0, 80) }}...
                 </p>
                 <div class="flex items-center gap-2 mt-2 text-[10px] text-outline">
-                  <span v-if="finding.markedUnderstood" class="text-primary">✓ Understood</span>
+                  <span>{{ getLineRange(finding.id) }}</span>
+                  <span v-if="finding.markedUnderstood" class="text-primary ml-auto">✓ Understood</span>
                 </div>
               </button>
             </div>
@@ -245,14 +284,24 @@ function goBack() {
                     <span class="material-symbols-outlined text-sm text-error">warning</span>
                     <span class="text-xs font-bold uppercase tracking-widest text-outline">Original</span>
                   </div>
-                  <span class="text-[10px] text-outline">{{ originalLines.length }} lines</span>
+                  <div class="flex items-center gap-3">
+                    <div class="flex items-center gap-1">
+                      <span class="w-3 h-3 bg-error/20 border-l-2 border-error"></span>
+                      <span class="text-[10px] text-outline">Selected</span>
+                    </div>
+                    <div class="flex items-center gap-1">
+                      <span class="w-3 h-3 bg-tertiary/10 border-l-2 border-tertiary/50"></span>
+                      <span class="text-[10px] text-outline">Other issues</span>
+                    </div>
+                    <span class="text-[10px] text-outline">{{ originalLines.length }} lines</span>
+                  </div>
                 </div>
                 <div class="flex-1 overflow-auto font-mono text-sm">
                   <table class="w-full border-collapse">
                     <tbody>
                       <tr
                         v-for="line in originalLines"
-                        :key="line.number"
+                        :key="`orig-${line.number}-${selectedFindingId}`"
                         :id="`line-${line.number}`"
                         :class="[
                           line.isSelected ? 'bg-error/20' : '',
@@ -289,7 +338,7 @@ function goBack() {
                     <tbody>
                       <tr
                         v-for="line in optimizedLines"
-                        :key="line.number"
+                        :key="`opt-${line.number}`"
                         class="bg-primary/5"
                       >
                         <td class="w-10 text-right pr-3 py-0.5 text-outline/40 select-none border-r border-outline-variant/10 sticky left-0 bg-surface-container text-xs">
@@ -313,6 +362,7 @@ function goBack() {
                       {{ selectedFinding.category.replace('_', ' ') }}
                     </span>
                     <span class="text-xs text-outline">by {{ selectedFinding.commitAuthor }}</span>
+                    <span class="text-xs text-outline">{{ getLineRange(selectedFinding.id) }}</span>
                   </div>
                   
                   <h3 class="text-lg font-bold text-on-surface mb-2">Why This Is Better</h3>
