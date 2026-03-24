@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, onMounted, ref, watch } from 'vue';
+import { computed, onMounted, ref } from 'vue';
 import { useRoute, useRouter } from 'vue-router';
 import AppShell from '@/components/layout/AppShell.vue';
 import { useFindingsStore, type Finding } from '@/stores/findings';
@@ -17,7 +17,6 @@ const loading = ref(true);
 const selectedFindingId = ref<number | null>(null);
 const actionLoading = ref(false);
 const toastMessage = ref('');
-const showOptimized = ref(false);
 
 const filePath = computed(() => route.query.file as string);
 const findingIds = computed(() => (route.query.ids as string)?.split(',').map(Number) || []);
@@ -25,7 +24,6 @@ const findingIds = computed(() => (route.query.ids as string)?.split(',').map(Nu
 onMounted(async () => {
   loading.value = true;
   try {
-    // Fetch all findings for this file
     const fetchedFindings: Finding[] = [];
     for (const id of findingIds.value) {
       await findingsStore.fetchFinding(id);
@@ -42,8 +40,8 @@ onMounted(async () => {
         const { data } = await api.findings.getFileContent(findings.value[0].id);
         fileContent.value = data.content;
       } catch {
-        // Use original code as fallback
-        fileContent.value = findings.value[0].originalCode;
+        // Use original code as fallback - combine all snippets
+        fileContent.value = findings.value.map(f => f.originalCode).join('\n\n// --- Next Issue ---\n\n');
       }
     }
   } finally {
@@ -57,95 +55,50 @@ const selectedFinding = computed(() =>
 
 const branch = computed(() => selectedFinding.value?.review?.branch || 'main');
 
-// Parse the file into lines with issue annotations
-const annotatedLines = computed(() => {
-  const content = showOptimized.value && selectedFinding.value 
-    ? selectedFinding.value.optimizedCode 
-    : fileContent.value || selectedFinding.value?.originalCode || '';
-  
+// Parse original file into lines with issue annotations
+const originalLines = computed(() => {
+  const content = fileContent.value || selectedFinding.value?.originalCode || '';
   const lines = content.split('\n');
   
   // Find which lines belong to each finding's snippet
-  const issueRanges: Map<number, { findingId: number; type: 'start' | 'middle' | 'end' | 'single' }> = new Map();
+  const issueRanges: Map<number, number> = new Map(); // lineIndex -> findingId
   
-  if (!showOptimized.value) {
-    findings.value.forEach(finding => {
-      const snippetLines = finding.originalCode.split('\n');
-      // Try to find the snippet in the file content
-      const fileLines = (fileContent.value || finding.originalCode).split('\n');
-      
-      for (let i = 0; i <= fileLines.length - snippetLines.length; i++) {
-        let match = true;
-        for (let j = 0; j < snippetLines.length; j++) {
-          if (fileLines[i + j]?.trim() !== snippetLines[j]?.trim()) {
-            match = false;
-            break;
-          }
-        }
-        if (match) {
-          for (let j = 0; j < snippetLines.length; j++) {
-            const lineNum = i + j;
-            if (snippetLines.length === 1) {
-              issueRanges.set(lineNum, { findingId: finding.id, type: 'single' });
-            } else if (j === 0) {
-              issueRanges.set(lineNum, { findingId: finding.id, type: 'start' });
-            } else if (j === snippetLines.length - 1) {
-              issueRanges.set(lineNum, { findingId: finding.id, type: 'end' });
-            } else {
-              issueRanges.set(lineNum, { findingId: finding.id, type: 'middle' });
-            }
-          }
+  findings.value.forEach(finding => {
+    const snippetLines = finding.originalCode.split('\n');
+    const fileLines = content.split('\n');
+    
+    for (let i = 0; i <= fileLines.length - snippetLines.length; i++) {
+      let match = true;
+      for (let j = 0; j < snippetLines.length; j++) {
+        if (fileLines[i + j]?.trim() !== snippetLines[j]?.trim()) {
+          match = false;
           break;
         }
       }
-    });
-  }
-  
-  return lines.map((content, idx) => {
-    const issue = issueRanges.get(idx);
-    return {
-      number: idx + 1,
-      content,
-      hasIssue: !!issue,
-      findingId: issue?.findingId,
-      isStart: issue?.type === 'start' || issue?.type === 'single',
-      isEnd: issue?.type === 'end' || issue?.type === 'single',
-      isSelected: issue?.findingId === selectedFindingId.value,
-    };
-  });
-});
-
-// Group consecutive lines with issues for collapse indicators
-const issueBlocks = computed(() => {
-  const blocks: { startLine: number; endLine: number; findingId: number; finding: Finding }[] = [];
-  let currentBlock: { startLine: number; endLine: number; findingId: number } | null = null;
-  
-  annotatedLines.value.forEach((line) => {
-    if (line.hasIssue && line.findingId) {
-      if (currentBlock && currentBlock.findingId === line.findingId) {
-        currentBlock.endLine = line.number;
-      } else {
-        if (currentBlock) {
-          const finding = findings.value.find(f => f.id === currentBlock!.findingId);
-          if (finding) blocks.push({ ...currentBlock, finding });
+      if (match) {
+        for (let j = 0; j < snippetLines.length; j++) {
+          issueRanges.set(i + j, finding.id);
         }
-        currentBlock = { startLine: line.number, endLine: line.number, findingId: line.findingId };
-      }
-    } else {
-      if (currentBlock) {
-        const finding = findings.value.find(f => f.id === currentBlock!.findingId);
-        if (finding) blocks.push({ ...currentBlock, finding });
-        currentBlock = null;
+        break;
       }
     }
   });
   
-  if (currentBlock) {
-    const finding = findings.value.find(f => f.id === currentBlock!.findingId);
-    if (finding) blocks.push({ ...currentBlock, finding });
-  }
-  
-  return blocks;
+  return lines.map((content, idx) => ({
+    number: idx + 1,
+    content,
+    findingId: issueRanges.get(idx) || null,
+    isSelected: issueRanges.get(idx) === selectedFindingId.value,
+  }));
+});
+
+// Optimized code lines (for the selected finding)
+const optimizedLines = computed(() => {
+  if (!selectedFinding.value) return [];
+  return selectedFinding.value.optimizedCode.split('\n').map((content, idx) => ({
+    number: idx + 1,
+    content,
+  }));
 });
 
 function getCategoryClass(category: string) {
@@ -159,21 +112,12 @@ function getCategoryClass(category: string) {
   }[cat] || 'bg-outline/10 text-outline border-outline/20';
 }
 
-function getDiffClass(line: typeof annotatedLines.value[0]) {
-  if (!line.hasIssue) return '';
-  if (showOptimized.value) {
-    return 'bg-primary/10 border-l-4 border-primary';
-  }
-  return line.isSelected 
-    ? 'bg-error/20 border-l-4 border-error' 
-    : 'bg-tertiary/10 border-l-4 border-tertiary/50';
-}
-
 function scrollToIssue(findingId: number) {
   selectedFindingId.value = findingId;
-  const block = issueBlocks.value.find(b => b.findingId === findingId);
-  if (block) {
-    const element = document.getElementById(`line-${block.startLine}`);
+  // Find first line of this issue
+  const lineIdx = originalLines.value.findIndex(l => l.findingId === findingId);
+  if (lineIdx >= 0) {
+    const element = document.getElementById(`line-${lineIdx + 1}`);
     element?.scrollIntoView({ behavior: 'smooth', block: 'center' });
   }
 }
@@ -229,8 +173,8 @@ function goBack() {
 
 <template>
   <AppShell>
-    <div class="p-6 flex-1 flex flex-col h-[calc(100vh-64px)]">
-      <div class="max-w-[1400px] mx-auto w-full flex flex-col h-full">
+    <div class="p-4 flex-1 flex flex-col h-[calc(100vh-64px)]">
+      <div class="w-full flex flex-col h-full">
         <!-- Header -->
         <div class="flex items-center justify-between mb-4 flex-shrink-0">
           <div class="flex items-center gap-4">
@@ -253,37 +197,13 @@ function goBack() {
               </div>
             </div>
           </div>
-          
-          <!-- View Toggle -->
-          <div class="flex items-center gap-2 bg-surface-container-low p-1 rounded-lg">
-            <button
-              :class="[
-                'px-4 py-2 rounded-md text-sm font-medium transition-all',
-                !showOptimized ? 'bg-error/20 text-error' : 'text-outline hover:text-on-surface'
-              ]"
-              @click="showOptimized = false"
-            >
-              <span class="material-symbols-outlined text-sm mr-1 align-middle">warning</span>
-              Original
-            </button>
-            <button
-              :class="[
-                'px-4 py-2 rounded-md text-sm font-medium transition-all',
-                showOptimized ? 'bg-primary/20 text-primary' : 'text-outline hover:text-on-surface'
-              ]"
-              @click="showOptimized = true"
-            >
-              <span class="material-symbols-outlined text-sm mr-1 align-middle">check_circle</span>
-              Optimized
-            </button>
-          </div>
         </div>
 
         <!-- Main Content Area -->
         <div class="flex gap-4 flex-1 min-h-0">
           <!-- Issue Navigator Sidebar -->
-          <div class="w-72 flex-shrink-0 bg-surface-container-low rounded-xl border border-outline-variant/10 flex flex-col">
-            <div class="p-4 border-b border-outline-variant/10">
+          <div class="w-64 flex-shrink-0 bg-surface-container-low rounded-xl border border-outline-variant/10 flex flex-col">
+            <div class="p-3 border-b border-outline-variant/10">
               <h3 class="text-sm font-bold text-on-surface">Issues in this file</h3>
             </div>
             <div class="flex-1 overflow-y-auto p-2">
@@ -305,130 +225,159 @@ function goBack() {
                   </span>
                 </div>
                 <p class="text-xs text-on-surface-variant line-clamp-2">
-                  {{ finding.explanation.slice(0, 100) }}...
+                  {{ finding.explanation.slice(0, 80) }}...
                 </p>
                 <div class="flex items-center gap-2 mt-2 text-[10px] text-outline">
-                  <span>Lines {{ issueBlocks.find(b => b.findingId === finding.id)?.startLine || '?' }}-{{ issueBlocks.find(b => b.findingId === finding.id)?.endLine || '?' }}</span>
                   <span v-if="finding.markedUnderstood" class="text-primary">✓ Understood</span>
                 </div>
               </button>
             </div>
           </div>
 
-          <!-- Code View -->
-          <div class="flex-1 bg-surface-container-lowest rounded-xl border border-outline-variant/10 flex flex-col min-w-0 overflow-hidden">
-            <!-- Code Header -->
-            <div class="px-4 py-3 bg-surface-container border-b border-outline-variant/10 flex items-center justify-between flex-shrink-0">
-              <div class="flex items-center gap-4">
-                <span class="text-xs font-mono text-outline">{{ annotatedLines.length }} lines</span>
-                <div v-if="!showOptimized" class="flex items-center gap-2">
-                  <span class="w-3 h-3 bg-error/20 border-l-2 border-error"></span>
-                  <span class="text-xs text-outline">Selected issue</span>
-                  <span class="w-3 h-3 bg-tertiary/10 border-l-2 border-tertiary/50 ml-2"></span>
-                  <span class="text-xs text-outline">Other issues</span>
+          <!-- Code Panels + Explanation -->
+          <div class="flex-1 flex flex-col min-w-0 gap-4">
+            <!-- Code Comparison Row -->
+            <div class="flex gap-4 flex-1 min-h-0">
+              <!-- Original Code (Full File) -->
+              <div class="flex-1 bg-surface-container-lowest rounded-xl border border-outline-variant/10 flex flex-col min-w-0 overflow-hidden">
+                <div class="px-4 py-2 bg-surface-container border-b border-outline-variant/10 flex items-center justify-between flex-shrink-0">
+                  <div class="flex items-center gap-2">
+                    <span class="material-symbols-outlined text-sm text-error">warning</span>
+                    <span class="text-xs font-bold uppercase tracking-widest text-outline">Original</span>
+                  </div>
+                  <span class="text-[10px] text-outline">{{ originalLines.length }} lines</span>
                 </div>
-                <div v-else class="flex items-center gap-2">
-                  <span class="w-3 h-3 bg-primary/10 border-l-2 border-primary"></span>
-                  <span class="text-xs text-outline">Optimized code</span>
-                </div>
-              </div>
-            </div>
-
-            <!-- Code Content -->
-            <div class="flex-1 overflow-auto font-mono text-sm">
-              <table class="w-full border-collapse">
-                <tbody>
-                  <tr
-                    v-for="line in annotatedLines"
-                    :key="line.number"
-                    :id="`line-${line.number}`"
-                    :class="getDiffClass(line)"
-                  >
-                    <td class="w-12 text-right pr-4 py-0.5 text-outline/50 select-none border-r border-outline-variant/10 sticky left-0 bg-surface-container-lowest">
-                      {{ line.number }}
-                    </td>
-                    <td class="pl-4 py-0.5 whitespace-pre text-on-surface-variant">{{ line.content }}</td>
-                  </tr>
-                </tbody>
-              </table>
-            </div>
-          </div>
-
-          <!-- Issue Detail Panel -->
-          <div v-if="selectedFinding" class="w-96 flex-shrink-0 bg-surface-container-low rounded-xl border border-outline-variant/10 flex flex-col">
-            <div class="p-4 border-b border-outline-variant/10">
-              <div class="flex items-center gap-2 mb-2">
-                <span :class="['px-2 py-1 rounded-full text-[10px] font-bold uppercase border', getCategoryClass(selectedFinding.category)]">
-                  {{ selectedFinding.category.replace('_', ' ') }}
-                </span>
-                <span class="text-xs text-outline">by {{ selectedFinding.commitAuthor }}</span>
-              </div>
-              <h3 class="text-lg font-bold text-on-surface">Why This Is Better</h3>
-            </div>
-            
-            <div class="flex-1 overflow-y-auto p-4">
-              <p class="text-sm text-on-surface-variant leading-relaxed mb-4">
-                {{ selectedFinding.explanation }}
-              </p>
-              
-              <!-- References -->
-              <div v-if="selectedFinding.references?.length" class="mb-4">
-                <h4 class="text-xs font-bold uppercase tracking-wider text-outline mb-2">References</h4>
-                <div class="space-y-1">
-                  <a
-                    v-for="(ref, idx) in selectedFinding.references"
-                    :key="idx"
-                    :href="ref.url"
-                    target="_blank"
-                    class="text-xs text-primary hover:underline flex items-center gap-1"
-                  >
-                    <span class="material-symbols-outlined text-sm">link</span>
-                    {{ ref.title }}
-                  </a>
+                <div class="flex-1 overflow-auto font-mono text-sm">
+                  <table class="w-full border-collapse">
+                    <tbody>
+                      <tr
+                        v-for="line in originalLines"
+                        :key="line.number"
+                        :id="`line-${line.number}`"
+                        :class="[
+                          line.isSelected ? 'bg-error/20' : '',
+                          line.findingId && !line.isSelected ? 'bg-tertiary/10' : ''
+                        ]"
+                      >
+                        <td class="w-10 text-right pr-3 py-0.5 text-outline/40 select-none border-r border-outline-variant/10 sticky left-0 bg-surface-container-lowest text-xs">
+                          {{ line.number }}
+                        </td>
+                        <td 
+                          :class="[
+                            'pl-3 py-0.5 whitespace-pre text-on-surface-variant',
+                            line.isSelected ? 'border-l-4 border-error' : '',
+                            line.findingId && !line.isSelected ? 'border-l-4 border-tertiary/50' : ''
+                          ]"
+                        >{{ line.content }}</td>
+                      </tr>
+                    </tbody>
+                  </table>
                 </div>
               </div>
 
-              <!-- PR Link -->
-              <div v-if="selectedFinding.prUrl" class="p-3 bg-primary/10 rounded-lg border border-primary/20 mb-4">
-                <p class="text-xs text-primary">
-                  <span class="font-bold">PR Created:</span>
-                  <a :href="selectedFinding.prUrl" target="_blank" class="ml-1 underline">
-                    View on GitHub
-                  </a>
-                </p>
+              <!-- Optimized Code (Selected Finding) -->
+              <div class="flex-1 bg-surface-container rounded-xl border border-primary/20 ring-1 ring-primary/10 flex flex-col min-w-0 overflow-hidden">
+                <div class="px-4 py-2 bg-primary/10 border-b border-primary/20 flex items-center justify-between flex-shrink-0">
+                  <div class="flex items-center gap-2">
+                    <span class="material-symbols-outlined text-sm text-primary">check_circle</span>
+                    <span class="text-xs font-bold uppercase tracking-widest text-primary">Optimized</span>
+                  </div>
+                  <span class="text-[10px] bg-primary text-on-primary px-1.5 py-0.5 rounded font-bold">RECOMMENDED</span>
+                </div>
+                <div class="flex-1 overflow-auto font-mono text-sm">
+                  <table class="w-full border-collapse">
+                    <tbody>
+                      <tr
+                        v-for="line in optimizedLines"
+                        :key="line.number"
+                        class="bg-primary/5"
+                      >
+                        <td class="w-10 text-right pr-3 py-0.5 text-outline/40 select-none border-r border-outline-variant/10 sticky left-0 bg-surface-container text-xs">
+                          {{ line.number }}
+                        </td>
+                        <td class="pl-3 py-0.5 whitespace-pre text-on-surface-variant border-l-4 border-primary">{{ line.content }}</td>
+                      </tr>
+                    </tbody>
+                  </table>
+                </div>
               </div>
             </div>
 
-            <!-- Actions -->
-            <div class="p-4 border-t border-outline-variant/10 space-y-3">
-              <label class="flex items-center gap-3 cursor-pointer">
-                <input
-                  type="checkbox"
-                  :checked="!!selectedFinding.markedUnderstood"
-                  :disabled="actionLoading"
-                  class="h-4 w-4 rounded border-outline-variant bg-surface-container text-primary"
-                  @change="markUnderstood"
-                />
-                <span class="text-sm text-on-surface-variant">Mark as understood</span>
-              </label>
-              
-              <div class="flex gap-2">
-                <button
-                  :disabled="actionLoading || selectedFinding.explanationRequested"
-                  class="flex-1 px-3 py-2 border border-outline-variant/30 rounded-lg text-xs font-medium text-on-surface-variant hover:bg-surface-container transition-all disabled:opacity-50"
-                  @click="requestExplanation"
-                >
-                  {{ selectedFinding.explanationRequested ? '✓ Requested' : 'Request Help' }}
-                </button>
-                
-                <button
-                  v-if="auth.isAdmin"
-                  :disabled="actionLoading || selectedFinding.prCreated"
-                  class="flex-1 px-3 py-2 primary-gradient text-on-primary text-xs font-bold rounded-lg disabled:opacity-50"
-                  @click="applyFix"
-                >
-                  {{ selectedFinding.prCreated ? '✓ PR Created' : 'Apply Fix' }}
-                </button>
+            <!-- Explanation Box (Bottom) -->
+            <div v-if="selectedFinding" class="flex-shrink-0 bg-surface-container-low rounded-xl border border-outline-variant/10 p-4">
+              <div class="flex items-start justify-between gap-6">
+                <!-- Explanation Content -->
+                <div class="flex-1">
+                  <div class="flex items-center gap-3 mb-3">
+                    <span :class="['px-2 py-1 rounded-full text-[10px] font-bold uppercase border', getCategoryClass(selectedFinding.category)]">
+                      {{ selectedFinding.category.replace('_', ' ') }}
+                    </span>
+                    <span class="text-xs text-outline">by {{ selectedFinding.commitAuthor }}</span>
+                  </div>
+                  
+                  <h3 class="text-lg font-bold text-on-surface mb-2">Why This Is Better</h3>
+                  <p class="text-sm text-on-surface-variant leading-relaxed mb-3">
+                    {{ selectedFinding.explanation }}
+                  </p>
+                  
+                  <!-- References -->
+                  <div v-if="selectedFinding.references?.length" class="flex items-center gap-4">
+                    <span class="text-xs font-bold uppercase tracking-wider text-outline">References:</span>
+                    <div class="flex flex-wrap gap-3">
+                      <a
+                        v-for="(ref, idx) in selectedFinding.references"
+                        :key="idx"
+                        :href="ref.url"
+                        target="_blank"
+                        class="text-xs text-primary hover:underline flex items-center gap-1"
+                      >
+                        <span class="material-symbols-outlined text-sm">link</span>
+                        {{ ref.title }}
+                      </a>
+                    </div>
+                  </div>
+
+                  <!-- PR Link -->
+                  <div v-if="selectedFinding.prUrl" class="mt-3 p-2 bg-primary/10 rounded-lg border border-primary/20 inline-block">
+                    <p class="text-xs text-primary">
+                      <span class="font-bold">PR Created:</span>
+                      <a :href="selectedFinding.prUrl" target="_blank" class="ml-1 underline">View on GitHub</a>
+                    </p>
+                  </div>
+                </div>
+
+                <!-- Actions -->
+                <div class="flex flex-col gap-3 items-end">
+                  <label class="flex items-center gap-2 cursor-pointer">
+                    <input
+                      type="checkbox"
+                      :checked="!!selectedFinding.markedUnderstood"
+                      :disabled="actionLoading"
+                      class="h-4 w-4 rounded border-outline-variant bg-surface-container text-primary"
+                      @change="markUnderstood"
+                    />
+                    <span class="text-sm text-on-surface-variant">Mark as understood</span>
+                  </label>
+                  
+                  <div class="flex gap-2">
+                    <button
+                      :disabled="actionLoading || selectedFinding.explanationRequested"
+                      class="px-4 py-2 border border-outline-variant/30 rounded-lg text-sm font-medium text-on-surface-variant hover:bg-surface-container transition-all disabled:opacity-50"
+                      @click="requestExplanation"
+                    >
+                      {{ selectedFinding.explanationRequested ? '✓ Requested' : 'Request Help' }}
+                    </button>
+                    
+                    <button
+                      v-if="auth.isAdmin"
+                      :disabled="actionLoading || selectedFinding.prCreated"
+                      class="px-4 py-2 primary-gradient text-on-primary text-sm font-bold rounded-lg disabled:opacity-50"
+                      @click="applyFix"
+                    >
+                      {{ selectedFinding.prCreated ? '✓ PR Created' : 'Apply Fix' }}
+                    </button>
+                  </div>
+                </div>
               </div>
             </div>
           </div>
@@ -443,6 +392,11 @@ function goBack() {
       @click="toastMessage = ''"
     >
       {{ toastMessage }}
+    </div>
+
+    <!-- Loading Overlay -->
+    <div v-if="loading" class="fixed inset-0 bg-background/80 flex items-center justify-center z-50">
+      <span class="material-symbols-outlined text-4xl text-outline animate-spin">progress_activity</span>
     </div>
   </AppShell>
 </template>
