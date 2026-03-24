@@ -5,6 +5,7 @@ import FindingDetailView from '@/views/FindingDetailView.vue';
 import FileReviewView from '@/views/FileReviewView.vue';
 import PerformanceView from '@/views/PerformanceView.vue';
 import UserManagementView from '@/views/UserManagementView.vue';
+import SettingsView from '@/views/SettingsView.vue';
 import { useAuthStore } from '@/stores/auth';
 
 const router = createRouter({
@@ -16,6 +17,7 @@ const router = createRouter({
     { path: '/file-review', name: 'file-review', component: FileReviewView },
     { path: '/insights', name: 'insights', component: PerformanceView },
     { path: '/team', name: 'team', component: UserManagementView, meta: { admin: true } },
+    { path: '/settings', name: 'settings', component: SettingsView },
   ],
 });
 
