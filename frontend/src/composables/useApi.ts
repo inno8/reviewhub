@@ -69,11 +69,15 @@ export const api = {
   projects: {
     list: () => client.get('/projects'),
     get: (id: number) => client.get(`/projects/${id}`),
+    getBranches: (id: number) => client.get(`/projects/${id}/branches`),
+    createFromUrl: (url: string) => client.post('/projects/from-url', { url }),
   },
   reviews: {
     list: (params: ReviewFilters = {}) => client.get('/reviews', { params }),
     calendar: (projectId: number, month: string) =>
       client.get('/reviews/calendar', { params: { projectId, month } }),
+    trigger: (projectId: number, branches?: string[]) =>
+      client.post('/reviews/trigger', { projectId, branches }),
   },
   findings: {
     list: (params: FindingFilters = {}) => client.get('/findings', { params }),

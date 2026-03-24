@@ -4,6 +4,7 @@ import { useRoute, useRouter } from 'vue-router';
 import { useAuthStore } from '@/stores/auth';
 import { useProjectsStore } from '@/stores/projects';
 import { useFindingsStore } from '@/stores/findings';
+import { api } from '@/composables/useApi';
 
 const route = useRoute();
 const router = useRouter();
@@ -12,6 +13,16 @@ const projectsStore = useProjectsStore();
 const findingsStore = useFindingsStore();
 
 const selectedDate = ref<string | null>(null);
+
+// Modal states
+const showNewReviewModal = ref(false);
+const showAddProjectModal = ref(false);
+const reviewLoading = ref(false);
+const projectLoading = ref(false);
+const branches = ref<{ name: string; selected: boolean }[]>([]);
+const newProjectUrl = ref('');
+const modalError = ref('');
+const modalSuccess = ref('');
 
 onMounted(() => {
   projectsStore.fetchProjects();
@@ -52,7 +63,6 @@ const calendarCells = computed(() => {
   return [...blanks, ...monthDays];
 });
 
-// Simulated activity dates (would come from API)
 const activityDates = ref<Set<string>>(new Set(['2026-03-08', '2026-03-11', '2026-03-16', '2026-03-19', '2026-03-23']));
 
 function formatDateStr(day: number): string {
@@ -78,13 +88,11 @@ async function selectDate(day: number) {
   const dateStr = formatDateStr(day);
   
   if (selectedDate.value === dateStr) {
-    // Deselect - show all findings
     selectedDate.value = null;
     if (projectsStore.selectedProjectId) {
       await findingsStore.fetchFindings({ projectId: projectsStore.selectedProjectId });
     }
   } else {
-    // Select - filter by date
     selectedDate.value = dateStr;
     if (projectsStore.selectedProjectId) {
       await findingsStore.fetchFindings({ 
@@ -94,7 +102,6 @@ async function selectDate(day: number) {
     }
   }
   
-  // Navigate to dashboard if not already there
   if (route.path !== '/') {
     router.push('/');
   }
@@ -116,10 +123,94 @@ function nextMonth() {
   );
 }
 
-// Clear date filter when project changes
 watch(() => projectsStore.selectedProjectId, () => {
   selectedDate.value = null;
 });
+
+// New Review Modal
+async function openNewReviewModal() {
+  showNewReviewModal.value = true;
+  modalError.value = '';
+  modalSuccess.value = '';
+  branches.value = [];
+  
+  if (projectsStore.selectedProjectId) {
+    try {
+      const { data } = await api.projects.getBranches(projectsStore.selectedProjectId);
+      branches.value = data.branches.map((b: any) => ({ name: b.name, selected: true }));
+    } catch (e) {
+      modalError.value = 'Failed to fetch branches';
+    }
+  }
+}
+
+async function triggerReview() {
+  if (!projectsStore.selectedProjectId) return;
+  
+  reviewLoading.value = true;
+  modalError.value = '';
+  modalSuccess.value = '';
+  
+  try {
+    const selectedBranches = branches.value.filter(b => b.selected).map(b => b.name);
+    const { data } = await api.reviews.trigger(
+      projectsStore.selectedProjectId,
+      selectedBranches.length > 0 ? selectedBranches : undefined
+    );
+    
+    modalSuccess.value = data.message;
+    
+    // Refresh findings
+    await findingsStore.fetchFindings({ projectId: projectsStore.selectedProjectId });
+    
+    // Close modal after a delay
+    setTimeout(() => {
+      showNewReviewModal.value = false;
+      modalSuccess.value = '';
+    }, 2000);
+  } catch (e: any) {
+    modalError.value = e?.response?.data?.error || 'Failed to trigger review';
+  } finally {
+    reviewLoading.value = false;
+  }
+}
+
+// Add Project Modal
+async function createProject() {
+  if (!newProjectUrl.value) {
+    modalError.value = 'Please enter a GitHub URL';
+    return;
+  }
+  
+  projectLoading.value = true;
+  modalError.value = '';
+  modalSuccess.value = '';
+  
+  try {
+    const { data } = await api.projects.createFromUrl(newProjectUrl.value);
+    
+    modalSuccess.value = data.message;
+    
+    // Refresh projects
+    await projectsStore.fetchProjects();
+    projectsStore.setSelectedProject(data.project.id);
+    
+    // Close modal after a delay
+    setTimeout(() => {
+      showAddProjectModal.value = false;
+      newProjectUrl.value = '';
+      modalSuccess.value = '';
+    }, 2000);
+  } catch (e: any) {
+    modalError.value = e?.response?.data?.error || 'Failed to create project';
+  } finally {
+    projectLoading.value = false;
+  }
+}
+
+function toggleAllBranches(selected: boolean) {
+  branches.value.forEach(b => b.selected = selected);
+}
 </script>
 
 <template>
@@ -143,11 +234,24 @@ watch(() => projectsStore.selectedProjectId, () => {
           <p class="text-[10px] text-outline uppercase tracking-widest">Active Project</p>
         </div>
       </div>
+      
+      <!-- Add Project Button -->
+      <button
+        v-if="auth.isAdmin"
+        @click="showAddProjectModal = true"
+        class="w-full mt-2 py-2 px-3 border border-dashed border-outline-variant/30 rounded-lg text-xs text-outline hover:text-primary hover:border-primary/50 transition-colors flex items-center justify-center gap-2"
+      >
+        <span class="material-symbols-outlined text-sm">add</span>
+        Add Project
+      </button>
     </div>
 
     <!-- New Review Button -->
     <div class="px-4 mb-6">
-      <button class="w-full primary-gradient text-on-primary font-bold py-3 px-4 rounded-lg flex items-center justify-center gap-2 active:scale-95 transition-transform">
+      <button 
+        @click="openNewReviewModal"
+        class="w-full primary-gradient text-on-primary font-bold py-3 px-4 rounded-lg flex items-center justify-center gap-2 active:scale-95 transition-transform"
+      >
         <span class="material-symbols-outlined text-xl">add</span>
         <span class="text-sm">New Review</span>
       </button>
@@ -194,14 +298,10 @@ watch(() => projectsStore.selectedProjectId, () => {
         </div>
         
         <div class="bg-surface-container-lowest rounded-xl p-3 border border-outline-variant/10">
-          <!-- Day Headers -->
           <div class="grid grid-cols-7 gap-1 text-center mb-2">
-            <span v-for="day in days" :key="day" class="text-[8px] text-outline">
-              {{ day }}
-            </span>
+            <span v-for="day in days" :key="day" class="text-[8px] text-outline">{{ day }}</span>
           </div>
 
-          <!-- Calendar Grid -->
           <div class="grid grid-cols-7 gap-1 text-[10px]">
             <button
               v-for="(day, index) in calendarCells"
@@ -221,12 +321,9 @@ watch(() => projectsStore.selectedProjectId, () => {
             </button>
           </div>
           
-          <!-- Selected date indicator -->
           <div v-if="selectedDate" class="mt-3 pt-3 border-t border-outline-variant/10">
             <div class="flex items-center justify-between">
-              <span class="text-[10px] text-primary font-bold">
-                Filtering: {{ selectedDate }}
-              </span>
+              <span class="text-[10px] text-primary font-bold">Filtering: {{ selectedDate }}</span>
               <button 
                 @click="selectDate(parseInt(selectedDate.split('-')[2]))"
                 class="text-[10px] text-outline hover:text-error"
@@ -262,4 +359,145 @@ watch(() => projectsStore.selectedProjectId, () => {
       </a>
     </div>
   </aside>
+
+  <!-- New Review Modal -->
+  <div
+    v-if="showNewReviewModal"
+    class="fixed inset-0 z-[100] flex items-center justify-center p-6 bg-background/80 backdrop-blur-sm"
+  >
+    <div class="glass-panel w-full max-w-md rounded-xl overflow-hidden shadow-2xl">
+      <div class="px-6 py-4 border-b border-outline-variant/10 flex justify-between items-center">
+        <h3 class="text-lg font-bold text-on-surface">Run Code Review</h3>
+        <button @click="showNewReviewModal = false" class="text-outline hover:text-on-surface">
+          <span class="material-symbols-outlined">close</span>
+        </button>
+      </div>
+
+      <div class="p-6">
+        <p class="text-sm text-on-surface-variant mb-4">
+          Run @code-review on 
+          <span class="font-bold text-primary">
+            {{ projectsStore.projects.find(p => p.id === projectsStore.selectedProjectId)?.displayName }}
+          </span>
+        </p>
+
+        <!-- Branch Selection -->
+        <div class="mb-4">
+          <div class="flex items-center justify-between mb-2">
+            <label class="text-xs font-bold uppercase tracking-widest text-outline">Select Branches</label>
+            <div class="flex gap-2">
+              <button @click="toggleAllBranches(true)" class="text-[10px] text-primary hover:underline">All</button>
+              <button @click="toggleAllBranches(false)" class="text-[10px] text-outline hover:underline">None</button>
+            </div>
+          </div>
+          <div class="max-h-48 overflow-y-auto bg-surface-container-lowest rounded-lg p-3 space-y-2">
+            <label
+              v-for="branch in branches"
+              :key="branch.name"
+              class="flex items-center gap-2 cursor-pointer group"
+            >
+              <input
+                type="checkbox"
+                v-model="branch.selected"
+                class="h-4 w-4 rounded border-outline-variant bg-surface-container text-primary"
+              />
+              <span class="text-sm text-on-surface-variant group-hover:text-on-surface font-mono">
+                {{ branch.name }}
+              </span>
+            </label>
+            <p v-if="branches.length === 0" class="text-sm text-outline">Loading branches...</p>
+          </div>
+        </div>
+
+        <!-- Error/Success Messages -->
+        <div v-if="modalError" class="mb-4 p-3 bg-error/10 border border-error/20 rounded-lg">
+          <p class="text-sm text-error">{{ modalError }}</p>
+        </div>
+        <div v-if="modalSuccess" class="mb-4 p-3 bg-primary/10 border border-primary/20 rounded-lg">
+          <p class="text-sm text-primary">{{ modalSuccess }}</p>
+        </div>
+
+        <!-- Actions -->
+        <div class="flex gap-3">
+          <button
+            @click="showNewReviewModal = false"
+            class="flex-1 py-3 bg-surface-container-highest text-on-surface font-bold rounded-lg hover:bg-outline-variant transition-colors"
+          >
+            Cancel
+          </button>
+          <button
+            @click="triggerReview"
+            :disabled="reviewLoading || branches.filter(b => b.selected).length === 0"
+            class="flex-1 py-3 primary-gradient text-on-primary font-bold rounded-lg disabled:opacity-50 flex items-center justify-center gap-2"
+          >
+            <span v-if="reviewLoading" class="material-symbols-outlined text-sm animate-spin">progress_activity</span>
+            {{ reviewLoading ? 'Running...' : 'Start Review' }}
+          </button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Add Project Modal -->
+  <div
+    v-if="showAddProjectModal"
+    class="fixed inset-0 z-[100] flex items-center justify-center p-6 bg-background/80 backdrop-blur-sm"
+  >
+    <div class="glass-panel w-full max-w-md rounded-xl overflow-hidden shadow-2xl">
+      <div class="px-6 py-4 border-b border-outline-variant/10 flex justify-between items-center">
+        <h3 class="text-lg font-bold text-on-surface">Add New Project</h3>
+        <button @click="showAddProjectModal = false" class="text-outline hover:text-on-surface">
+          <span class="material-symbols-outlined">close</span>
+        </button>
+      </div>
+
+      <div class="p-6">
+        <p class="text-sm text-on-surface-variant mb-4">
+          Enter the GitHub repository URL to connect it with @code-review.
+        </p>
+
+        <!-- GitHub URL Input -->
+        <div class="mb-4">
+          <label class="text-xs font-bold uppercase tracking-widest text-outline block mb-2">
+            GitHub Repository URL
+          </label>
+          <input
+            v-model="newProjectUrl"
+            type="text"
+            placeholder="https://github.com/owner/repo"
+            class="w-full bg-surface-container-lowest border border-outline-variant/30 rounded-lg text-on-surface placeholder:text-outline/40 focus:ring-1 focus:ring-primary/50 focus:border-primary py-3 px-4"
+          />
+          <p class="text-[10px] text-outline mt-2">
+            Examples: https://github.com/inno8/project or inno8/project
+          </p>
+        </div>
+
+        <!-- Error/Success Messages -->
+        <div v-if="modalError" class="mb-4 p-3 bg-error/10 border border-error/20 rounded-lg">
+          <p class="text-sm text-error">{{ modalError }}</p>
+        </div>
+        <div v-if="modalSuccess" class="mb-4 p-3 bg-primary/10 border border-primary/20 rounded-lg">
+          <p class="text-sm text-primary">{{ modalSuccess }}</p>
+        </div>
+
+        <!-- Actions -->
+        <div class="flex gap-3">
+          <button
+            @click="showAddProjectModal = false"
+            class="flex-1 py-3 bg-surface-container-highest text-on-surface font-bold rounded-lg hover:bg-outline-variant transition-colors"
+          >
+            Cancel
+          </button>
+          <button
+            @click="createProject"
+            :disabled="projectLoading || !newProjectUrl"
+            class="flex-1 py-3 primary-gradient text-on-primary font-bold rounded-lg disabled:opacity-50 flex items-center justify-center gap-2"
+          >
+            <span v-if="projectLoading" class="material-symbols-outlined text-sm animate-spin">progress_activity</span>
+            {{ projectLoading ? 'Creating...' : 'Add Project' }}
+          </button>
+        </div>
+      </div>
+    </div>
+  </div>
 </template>
