@@ -40,7 +40,7 @@ onMounted(async () => {
 async function saveProfile() {
   loading.value = true;
   try {
-    await api.users.update(auth.user!.id, {
+    await api.users.updateMe({
       username: profile.value.username,
       email: profile.value.email,
       telegramChatId: profile.value.telegramChatId || null,
@@ -70,7 +70,7 @@ async function changePassword() {
   
   loading.value = true;
   try {
-    await api.users.update(auth.user!.id, {
+    await api.users.updateMe({
       password: newPassword.value,
     });
     toastMessage.value = 'Password changed successfully!';

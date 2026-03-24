@@ -89,6 +89,8 @@ export const api = {
   },
   users: {
     list: () => client.get('/users'),
+    me: () => client.get('/users/me'),
+    updateMe: (data: Omit<UpdateUser, 'role' | 'projectIds'>) => client.patch('/users/me', data),
     create: (data: CreateUser) => client.post('/users', data),
     update: (id: number, data: UpdateUser) => client.patch(`/users/${id}`, data),
     delete: (id: number) => client.delete(`/users/${id}`),
