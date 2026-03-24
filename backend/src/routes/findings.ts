@@ -1,5 +1,6 @@
 import { Router, Request, Response } from 'express';
 import { PrismaClient } from '@prisma/client';
+import { Octokit } from '@octokit/rest';
 import { authMiddleware } from '../middleware/auth';
 import { adminMiddleware } from '../middleware/admin';
 import { applyFixAndCreatePR } from '../services/github';
@@ -7,6 +8,10 @@ import { notifyExplanationRequested } from '../services/telegram';
 
 const router = Router();
 const prisma = new PrismaClient();
+
+const octokit = new Octokit({
+  auth: process.env.GITHUB_TOKEN,
+});
 
 router.use(authMiddleware);
 
@@ -165,6 +170,60 @@ router.post('/:id/request-explanation', async (req: Request, res: Response): Pro
   }
 
   res.json({ success: true, explanationRequested: userFinding.explanationRequested });
+});
+
+// Fetch file content from GitHub
+router.get('/:id/file-content', async (req: Request, res: Response): Promise<void> => {
+  const findingId = parseInt(req.params.id);
+  const finding = await prisma.finding.findUnique({
+    where: { id: findingId },
+    include: {
+      review: {
+        include: {
+          project: true,
+        },
+      },
+    },
+  });
+
+  if (!finding) {
+    res.status(404).json({ error: 'Finding not found' });
+    return;
+  }
+
+  const { project } = finding.review;
+  const branch = finding.review.branch || 'main';
+
+  try {
+    const response = await octokit.repos.getContent({
+      owner: project.githubOwner,
+      repo: project.githubRepo,
+      path: finding.filePath,
+      ref: branch,
+    });
+
+    if ('content' in response.data && response.data.type === 'file') {
+      const content = Buffer.from(response.data.content, 'base64').toString('utf-8');
+      res.json({
+        content,
+        filePath: finding.filePath,
+        branch,
+        sha: response.data.sha,
+      });
+    } else {
+      res.status(400).json({ error: 'Not a file' });
+    }
+  } catch (error: any) {
+    console.error('[GitHub] Failed to fetch file content:', error);
+    // Return the original code as fallback
+    res.json({
+      content: finding.originalCode,
+      filePath: finding.filePath,
+      branch,
+      sha: null,
+      fallback: true,
+    });
+  }
 });
 
 router.post('/:id/apply-fix', adminMiddleware, async (req: Request, res: Response): Promise<void> => {

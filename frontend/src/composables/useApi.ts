@@ -78,6 +78,7 @@ export const api = {
   findings: {
     list: (params: FindingFilters = {}) => client.get('/findings', { params }),
     get: (id: number) => client.get(`/findings/${id}`),
+    getFileContent: (id: number) => client.get(`/findings/${id}/file-content`),
     markUnderstood: (id: number) => client.patch(`/findings/${id}/understood`),
     requestExplanation: (id: number) => client.post(`/findings/${id}/request-explanation`),
     applyFix: (id: number) => client.post(`/findings/${id}/apply-fix`),

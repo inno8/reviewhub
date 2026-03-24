@@ -1,12 +1,17 @@
 <script setup lang="ts">
-import { computed, onMounted } from 'vue';
-import { useRoute } from 'vue-router';
+import { computed, onMounted, ref, watch } from 'vue';
+import { useRoute, useRouter } from 'vue-router';
 import { useAuthStore } from '@/stores/auth';
 import { useProjectsStore } from '@/stores/projects';
+import { useFindingsStore } from '@/stores/findings';
 
 const route = useRoute();
+const router = useRouter();
 const auth = useAuthStore();
 const projectsStore = useProjectsStore();
+const findingsStore = useFindingsStore();
+
+const selectedDate = ref<string | null>(null);
 
 onMounted(() => {
   projectsStore.fetchProjects();
@@ -23,25 +28,98 @@ function isActive(path: string) {
 }
 
 // Calendar data
-const currentMonth = new Date();
-const monthName = currentMonth.toLocaleDateString('en-US', { month: 'long', year: 'numeric' });
+const currentMonth = ref(new Date());
+
+const monthName = computed(() => 
+  currentMonth.value.toLocaleDateString('en-US', { month: 'long', year: 'numeric' })
+);
 
 const days = ['S', 'M', 'T', 'W', 'T', 'F', 'S'];
 const today = new Date();
-const todayDate = today.getDate();
+const todayStr = `${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, '0')}-${String(today.getDate()).padStart(2, '0')}`;
 
-// Generate calendar cells
-const firstDayOffset = new Date(currentMonth.getFullYear(), currentMonth.getMonth(), 1).getDay();
-const daysInMonth = new Date(currentMonth.getFullYear(), currentMonth.getMonth() + 1, 0).getDate();
+const firstDayOffset = computed(() => 
+  new Date(currentMonth.value.getFullYear(), currentMonth.value.getMonth(), 1).getDay()
+);
+
+const daysInMonth = computed(() => 
+  new Date(currentMonth.value.getFullYear(), currentMonth.value.getMonth() + 1, 0).getDate()
+);
 
 const calendarCells = computed(() => {
-  const blanks = Array.from({ length: firstDayOffset }, () => null);
-  const days = Array.from({ length: daysInMonth }, (_, i) => i + 1);
-  return [...blanks, ...days];
+  const blanks = Array.from({ length: firstDayOffset.value }, () => null);
+  const monthDays = Array.from({ length: daysInMonth.value }, (_, i) => i + 1);
+  return [...blanks, ...monthDays];
 });
 
-// Simulated activity dates
-const activityDates = [8, 11, 16, 19, 23];
+// Simulated activity dates (would come from API)
+const activityDates = ref<Set<string>>(new Set(['2026-03-08', '2026-03-11', '2026-03-16', '2026-03-19', '2026-03-23']));
+
+function formatDateStr(day: number): string {
+  const year = currentMonth.value.getFullYear();
+  const month = String(currentMonth.value.getMonth() + 1).padStart(2, '0');
+  const dayStr = String(day).padStart(2, '0');
+  return `${year}-${month}-${dayStr}`;
+}
+
+function isToday(day: number): boolean {
+  return formatDateStr(day) === todayStr;
+}
+
+function hasActivity(day: number): boolean {
+  return activityDates.value.has(formatDateStr(day));
+}
+
+function isSelected(day: number): boolean {
+  return formatDateStr(day) === selectedDate.value;
+}
+
+async function selectDate(day: number) {
+  const dateStr = formatDateStr(day);
+  
+  if (selectedDate.value === dateStr) {
+    // Deselect - show all findings
+    selectedDate.value = null;
+    if (projectsStore.selectedProjectId) {
+      await findingsStore.fetchFindings({ projectId: projectsStore.selectedProjectId });
+    }
+  } else {
+    // Select - filter by date
+    selectedDate.value = dateStr;
+    if (projectsStore.selectedProjectId) {
+      await findingsStore.fetchFindings({ 
+        projectId: projectsStore.selectedProjectId,
+        date: dateStr 
+      });
+    }
+  }
+  
+  // Navigate to dashboard if not already there
+  if (route.path !== '/') {
+    router.push('/');
+  }
+}
+
+function prevMonth() {
+  currentMonth.value = new Date(
+    currentMonth.value.getFullYear(),
+    currentMonth.value.getMonth() - 1,
+    1
+  );
+}
+
+function nextMonth() {
+  currentMonth.value = new Date(
+    currentMonth.value.getFullYear(),
+    currentMonth.value.getMonth() + 1,
+    1
+  );
+}
+
+// Clear date filter when project changes
+watch(() => projectsStore.selectedProjectId, () => {
+  selectedDate.value = null;
+});
 </script>
 
 <template>
@@ -95,9 +173,26 @@ const activityDates = [8, 11, 16, 19, 23];
 
       <!-- Calendar Widget -->
       <div class="mt-8 px-4">
-        <h3 class="text-[10px] uppercase tracking-widest text-outline mb-4 font-bold">
-          Activity — {{ monthName }}
-        </h3>
+        <div class="flex items-center justify-between mb-4">
+          <h3 class="text-[10px] uppercase tracking-widest text-outline font-bold">
+            Activity — {{ monthName }}
+          </h3>
+          <div class="flex gap-1">
+            <button 
+              @click="prevMonth"
+              class="p-1 hover:bg-surface-container rounded text-outline hover:text-on-surface transition-colors"
+            >
+              <span class="material-symbols-outlined text-sm">chevron_left</span>
+            </button>
+            <button 
+              @click="nextMonth"
+              class="p-1 hover:bg-surface-container rounded text-outline hover:text-on-surface transition-colors"
+            >
+              <span class="material-symbols-outlined text-sm">chevron_right</span>
+            </button>
+          </div>
+        </div>
+        
         <div class="bg-surface-container-lowest rounded-xl p-3 border border-outline-variant/10">
           <!-- Day Headers -->
           <div class="grid grid-cols-7 gap-1 text-center mb-2">
@@ -108,19 +203,37 @@ const activityDates = [8, 11, 16, 19, 23];
 
           <!-- Calendar Grid -->
           <div class="grid grid-cols-7 gap-1 text-[10px]">
-            <span
+            <button
               v-for="(day, index) in calendarCells"
               :key="`cell-${index}`"
+              :disabled="!day"
               :class="[
-                'p-1 text-center rounded',
+                'p-1 text-center rounded transition-all',
                 !day && 'invisible',
-                day === todayDate && 'bg-primary text-on-primary font-bold shadow-lg shadow-primary/20',
-                day && day !== todayDate && activityDates.includes(day) && 'bg-primary-container/20 text-primary border border-primary/30',
-                day && day !== todayDate && !activityDates.includes(day) && 'text-on-surface-variant hover:bg-surface-container cursor-pointer',
+                day && isToday(day) && !isSelected(day) && 'bg-primary text-on-primary font-bold shadow-lg shadow-primary/20',
+                day && isSelected(day) && 'ring-2 ring-primary bg-primary/20 text-primary font-bold',
+                day && !isToday(day) && !isSelected(day) && hasActivity(day) && 'bg-primary-container/20 text-primary border border-primary/30 hover:bg-primary-container/40 cursor-pointer',
+                day && !isToday(day) && !isSelected(day) && !hasActivity(day) && 'text-on-surface-variant hover:bg-surface-container cursor-pointer',
               ]"
+              @click="day && selectDate(day)"
             >
               {{ day || '' }}
-            </span>
+            </button>
+          </div>
+          
+          <!-- Selected date indicator -->
+          <div v-if="selectedDate" class="mt-3 pt-3 border-t border-outline-variant/10">
+            <div class="flex items-center justify-between">
+              <span class="text-[10px] text-primary font-bold">
+                Filtering: {{ selectedDate }}
+              </span>
+              <button 
+                @click="selectDate(parseInt(selectedDate.split('-')[2]))"
+                class="text-[10px] text-outline hover:text-error"
+              >
+                Clear
+              </button>
+            </div>
           </div>
         </div>
       </div>
