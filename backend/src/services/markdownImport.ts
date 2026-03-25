@@ -155,8 +155,8 @@ export async function importMarkdownReview(date: string, projectId: number): Pro
 
   const prisma = new PrismaClient();
   try {
-    const reviewDate = new Date(date);
-    reviewDate.setHours(0, 0, 0, 0);
+    // Use UTC date to avoid timezone issues
+    const reviewDate = new Date(`${date}T00:00:00.000Z`);
 
     // Group findings by branch
     const byBranch = new Map<string, ParsedFinding[]>();
@@ -250,8 +250,8 @@ export async function syncAllMarkdownReviews(projectId: number): Promise<{ impor
   try {
     for (const file of files) {
       const date = file.replace('.md', '');
-      const reviewDate = new Date(date);
-      reviewDate.setHours(0, 0, 0, 0);
+      // Use UTC date to avoid timezone issues
+      const reviewDate = new Date(`${date}T00:00:00.000Z`);
 
       // Check if already imported (has rawMarkdown set)
       const existing = await prisma.review.findFirst({
