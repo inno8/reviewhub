@@ -2,6 +2,7 @@
 import { ref, computed, onMounted, watch } from 'vue';
 import { useRouter } from 'vue-router';
 import AppShell from '@/components/layout/AppShell.vue';
+import CalendarWidget from '@/components/calendar/CalendarWidget.vue';
 import { useFindingsStore } from '@/stores/findings';
 import { useProjectsStore } from '@/stores/projects';
 import { useAuthStore } from '@/stores/auth';
@@ -15,6 +16,7 @@ const authStore = useAuthStore();
 const selectedCategory = ref('all');
 const selectedDifficulty = ref('all');
 const selectedAuthor = ref('all');
+const selectedDate = ref<string | null>(null);
 
 // Sync state
 const syncing = ref(false);
@@ -35,9 +37,27 @@ watch(() => projectsStore.selectedProjectId, async (newId) => {
     selectedCategory.value = 'all';
     selectedDifficulty.value = 'all';
     selectedAuthor.value = 'all';
+    selectedDate.value = null;
     await findingsStore.fetchFindings({ projectId: newId });
   }
 });
+
+function onDateSelected(date: string | null) {
+  selectedDate.value = date;
+  if (projectsStore.selectedProjectId) {
+    findingsStore.fetchFindings({
+      projectId: projectsStore.selectedProjectId,
+      date: date ?? undefined,
+    });
+  }
+}
+
+function clearDateFilter() {
+  selectedDate.value = null;
+  if (projectsStore.selectedProjectId) {
+    findingsStore.fetchFindings({ projectId: projectsStore.selectedProjectId });
+  }
+}
 
 // Get unique authors from findings
 const authors = computed(() => {
@@ -247,6 +267,18 @@ async function triggerSync() {
             {{ syncMessage.type === 'success' ? 'check_circle' : 'error' }}
           </span>
           {{ syncMessage.text }}
+        </div>
+
+        <!-- Date Filter Indicator -->
+        <div
+          v-if="selectedDate"
+          class="flex items-center gap-2 px-3 py-1.5 bg-primary/10 rounded-lg border border-primary/20"
+        >
+          <span class="material-symbols-outlined text-sm text-primary">calendar_today</span>
+          <span class="text-xs text-primary font-medium">{{ selectedDate }}</span>
+          <button @click="clearDateFilter" class="text-primary hover:text-error ml-1">
+            <span class="material-symbols-outlined text-sm">close</span>
+          </button>
         </div>
 
         <!-- Results Count -->

@@ -24,8 +24,9 @@ const newProjectUrl = ref('');
 const modalError = ref('');
 const modalSuccess = ref('');
 
-onMounted(() => {
-  projectsStore.fetchProjects();
+onMounted(async () => {
+  await projectsStore.fetchProjects();
+  fetchActivityDates();
 });
 
 const navItems = [
@@ -63,7 +64,26 @@ const calendarCells = computed(() => {
   return [...blanks, ...monthDays];
 });
 
-const activityDates = ref<Set<string>>(new Set(['2026-03-08', '2026-03-11', '2026-03-16', '2026-03-19', '2026-03-23']));
+const activityDates = ref<Set<string>>(new Set());
+
+const monthString = computed(() => {
+  const year = currentMonth.value.getFullYear();
+  const month = String(currentMonth.value.getMonth() + 1).padStart(2, '0');
+  return `${year}-${month}`;
+});
+
+async function fetchActivityDates() {
+  if (!projectsStore.selectedProjectId) {
+    activityDates.value = new Set();
+    return;
+  }
+  try {
+    const { data } = await api.reviews.calendar(projectsStore.selectedProjectId, monthString.value);
+    activityDates.value = new Set(data.dates);
+  } catch {
+    activityDates.value = new Set();
+  }
+}
 
 function formatDateStr(day: number): string {
   const year = currentMonth.value.getFullYear();
@@ -125,7 +145,10 @@ function nextMonth() {
 
 watch(() => projectsStore.selectedProjectId, () => {
   selectedDate.value = null;
+  fetchActivityDates();
 });
+
+watch(monthString, fetchActivityDates);
 
 // New Review Modal
 async function openNewReviewModal() {

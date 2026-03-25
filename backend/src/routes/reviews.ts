@@ -238,6 +238,29 @@ router.post('/trigger', adminMiddleware, async (req: Request, res: Response): Pr
   });
 });
 
+// Calculate the actual line number from a diff patch at a given character position
+function calculateLineNumber(patch: string, position: number): number {
+  const textBefore = patch.slice(0, position);
+  // Find the last @@ header before this position
+  const headers = [...textBefore.matchAll(/@@ -\d+(?:,\d+)? \+(\d+)(?:,\d+)? @@/g)];
+  if (headers.length === 0) return 1;
+
+  const lastHeader = headers[headers.length - 1];
+  const startLine = parseInt(lastHeader[1], 10);
+  const afterHeader = textBefore.slice(lastHeader.index! + lastHeader[0].length);
+
+  // Count added/context lines (lines starting with + or space, not -)
+  const lines = afterHeader.split('\n');
+  let lineOffset = 0;
+  for (const line of lines) {
+    if (line.startsWith('+') || line.startsWith(' ')) {
+      lineOffset++;
+    }
+  }
+
+  return startLine + Math.max(0, lineOffset - 1);
+}
+
 // Simple pattern analysis (would be replaced by AI in production)
 function analyzeFilePatterns(patch: string, filename: string): Array<{
   lineStart: number;
@@ -252,13 +275,15 @@ function analyzeFilePatterns(patch: string, filename: string): Array<{
   const issues: any[] = [];
 
   // Check for console.log in production code
-  if (patch.includes('console.log') && !filename.includes('test')) {
-    const match = patch.match(/\+.*console\.log\([^)]+\)/);
-    if (match) {
+  if (!filename.includes('test')) {
+    const consoleMatches = patch.matchAll(/\+(.*(console\.log\([^)]*\)).*)/g);
+    for (const match of consoleMatches) {
+      const actualLine = match[1].trim();
+      const lineNum = calculateLineNumber(patch, match.index!);
       issues.push({
-        lineStart: 1,
-        lineEnd: 1,
-        originalCode: match[0].replace(/^\+\s*/, ''),
+        lineStart: lineNum,
+        lineEnd: lineNum,
+        originalCode: actualLine,
         optimizedCode: '// Remove console.log in production\n// Or use a proper logging library',
         explanation: 'Console.log statements should be removed from production code. Use a proper logging library like winston or pino that can be configured per environment.',
         references: [{ type: 'docs', title: 'Winston Logger', url: 'https://github.com/winstonjs/winston' }],
@@ -268,28 +293,35 @@ function analyzeFilePatterns(patch: string, filename: string): Array<{
     }
   }
 
-  // Check for TODO comments
-  if (patch.includes('TODO') || patch.includes('FIXME')) {
+  // Check for TODO/FIXME comments - extract actual line
+  const todoMatches = patch.matchAll(/\+(.*(?:TODO|FIXME)[^\n]*)/g);
+  for (const match of todoMatches) {
+    const actualLine = match[1].trim();
+    const lineNum = calculateLineNumber(patch, match.index!);
     issues.push({
-      lineStart: 1,
-      lineEnd: 1,
-      originalCode: '// TODO: ...',
+      lineStart: lineNum,
+      lineEnd: lineNum,
+      originalCode: actualLine,
       optimizedCode: '// Create a GitHub issue to track this task',
-      explanation: 'TODO comments tend to be forgotten. Consider creating a GitHub issue to properly track this work item.',
+      explanation: `TODO/FIXME comment found: "${actualLine}". These tend to be forgotten. Consider creating a GitHub issue to properly track this work item.`,
       references: [],
       category: Category.CODE_STYLE,
       difficulty: Difficulty.BEGINNER,
     });
   }
 
-  // Check for hardcoded URLs/secrets
-  if (patch.match(/https?:\/\/[^\s"']+\.(com|io|org|net)/)) {
+  // Check for hardcoded URLs - extract actual code and URL
+  const urlMatches = patch.matchAll(/\+(.*(https?:\/\/[^\s"'`]+\.(com|io|org|net)[^\s"'`]*).*)/g);
+  for (const match of urlMatches) {
+    const actualLine = match[1].trim();
+    const actualUrl = match[2];
+    const lineNum = calculateLineNumber(patch, match.index!);
     issues.push({
-      lineStart: 1,
-      lineEnd: 1,
-      originalCode: 'const url = "https://api.example.com"',
-      optimizedCode: 'const url = process.env.API_URL',
-      explanation: 'Hardcoded URLs should be moved to environment variables for flexibility across different environments.',
+      lineStart: lineNum,
+      lineEnd: lineNum,
+      originalCode: actualLine,
+      optimizedCode: actualLine.replace(actualUrl, 'process.env.API_URL'),
+      explanation: `Hardcoded URL "${actualUrl}" should be moved to environment variables for flexibility across different environments.`,
       references: [{ type: 'docs', title: 'Twelve-Factor App - Config', url: 'https://12factor.net/config' }],
       category: Category.SECURITY,
       difficulty: Difficulty.BEGINNER,
