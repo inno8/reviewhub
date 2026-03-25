@@ -379,12 +379,136 @@ class TermsAndConditionsConfig(AppConfig):
     await prisma.finding.create({ data: finding });
   }
 
+  // Seed skill categories and skills
+  const skillCategories = [
+    {
+      name: 'code_quality',
+      displayName: 'Code Quality',
+      description: 'Writing clean, maintainable, and readable code',
+      icon: 'code',
+      skills: [
+        { name: 'clean_code', displayName: 'Clean Code', description: 'Readable, well-organized code with clear naming' },
+        { name: 'code_structure', displayName: 'Code Structure', description: 'Proper organization of files, classes, and functions' },
+        { name: 'dry_principle', displayName: 'DRY Principle', description: "Don't Repeat Yourself - avoiding code duplication" },
+        { name: 'comments_docs', displayName: 'Comments & Documentation', description: 'Clear comments and documentation' },
+      ],
+    },
+    {
+      name: 'design_patterns',
+      displayName: 'Design Patterns',
+      description: 'Applying proven software design solutions',
+      icon: 'architecture',
+      skills: [
+        { name: 'solid_principles', displayName: 'SOLID Principles', description: 'Single Responsibility, Open/Closed, etc.' },
+        { name: 'mvc_patterns', displayName: 'MVC/MVP/MVVM', description: 'Model-View-Controller and related patterns' },
+        { name: 'reusability', displayName: 'Reusability', description: 'Creating reusable components and functions' },
+        { name: 'abstraction', displayName: 'Abstraction', description: 'Proper use of interfaces and abstract classes' },
+      ],
+    },
+    {
+      name: 'logic_algorithms',
+      displayName: 'Logic & Algorithms',
+      description: 'Problem solving and algorithmic thinking',
+      icon: 'psychology',
+      skills: [
+        { name: 'problem_decomposition', displayName: 'Problem Decomposition', description: 'Breaking down complex problems into smaller parts' },
+        { name: 'data_structures', displayName: 'Data Structures', description: 'Choosing appropriate data structures' },
+        { name: 'algorithm_efficiency', displayName: 'Algorithm Efficiency', description: 'Writing efficient algorithms (Big O awareness)' },
+        { name: 'edge_cases', displayName: 'Edge Case Handling', description: 'Anticipating and handling edge cases' },
+      ],
+    },
+    {
+      name: 'security',
+      displayName: 'Security',
+      description: 'Writing secure code and avoiding vulnerabilities',
+      icon: 'security',
+      skills: [
+        { name: 'input_validation', displayName: 'Input Validation', description: 'Validating and sanitizing user input' },
+        { name: 'auth_practices', displayName: 'Authentication Practices', description: 'Proper auth implementation' },
+        { name: 'secrets_management', displayName: 'Secrets Management', description: 'Not hardcoding credentials, using env vars' },
+        { name: 'xss_csrf_prevention', displayName: 'XSS/CSRF Prevention', description: 'Preventing common web vulnerabilities' },
+      ],
+    },
+    {
+      name: 'testing',
+      displayName: 'Testing',
+      description: 'Writing tests and ensuring code quality',
+      icon: 'bug_report',
+      skills: [
+        { name: 'unit_testing', displayName: 'Unit Testing', description: 'Writing unit tests for functions/methods' },
+        { name: 'test_coverage', displayName: 'Test Coverage', description: 'Adequate test coverage of code' },
+        { name: 'test_quality', displayName: 'Test Quality', description: 'Meaningful tests that catch real bugs' },
+        { name: 'tdd', displayName: 'TDD', description: 'Test-Driven Development practices' },
+      ],
+    },
+    {
+      name: 'frontend',
+      displayName: 'Frontend',
+      description: 'UI/UX and frontend-specific skills',
+      icon: 'web',
+      skills: [
+        { name: 'html_semantics', displayName: 'HTML Semantics', description: 'Using semantic HTML elements properly' },
+        { name: 'css_organization', displayName: 'CSS Organization', description: 'Clean, maintainable CSS/Tailwind' },
+        { name: 'accessibility', displayName: 'Accessibility', description: 'ARIA labels, keyboard navigation, etc.' },
+        { name: 'responsive_design', displayName: 'Responsive Design', description: 'Mobile-first, responsive layouts' },
+      ],
+    },
+    {
+      name: 'backend',
+      displayName: 'Backend',
+      description: 'Server-side and API skills',
+      icon: 'dns',
+      skills: [
+        { name: 'api_design', displayName: 'API Design', description: 'RESTful design, proper status codes' },
+        { name: 'database_queries', displayName: 'Database Queries', description: 'Efficient and safe database queries' },
+        { name: 'error_handling', displayName: 'Error Handling', description: 'Proper error handling and logging' },
+        { name: 'performance', displayName: 'Performance', description: 'Optimizing backend performance' },
+      ],
+    },
+    {
+      name: 'devops',
+      displayName: 'DevOps & Tools',
+      description: 'Version control, CI/CD, and tooling',
+      icon: 'settings',
+      skills: [
+        { name: 'git_practices', displayName: 'Git Practices', description: 'Proper commits, branching, PRs' },
+        { name: 'build_tools', displayName: 'Build Tools', description: 'Understanding of build systems' },
+        { name: 'ci_cd', displayName: 'CI/CD', description: 'Continuous integration/deployment awareness' },
+        { name: 'environment_config', displayName: 'Environment Config', description: 'Proper use of env vars and config' },
+      ],
+    },
+  ];
+
+  let skillCount = 0;
+  for (const cat of skillCategories) {
+    const category = await prisma.skillCategory.upsert({
+      where: { name: cat.name },
+      update: { displayName: cat.displayName, description: cat.description, icon: cat.icon },
+      create: { name: cat.name, displayName: cat.displayName, description: cat.description, icon: cat.icon },
+    });
+
+    for (const skill of cat.skills) {
+      await prisma.skill.upsert({
+        where: { name: skill.name },
+        update: { displayName: skill.displayName, description: skill.description, categoryId: category.id },
+        create: {
+          name: skill.name,
+          displayName: skill.displayName,
+          description: skill.description,
+          categoryId: category.id,
+        },
+      });
+      skillCount++;
+    }
+  }
+
   console.log('Seed data created:');
   console.log('  - Users: yanick (yanick@itec.nl / admin123)');
   console.log('  - Interns: DollarDonut, Reikdv (intern123)');
   console.log(`  - Project: ${project.displayName}`);
   console.log(`  - Review 1: ${review1.branch} with 3 findings`);
   console.log(`  - Review 2: ${review2.branch} with 4 findings`);
+  console.log(`  - Skill categories: ${skillCategories.length}, Skills: ${skillCount}`);
 }
 
 main()

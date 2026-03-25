@@ -114,6 +114,12 @@ export const api = {
     leaderboard: (params: { projectId: number; periodType: 'DAILY' | 'WEEKLY' | 'MONTHLY' }) =>
       client.get('/performance/leaderboard', { params }),
   },
+  skills: {
+    categories: () => client.get('/skills/categories'),
+    user: (userId: number) => client.get(`/skills/user/${userId}`),
+    recalculate: (userId: number, projectId: number) =>
+      client.post(`/skills/recalculate/${userId}`, null, { params: { projectId } }),
+  },
 };
 
 export function useApi() {

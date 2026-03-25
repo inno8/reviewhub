@@ -38,6 +38,22 @@ interface TrendData {
   trend: 'improving' | 'stable' | 'declining';
 }
 
+interface SkillCategory {
+  id: number;
+  name: string;
+  displayName: string;
+  description: string;
+  icon: string;
+  skills: UserSkillData[];
+}
+
+interface UserSkillData {
+  id: number;
+  displayName: string;
+  score: number;
+  level: number;
+}
+
 const projectsStore = useProjectsStore();
 
 const users = ref<UserOption[]>([]);
@@ -46,6 +62,7 @@ const periodType = ref<PeriodType>('WEEKLY');
 const loading = ref(false);
 const performance = ref<PerformanceData | null>(null);
 const trends = ref<TrendData[]>([]);
+const skillCategories = ref<SkillCategory[]>([]);
 
 onMounted(async () => {
   await projectsStore.fetchProjects();
@@ -61,7 +78,7 @@ watch([() => selectedUserId.value, () => periodType.value], async () => {
 });
 
 watch([() => selectedUserId.value, () => projectsStore.selectedProjectId], async () => {
-  await loadTrends();
+  await Promise.all([loadTrends(), loadSkills()]);
 });
 
 async function fetchProjectUsers() {
@@ -72,7 +89,7 @@ async function fetchProjectUsers() {
     if (users.value.length > 0 && !selectedUserId.value) {
       selectedUserId.value = users.value[0].id;
     }
-    await Promise.all([loadPerformance(), loadTrends()]);
+    await Promise.all([loadPerformance(), loadTrends(), loadSkills()]);
   } catch (e) {
     console.error('Failed to fetch users', e);
   }
@@ -106,6 +123,17 @@ async function loadTrends() {
   } catch (e) {
     console.error('Failed to load trends', e);
     trends.value = [];
+  }
+}
+
+async function loadSkills() {
+  if (!selectedUserId.value) return;
+  try {
+    const { data } = await api.skills.user(selectedUserId.value);
+    skillCategories.value = data.categories;
+  } catch (e) {
+    console.error('Failed to load skills', e);
+    skillCategories.value = [];
   }
 }
 
@@ -177,6 +205,28 @@ function formatCategory(category: string) {
     .split('_')
     .map((part) => part.charAt(0) + part.slice(1).toLowerCase())
     .join(' ');
+}
+
+function getSkillLevel(score: number): string {
+  if (score >= 90) return 'Expert';
+  if (score >= 75) return 'Advanced';
+  if (score >= 50) return 'Intermediate';
+  if (score >= 25) return 'Developing';
+  return 'Beginner';
+}
+
+function getSkillBarColor(score: number): string {
+  if (score >= 90) return 'bg-primary';
+  if (score >= 75) return 'bg-green-500';
+  if (score >= 50) return 'bg-yellow-500';
+  if (score >= 25) return 'bg-orange-500';
+  return 'bg-red-500';
+}
+
+function categoryAverage(category: SkillCategory): number {
+  if (!category.skills.length) return 0;
+  const total = category.skills.reduce((sum, s) => sum + s.score, 0);
+  return Math.round(total / category.skills.length);
 }
 
 const selectedUser = computed(() => users.value.find(u => u.id === selectedUserId.value));
@@ -397,6 +447,40 @@ const selectedUser = computed(() => users.value.find(u => u.id === selectedUserI
               View Resource
               <span class="material-symbols-outlined text-sm group-hover/link:translate-x-1 transition-transform">arrow_forward</span>
             </a>
+          </div>
+        </div>
+      </section>
+
+      <!-- Skill Progress -->
+      <section v-if="skillCategories.length" class="mb-12">
+        <h4 class="text-2xl font-black tracking-tight mb-6">Skill Progress</h4>
+        <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
+          <div v-for="category in skillCategories" :key="category.id" class="bg-surface-container-low p-6 rounded-xl">
+            <div class="flex items-center gap-3 mb-4">
+              <span class="material-symbols-outlined text-primary">{{ category.icon }}</span>
+              <h5 class="font-bold">{{ category.displayName }}</h5>
+            </div>
+
+            <div class="space-y-3">
+              <div v-for="skill in category.skills" :key="skill.id" class="space-y-1">
+                <div class="flex justify-between text-xs">
+                  <span>{{ skill.displayName }}</span>
+                  <span class="text-outline">{{ getSkillLevel(skill.score) }} · {{ skill.score }}%</span>
+                </div>
+                <div class="h-2 bg-surface-container-highest rounded-full overflow-hidden">
+                  <div
+                    class="h-full rounded-full transition-all duration-500"
+                    :class="getSkillBarColor(skill.score)"
+                    :style="{ width: skill.score + '%' }"
+                  ></div>
+                </div>
+              </div>
+            </div>
+
+            <div class="mt-4 pt-4 border-t border-outline-variant/10 flex justify-between">
+              <span class="text-sm font-bold">Average</span>
+              <span class="text-sm font-bold text-primary">{{ categoryAverage(category) }}%</span>
+            </div>
           </div>
         </div>
       </section>

@@ -9,6 +9,7 @@ import reviewRoutes from './routes/reviews';
 import findingRoutes from './routes/findings';
 import userRoutes from './routes/users';
 import performanceRoutes from './routes/performance';
+import skillsRoutes from './routes/skills';
 import filesRoutes from './routes/files';
 
 const app = express();
@@ -24,6 +25,7 @@ app.use('/api/reviews', reviewRoutes);
 app.use('/api/findings', findingRoutes);
 app.use('/api/users', userRoutes);
 app.use('/api/performance', performanceRoutes);
+app.use('/api/skills', skillsRoutes);
 app.use('/api/files', filesRoutes);
 
 // Health check
