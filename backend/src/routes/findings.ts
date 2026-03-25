@@ -226,6 +226,24 @@ router.get('/:id/file-content', async (req: Request, res: Response): Promise<voi
   }
 });
 
+router.patch('/:id/fixed', async (req: Request, res: Response): Promise<void> => {
+  const findingId = parseInt(req.params.id);
+  const finding = await prisma.finding.findUnique({ where: { id: findingId } });
+
+  if (!finding) {
+    res.status(404).json({ error: 'Finding not found' });
+    return;
+  }
+
+  const fixedAt = finding.fixedAt ? null : new Date();
+  const updated = await prisma.finding.update({
+    where: { id: findingId },
+    data: { fixedAt },
+  });
+
+  res.json({ fixedAt: updated.fixedAt });
+});
+
 router.post('/:id/apply-fix', adminMiddleware, async (req: Request, res: Response): Promise<void> => {
   const findingId = parseInt(req.params.id);
   const finding = await prisma.finding.findUnique({

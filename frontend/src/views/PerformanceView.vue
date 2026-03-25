@@ -21,6 +21,7 @@ interface PerformanceData {
   growthAreas: string[];
   recommendations: Recommendation[];
   fixRate: number;
+  reviewVelocity: number | null;
 }
 
 interface Recommendation {
@@ -345,8 +346,8 @@ function closeSkillBreakdown() {
         <div class="bg-surface-container-low p-6 rounded-xl border-l-4 border-outline">
           <p class="text-outline text-xs font-bold uppercase tracking-wider mb-2">Review Velocity</p>
           <div class="flex items-end justify-between">
-            <h3 class="text-3xl font-black">{{ trends.length }}w</h3>
-            <span class="text-outline text-xs font-bold">tracked</span>
+            <h3 class="text-3xl font-black">{{ performance.reviewVelocity !== null ? performance.reviewVelocity + 'd' : '—' }}</h3>
+            <span class="text-outline text-xs font-bold">{{ performance.reviewVelocity !== null ? 'avg fix time' : 'No fixes yet' }}</span>
           </div>
         </div>
       </section>

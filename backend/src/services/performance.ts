@@ -27,6 +27,7 @@ export interface PerformanceData {
   growthAreas: string[];
   recommendations: Recommendation[];
   fixRate: number;
+  reviewVelocity: number | null;
 }
 
 export interface CodeProgression {
@@ -186,6 +187,8 @@ export async function calculatePerformance(
       difficulty: true,
       commitSha: true,
       prCreated: true,
+      fixedAt: true,
+      createdAt: true,
     },
   });
 
@@ -203,8 +206,19 @@ export async function calculatePerformance(
 
   const commitCount = new Set(findings.map((finding) => finding.commitSha).filter(Boolean)).size;
   const findingCount = findings.length;
-  const fixedCount = findings.filter((finding) => finding.prCreated).length;
+  const fixedCount = findings.filter((finding) => finding.fixedAt).length;
   const fixRate = findingCount ? Math.round((fixedCount / findingCount) * 100) : 0;
+
+  // Calculate review velocity: average days from createdAt to fixedAt
+  const fixedFindings = findings.filter((f) => f.fixedAt);
+  let reviewVelocity: number | null = null;
+  if (fixedFindings.length > 0) {
+    const totalDays = fixedFindings.reduce((sum, f) => {
+      const diffMs = new Date(f.fixedAt!).getTime() - new Date(f.createdAt).getTime();
+      return sum + diffMs / (1000 * 60 * 60 * 24);
+    }, 0);
+    reviewVelocity = Math.round((totalDays / fixedFindings.length) * 10) / 10;
+  }
 
   await prisma.performanceMetric.upsert({
     where: {
@@ -256,6 +270,7 @@ export async function calculatePerformance(
     growthAreas,
     recommendations,
     fixRate,
+    reviewVelocity,
   };
 }
 

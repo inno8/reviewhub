@@ -83,6 +83,7 @@ model Finding {
   difficulty    Difficulty
   prCreated     Boolean    @default(false)
   prUrl         String?
+  fixedAt       DateTime?
   createdAt     DateTime   @default(now())
 
   review       Review        @relation(fields: [reviewId], references: [id], onDelete: Cascade)

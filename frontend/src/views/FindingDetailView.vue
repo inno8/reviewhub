@@ -83,6 +83,18 @@ async function requestExplanation() {
   }
 }
 
+async function markFixed() {
+  if (!findingId.value || !finding.value) return;
+  actionLoading.value = true;
+  try {
+    const { data } = await api.findings.markFixed(findingId.value);
+    finding.value.fixedAt = data.fixedAt;
+    toastMessage.value = data.fixedAt ? 'Marked as fixed.' : 'Unmarked as fixed.';
+  } finally {
+    actionLoading.value = false;
+  }
+}
+
 async function applyFixAndCreatePr() {
   if (!findingId.value || !finding.value) return;
   applyFixLoading.value = true;
@@ -210,6 +222,19 @@ function clearToast() {
             </span>
           </label>
           <div class="flex items-center gap-3 w-full md:w-auto">
+            <button
+              :disabled="actionLoading"
+              :class="[
+                'flex-1 md:flex-none px-6 py-3 rounded-lg flex items-center justify-center gap-2 font-medium transition-all active:scale-[0.98] disabled:opacity-50',
+                finding.fixedAt
+                  ? 'bg-primary/10 text-primary border border-primary/30'
+                  : 'border border-outline-variant/30 text-on-surface-variant hover:bg-surface-container-high hover:text-on-surface'
+              ]"
+              @click="markFixed"
+            >
+              <span class="material-symbols-outlined" :style="finding.fixedAt ? 'font-variation-settings: \'FILL\' 1;' : ''">check_circle</span>
+              {{ finding.fixedAt ? 'Fixed' : 'Mark as Fixed' }}
+            </button>
             <button
               :disabled="actionLoading || finding.explanationRequested"
               class="flex-1 md:flex-none px-6 py-3 border border-outline-variant/30 rounded-lg flex items-center justify-center gap-2 text-on-surface-variant hover:bg-surface-container-high hover:text-on-surface transition-all active:scale-[0.98] disabled:opacity-50"

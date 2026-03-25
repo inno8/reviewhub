@@ -90,6 +90,7 @@ export const api = {
     markUnderstood: (id: number) => client.patch(`/findings/${id}/understood`),
     requestExplanation: (id: number) => client.post(`/findings/${id}/request-explanation`),
     applyFix: (id: number) => client.post(`/findings/${id}/apply-fix`),
+    markFixed: (id: number) => client.patch(`/findings/${id}/fixed`),
   },
   files: {
     getContent: (projectId: number, branch: string, filePath: string) =>
