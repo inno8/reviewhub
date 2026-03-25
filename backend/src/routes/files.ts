@@ -8,12 +8,13 @@ const prisma = new PrismaClient();
 
 router.use(authMiddleware);
 
-// GET /api/files/:projectId/:branch/*path
+// GET /api/files/:projectId/:branch/:filePath
 // Fetches file content from GitHub
-router.get('/:projectId/:branch/*', async (req: Request, res: Response): Promise<void> => {
+// filePath should be URL-encoded (e.g., cart%2Ftemplates%2Fhome.html)
+router.get('/:projectId/:branch/:filePath', async (req: Request, res: Response): Promise<void> => {
   const projectId = parseInt(req.params.projectId as string);
   const branch = req.params.branch as string;
-  const filePath = req.params[0] as string; // Everything after branch/
+  const filePath = decodeURIComponent(req.params.filePath as string);
 
   if (!projectId || !branch || !filePath) {
     res.status(400).json({ error: 'projectId, branch, and file path required' });

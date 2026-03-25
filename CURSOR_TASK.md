@@ -1,286 +1,310 @@
-# ReviewHub: Import Markdown Reviews into Database
+# ReviewHub: GitHub File Viewer with Issue Highlighting
 
-## Context
+## Goal
+When clicking a finding, show the full file content from GitHub with the problematic lines highlighted.
 
-@code-review writes detailed reviews to markdown files at:
-`C:\Users\yanic\.openclaw\workspace\projects\amanks-market\reviews\YYYY-MM-DD.md`
+## Task 1: Backend - File Content Endpoint
 
-But ReviewHub reads from its SQLite database. Currently they're disconnected.
-
-## Task: Create Markdown Import System
-
-### 1. Create Import Service
-
-**File:** `backend/src/services/markdownImport.ts`
-
-Parse markdown review files and extract findings:
+**File:** `backend/src/routes/files.ts` (new)
 
 ```typescript
-import * as fs from 'fs';
-import * as path from 'path';
-import { PrismaClient, Category, Difficulty } from '@prisma/client';
+import { Router, Request, Response } from 'express';
+import { PrismaClient } from '@prisma/client';
+import { Octokit } from '@octokit/rest';
+import { authMiddleware } from '../middleware/auth';
 
-const REVIEWS_DIR = 'C:/Users/yanic/.openclaw/workspace/projects/amanks-market/reviews';
+const router = Router();
+const prisma = new PrismaClient();
+const octokit = new Octokit({ auth: process.env.GITHUB_TOKEN });
 
-interface ParsedFinding {
-  filePath: string;
-  lineStart: number;
-  lineEnd: number;
-  originalCode: string;
-  explanation: string;
-  category: Category;
-  difficulty: Difficulty;
-  branch: string;
-  commitAuthor: string;
-}
+router.use(authMiddleware);
 
-export async function importMarkdownReview(date: string, projectId: number): Promise<number> {
-  const filePath = path.join(REVIEWS_DIR, `${date}.md`);
-  
-  if (!fs.existsSync(filePath)) {
-    throw new Error(`Review file not found: ${filePath}`);
-  }
-  
-  const content = fs.readFileSync(filePath, 'utf-8');
-  const findings = parseMarkdownReview(content);
-  
-  // Import to database...
-  return findings.length;
-}
+// GET /api/files/:projectId/:branch/*path
+// Fetches file content from GitHub
+router.get('/:projectId/:branch/*', async (req: Request, res: Response): Promise<void> => {
+  const projectId = parseInt(req.params.projectId);
+  const branch = req.params.branch;
+  const filePath = req.params[0]; // Everything after branch/
 
-function parseMarkdownReview(content: string): ParsedFinding[] {
-  const findings: ParsedFinding[] = [];
-  
-  // Parse the markdown structure:
-  // - Find branch headers (### 1. `branch-name`)
-  // - Find "#### ⚠️ Issues Found" sections
-  // - Extract numbered issues with code blocks
-  // - Map to categories based on keywords
-  
-  // Example pattern to match:
-  // ##### 1. **Duplicate Meta Description** (home.html)
-  // ```html
-  // <meta name="description" content="...">
-  // ```
-  // **Why this matters:** ...
-  // **Fix:** ...
-  
-  const branchRegex = /### \d+\. `([^`]+)`\s*\n\*\*Author:\*\* ([^\n]+)/g;
-  const issueRegex = /##### \d+\. \*\*([^*]+)\*\* \(([^)]+)\)\s*\n```(\w+)?\n([\s\S]*?)```\s*\n\*\*Why this matters:\*\* ([^\n]+)/g;
-  
-  let currentBranch = '';
-  let currentAuthor = '';
-  
-  // First pass: extract branches
-  let branchMatch;
-  const branches: Array<{branch: string, author: string, startIndex: number}> = [];
-  while ((branchMatch = branchRegex.exec(content)) !== null) {
-    branches.push({
-      branch: branchMatch[1],
-      author: branchMatch[2].split('(')[0].trim(),
-      startIndex: branchMatch.index
-    });
-  }
-  
-  // Second pass: extract issues and assign to branches
-  let issueMatch;
-  while ((issueMatch = issueRegex.exec(content)) !== null) {
-    // Find which branch this issue belongs to
-    const issueIndex = issueMatch.index;
-    for (let i = branches.length - 1; i >= 0; i--) {
-      if (branches[i].startIndex < issueIndex) {
-        currentBranch = branches[i].branch;
-        currentAuthor = branches[i].author;
-        break;
-      }
-    }
-    
-    const [_, title, fileName, lang, code, explanation] = issueMatch;
-    
-    findings.push({
-      filePath: fileName,
-      lineStart: 1,
-      lineEnd: 1,
-      originalCode: code.trim(),
-      explanation: `**${title}**: ${explanation}`,
-      category: categorizeIssue(title),
-      difficulty: Difficulty.BEGINNER,
-      branch: currentBranch,
-      commitAuthor: currentAuthor
-    });
-  }
-  
-  return findings;
-}
-
-function categorizeIssue(title: string): Category {
-  const lower = title.toLowerCase();
-  if (lower.includes('security') || lower.includes('csrf') || lower.includes('hardcoded')) {
-    return Category.SECURITY;
-  }
-  if (lower.includes('performance') || lower.includes('slow') || lower.includes('loading')) {
-    return Category.PERFORMANCE;
-  }
-  if (lower.includes('test') || lower.includes('coverage')) {
-    return Category.TESTING;
-  }
-  if (lower.includes('architecture') || lower.includes('structure') || lower.includes('import')) {
-    return Category.ARCHITECTURE;
-  }
-  return Category.CODE_STYLE;
-}
-```
-
-### 2. Add Import Endpoint
-
-**File:** `backend/src/routes/reviews.ts`
-
-Add a new endpoint that imports from markdown:
-
-```typescript
-import { importMarkdownReview, syncAllMarkdownReviews } from '../services/markdownImport';
-
-// Import a specific day's review from markdown
-router.post('/import/:date', adminMiddleware, async (req: Request, res: Response): Promise<void> => {
-  const { date } = req.params;
-  const { projectId } = req.body;
-  
-  if (!projectId || !/^\d{4}-\d{2}-\d{2}$/.test(date)) {
-    res.status(400).json({ error: 'Valid projectId and date (YYYY-MM-DD) required' });
+  if (!projectId || !branch || !filePath) {
+    res.status(400).json({ error: 'projectId, branch, and file path required' });
     return;
   }
-  
-  try {
-    const count = await importMarkdownReview(date, projectId);
-    res.json({ success: true, imported: count, date });
-  } catch (error: any) {
-    res.status(500).json({ error: error.message });
-  }
-});
 
-// Sync all markdown reviews (scan directory, import missing)
-router.post('/sync-markdown', adminMiddleware, async (req: Request, res: Response): Promise<void> => {
-  const { projectId } = req.body;
-  
-  if (!projectId) {
-    res.status(400).json({ error: 'projectId required' });
+  const project = await prisma.project.findUnique({ where: { id: projectId } });
+  if (!project) {
+    res.status(404).json({ error: 'Project not found' });
     return;
   }
-  
+
   try {
-    const result = await syncAllMarkdownReviews(projectId);
-    res.json({ success: true, ...result });
-  } catch (error: any) {
-    res.status(500).json({ error: error.message });
-  }
-});
-```
-
-### 3. Update Refresh Button
-
-**File:** `backend/src/routes/reviews.ts`
-
-Modify the existing `/trigger` endpoint to also check for new markdown files:
-
-```typescript
-router.post('/trigger', adminMiddleware, async (req: Request, res: Response): Promise<void> => {
-  const { projectId } = req.body;
-  
-  // First, sync any new markdown reviews from @code-review
-  const markdownResult = await syncAllMarkdownReviews(projectId);
-  
-  // Then do the GitHub-based analysis (optional, could remove)
-  // ... existing code ...
-  
-  res.json({
-    success: true,
-    markdownImported: markdownResult.imported,
-    // ... other results
-  });
-});
-```
-
-### 4. Add Sync Function
-
-**File:** `backend/src/services/markdownImport.ts`
-
-```typescript
-export async function syncAllMarkdownReviews(projectId: number): Promise<{imported: number, skipped: number, files: string[]}> {
-  const prisma = new PrismaClient();
-  const files = fs.readdirSync(REVIEWS_DIR).filter(f => f.match(/^\d{4}-\d{2}-\d{2}\.md$/));
-  
-  let imported = 0;
-  let skipped = 0;
-  const importedFiles: string[] = [];
-  
-  for (const file of files) {
-    const date = file.replace('.md', '');
-    const reviewDate = new Date(date);
-    reviewDate.setHours(0, 0, 0, 0);
-    
-    // Check if we already imported this date
-    const existing = await prisma.review.findFirst({
-      where: {
-        projectId,
-        reviewDate,
-        rawMarkdown: { not: null }  // Indicates it was imported from markdown
-      }
+    const { data } = await octokit.repos.getContent({
+      owner: project.githubOwner,
+      repo: project.githubRepo,
+      path: filePath,
+      ref: branch,
     });
-    
-    if (existing) {
-      skipped++;
-      continue;
+
+    if (Array.isArray(data) || data.type !== 'file') {
+      res.status(400).json({ error: 'Path is not a file' });
+      return;
     }
-    
-    try {
-      const count = await importMarkdownReview(date, projectId);
-      imported += count;
-      importedFiles.push(date);
-    } catch (e) {
-      console.error(`Failed to import ${file}:`, e);
+
+    // Decode base64 content
+    const content = Buffer.from(data.content, 'base64').toString('utf-8');
+
+    res.json({
+      content,
+      path: filePath,
+      sha: data.sha,
+      size: data.size,
+      encoding: 'utf-8',
+    });
+  } catch (error: any) {
+    if (error.status === 404) {
+      res.status(404).json({ error: 'File not found in repository' });
+    } else {
+      console.error('[GitHub] Failed to fetch file:', error);
+      res.status(500).json({ error: 'Failed to fetch file from GitHub' });
     }
   }
-  
-  await prisma.$disconnect();
-  return { imported, skipped, files: importedFiles };
-}
+});
+
+export default router;
 ```
 
-### 5. Frontend: Update API Client
+**Register in `backend/src/app.ts`:**
+```typescript
+import filesRouter from './routes/files';
+app.use('/api/files', filesRouter);
+```
+
+## Task 2: Frontend - API Client Update
 
 **File:** `frontend/src/composables/useApi.ts`
 
-Add the new endpoints:
-
+Add:
 ```typescript
-reviews: {
-  // ... existing
-  importMarkdown: (projectId: number, date: string) =>
-    client.post(`/reviews/import/${date}`, { projectId }),
-  syncMarkdown: (projectId: number) =>
-    client.post('/reviews/sync-markdown', { projectId }),
+files: {
+  getContent: (projectId: number, branch: string, filePath: string) =>
+    client.get(`/files/${projectId}/${encodeURIComponent(branch)}/${filePath}`),
 },
 ```
 
+## Task 3: Frontend - FileViewer Component
+
+**File:** `frontend/src/components/code/FileViewer.vue`
+
+Create a modal component that:
+1. Fetches file content from the API
+2. Displays with syntax highlighting (use Prism.js or highlight.js)
+3. Highlights issue lines (lineStart to lineEnd) in yellow/red
+4. Auto-scrolls to the first highlighted line
+5. Shows line numbers
+
+```vue
+<template>
+  <div class="fixed inset-0 bg-black/50 flex items-center justify-center z-50" @click.self="$emit('close')">
+    <div class="bg-white rounded-lg shadow-xl w-[90vw] max-w-5xl max-h-[85vh] flex flex-col">
+      <!-- Header -->
+      <div class="flex items-center justify-between p-4 border-b">
+        <div>
+          <h3 class="font-semibold text-lg">{{ filePath }}</h3>
+          <p class="text-sm text-gray-500">{{ branch }}</p>
+        </div>
+        <button @click="$emit('close')" class="p-2 hover:bg-gray-100 rounded">
+          <XIcon class="w-5 h-5" />
+        </button>
+      </div>
+
+      <!-- Code Content -->
+      <div class="flex-1 overflow-auto" ref="codeContainer">
+        <div v-if="loading" class="p-8 text-center text-gray-500">Loading file...</div>
+        <div v-else-if="error" class="p-8 text-center text-red-500">{{ error }}</div>
+        <div v-else class="code-viewer font-mono text-sm">
+          <div
+            v-for="(line, index) in lines"
+            :key="index"
+            :ref="el => { if (isHighlighted(index + 1)) highlightedRefs.push(el) }"
+            :class="[
+              'flex hover:bg-gray-50',
+              isHighlighted(index + 1) ? 'bg-yellow-100 border-l-4 border-yellow-500' : ''
+            ]"
+          >
+            <span class="w-12 px-2 py-0.5 text-right text-gray-400 select-none border-r bg-gray-50">
+              {{ index + 1 }}
+            </span>
+            <pre class="flex-1 px-4 py-0.5 overflow-x-auto"><code v-html="highlightLine(line)"></code></pre>
+          </div>
+        </div>
+      </div>
+
+      <!-- Footer with issue info -->
+      <div v-if="finding" class="p-4 border-t bg-gray-50">
+        <p class="font-medium text-sm">{{ finding.category }}</p>
+        <p class="text-sm text-gray-600 mt-1">{{ finding.explanation }}</p>
+      </div>
+    </div>
+  </div>
+</template>
+
+<script setup lang="ts">
+import { ref, onMounted, nextTick, computed } from 'vue';
+import { XIcon } from 'lucide-vue-next';
+import { api } from '@/composables/useApi';
+import Prism from 'prismjs';
+import 'prismjs/themes/prism.css';
+// Import language support as needed
+import 'prismjs/components/prism-markup';
+import 'prismjs/components/prism-css';
+import 'prismjs/components/prism-javascript';
+import 'prismjs/components/prism-python';
+
+const props = defineProps<{
+  projectId: number;
+  branch: string;
+  filePath: string;
+  lineStart: number;
+  lineEnd: number;
+  finding?: any;
+}>();
+
+const emit = defineEmits(['close']);
+
+const loading = ref(true);
+const error = ref('');
+const content = ref('');
+const codeContainer = ref<HTMLElement>();
+const highlightedRefs = ref<HTMLElement[]>([]);
+
+const lines = computed(() => content.value.split('\n'));
+
+const language = computed(() => {
+  const ext = props.filePath.split('.').pop()?.toLowerCase();
+  const langMap: Record<string, string> = {
+    html: 'markup',
+    htm: 'markup',
+    vue: 'markup',
+    xml: 'markup',
+    js: 'javascript',
+    ts: 'javascript',
+    jsx: 'javascript',
+    tsx: 'javascript',
+    py: 'python',
+    css: 'css',
+    scss: 'css',
+  };
+  return langMap[ext || ''] || 'markup';
+});
+
+function isHighlighted(lineNum: number): boolean {
+  return lineNum >= props.lineStart && lineNum <= props.lineEnd;
+}
+
+function highlightLine(line: string): string {
+  try {
+    return Prism.highlight(line || ' ', Prism.languages[language.value], language.value);
+  } catch {
+    return escapeHtml(line || ' ');
+  }
+}
+
+function escapeHtml(text: string): string {
+  return text
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;');
+}
+
+onMounted(async () => {
+  try {
+    const { data } = await api.files.getContent(props.projectId, props.branch, props.filePath);
+    content.value = data.content;
+  } catch (e: any) {
+    error.value = e.response?.data?.error || 'Failed to load file';
+  } finally {
+    loading.value = false;
+  }
+
+  // Scroll to highlighted line after render
+  await nextTick();
+  if (highlightedRefs.value.length > 0) {
+    highlightedRefs.value[0]?.scrollIntoView({ behavior: 'smooth', block: 'center' });
+  }
+});
+</script>
+
+<style scoped>
+.code-viewer {
+  min-width: max-content;
+}
+pre {
+  margin: 0;
+  white-space: pre;
+}
+code {
+  background: none;
+  padding: 0;
+}
+</style>
+```
+
+## Task 4: Install Prism.js
+
+```bash
+cd frontend
+npm install prismjs @types/prismjs
+```
+
+## Task 5: Integrate into FindingCard
+
+**File:** `frontend/src/components/findings/FindingCard.vue` (or wherever findings are displayed)
+
+Add a "View File" button that opens the FileViewer:
+
+```vue
+<template>
+  <!-- existing finding card content -->
+  <button @click="showFileViewer = true" class="text-sm text-blue-600 hover:underline">
+    View full file
+  </button>
+  
+  <FileViewer
+    v-if="showFileViewer"
+    :projectId="projectId"
+    :branch="finding.review.branch"
+    :filePath="finding.filePath"
+    :lineStart="finding.lineStart"
+    :lineEnd="finding.lineEnd"
+    :finding="finding"
+    @close="showFileViewer = false"
+  />
+</template>
+```
+
+## Task 6: Handle Missing Line Numbers
+
+Some imported findings have lineStart/lineEnd = 1. For better UX:
+- If lineStart === lineEnd === 1 and we have `originalCode`, search for that code in the file content to find the actual line numbers
+- Highlight all matching occurrences
+
 ## Testing
 
-1. Run sync: `POST /api/reviews/sync-markdown` with `{ projectId: 1 }`
-2. Should import the 2026-03-25.md review
-3. Calendar should now show March 25 as active
-4. Clicking March 25 should show the real issues (duplicate meta, broken HTML, etc.)
+1. Click a finding with a valid filePath (e.g., `home.html`)
+2. FileViewer modal should open
+3. Full file content displayed with syntax highlighting
+4. Issue lines (lineStart to lineEnd) highlighted in yellow
+5. Auto-scroll to highlighted section
+6. Close button works
 
 ## Files to Create/Modify
 
-- **CREATE:** `backend/src/services/markdownImport.ts`
-- **MODIFY:** `backend/src/routes/reviews.ts`
+- **CREATE:** `backend/src/routes/files.ts`
+- **MODIFY:** `backend/src/app.ts` (register route)
+- **CREATE:** `frontend/src/components/code/FileViewer.vue`
 - **MODIFY:** `frontend/src/composables/useApi.ts`
-
-## Important Notes
-
-- The markdown parser needs to handle the specific format of @code-review output
-- Store `rawMarkdown` in the Review model to track that it came from markdown import
-- De-duplicate: don't re-import if the date already has findings
-- The Refresh button should call sync-markdown first, then optionally do GitHub analysis
+- **MODIFY:** Finding display component (add "View File" button)
+- **INSTALL:** `prismjs` package
 
 ---
 

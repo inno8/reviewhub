@@ -93,7 +93,7 @@ export const api = {
   },
   files: {
     getContent: (projectId: number, branch: string, filePath: string) =>
-      client.get(`/files/${projectId}/${encodeURIComponent(branch)}/${filePath}`),
+      client.get(`/files/${projectId}/${encodeURIComponent(branch)}/${encodeURIComponent(filePath)}`),
   },
   users: {
     list: () => client.get('/users'),
