@@ -28,6 +28,11 @@ const difficultyClass = computed(() => {
   }[diff] || 'bg-outline/10 text-outline border-outline/20';
 });
 
+const hasRealCode = computed(() => {
+  const code = props.finding.originalCode;
+  return code && code.trim() !== '' && !code.trim().startsWith('//');
+});
+
 const authorName = computed(() => props.finding.commitAuthor || 'Unknown');
 
 const fileIcon = computed(() => {
@@ -67,6 +72,12 @@ async function openFinding() {
       <span :class="['px-2 py-0.5 rounded-full text-[10px] font-bold uppercase tracking-wider border', difficultyClass]">
         {{ finding.difficulty }}
       </span>
+    </div>
+
+    <!-- Conceptual Issue Indicator -->
+    <div v-if="!hasRealCode" class="flex items-center gap-1.5 text-outline text-xs mb-3 bg-surface-container px-2 py-1 rounded w-fit">
+      <span class="material-symbols-outlined text-xs">info</span>
+      Conceptual issue — no code snippet
     </div>
 
     <!-- Explanation -->

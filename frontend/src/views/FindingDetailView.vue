@@ -25,6 +25,11 @@ const references = computed(() => {
   return Array.isArray(raw) ? raw : [];
 });
 
+const hasRealCode = computed(() => {
+  const code = finding.value?.originalCode;
+  return code && code.trim() !== '' && !code.trim().startsWith('//');
+});
+
 const categoryClass = computed(() => {
   const cat = finding.value?.category?.toLowerCase().replace('_', '');
   return {
@@ -140,12 +145,32 @@ function clearToast() {
           </div>
         </section>
 
-        <!-- Code Comparison -->
-        <CodeComparison
-          :original-code="finding.originalCode"
-          :optimized-code="finding.optimizedCode"
-          :file-path="finding.filePath"
-        />
+        <!-- Code Comparison or Conceptual Issue -->
+        <template v-if="hasRealCode">
+          <CodeComparison
+            :original-code="finding.originalCode"
+            :optimized-code="finding.optimizedCode"
+            :file-path="finding.filePath"
+          />
+        </template>
+        <template v-else>
+          <section class="bg-surface-container rounded-xl p-8 text-center space-y-4 border border-outline-variant/10">
+            <span class="material-symbols-outlined text-5xl text-outline/40">info</span>
+            <p class="text-on-surface-variant text-lg">This is a conceptual issue — no code snippet available</p>
+            <div v-if="finding.optimizedCode" class="bg-surface-container-low rounded-lg p-6 text-left max-w-2xl mx-auto">
+              <h3 class="text-sm font-bold text-outline uppercase tracking-wider mb-2">Suggestion</h3>
+              <p class="text-on-surface leading-relaxed">{{ finding.optimizedCode }}</p>
+            </div>
+            <button
+              v-if="finding.review?.project?.id"
+              class="mt-2 px-6 py-3 primary-gradient text-on-primary font-bold rounded-lg inline-flex items-center gap-2 shadow-lg shadow-primary/10 hover:shadow-primary/20 transition-all active:scale-[0.98]"
+              @click="showFileViewer = true"
+            >
+              <span class="material-symbols-outlined">visibility</span>
+              View {{ finding.filePath }} on GitHub
+            </button>
+          </section>
+        </template>
 
         <!-- Explanation Section -->
         <section class="bg-surface-container-low rounded-xl p-8 border border-outline-variant/10 relative overflow-hidden">
@@ -164,9 +189,9 @@ function clearToast() {
               <h3 class="text-sm font-bold text-outline uppercase tracking-wider">References</h3>
               <ul class="space-y-1">
                 <li v-for="(ref, idx) in references" :key="idx">
-                  <a :href="ref" target="_blank" class="text-primary text-sm hover:underline flex items-center gap-1">
+                  <a :href="typeof ref === 'string' ? ref : ref.url" target="_blank" class="text-primary text-sm hover:underline flex items-center gap-1">
                     <span class="material-symbols-outlined text-sm">link</span>
-                    {{ ref }}
+                    {{ typeof ref === 'string' ? ref : ref.title || ref.url }}
                   </a>
                 </li>
               </ul>

@@ -70,11 +70,16 @@ export function parseMarkdownReview(content: string): ParsedFinding[] {
 
     // Extract fix/suggestion code block if present (second code block)
     const allCodeBlocks = [...body.matchAll(/```(\w+)?\n([\s\S]*?)```/g)];
-    const optimizedCode = allCodeBlocks.length > 1 ? allCodeBlocks[1][2].trim() : '';
+    let optimizedCode = allCodeBlocks.length > 1 ? allCodeBlocks[1][2].trim() : '';
 
     // Extract explanation from **Why this matters:** or text after code block
     const whyMatch = body.match(/\*\*Why this matters:\*\*\s*([^\n]+)/);
     const fixMatch = body.match(/\*\*(?:Fix|Suggestion):\*\*\s*([^\n]+)/);
+
+    // For issues without code blocks, put fix/suggestion text in optimizedCode
+    if (!originalCode && fixMatch) {
+      optimizedCode = fixMatch[1].trim();
+    }
 
     let explanation = `**${title}**`;
     if (whyMatch) explanation += `: ${whyMatch[1].trim()}`;
@@ -94,7 +99,7 @@ export function parseMarkdownReview(content: string): ParsedFinding[] {
       filePath: fileHint || 'unknown',
       lineStart: 1,
       lineEnd: 1,
-      originalCode: originalCode || `// ${title}`,
+      originalCode,
       optimizedCode,
       explanation,
       category: categorizeIssue(title, body),
