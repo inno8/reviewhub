@@ -18,7 +18,16 @@ interface PerformanceData {
   commitCount: number;
   strengths: string[];
   growthAreas: string[];
+  recommendations: Recommendation[];
   fixRate: number;
+}
+
+interface Recommendation {
+  type: 'book' | 'article' | 'tutorial' | 'video';
+  title: string;
+  url: string;
+  category: string;
+  reason: string;
 }
 
 interface TrendData {
@@ -59,7 +68,6 @@ async function fetchProjectUsers() {
   if (!projectsStore.selectedProjectId) return;
   try {
     const { data } = await api.users.list();
-    // Filter to users assigned to this project (simplified - would need project user endpoint)
     users.value = data.users.filter((u: any) => u.role === 'INTERN');
     if (users.value.length > 0 && !selectedUserId.value) {
       selectedUserId.value = users.value[0].id;
@@ -80,14 +88,8 @@ async function loadPerformance() {
     });
     performance.value = data;
   } catch (e) {
-    // Default data if API fails
-    performance.value = {
-      findingCount: 7,
-      commitCount: 23,
-      strengths: ['HTML Structure', 'Tailwind CSS'],
-      growthAreas: ['Code Duplication', 'Accessibility'],
-      fixRate: 42,
-    };
+    console.error('Failed to load performance', e);
+    performance.value = null;
   } finally {
     loading.value = false;
   }
@@ -138,6 +140,37 @@ const minorPoints = computed(() =>
 
 const totalCritical = computed(() => criticalPoints.value.reduce((sum, p) => sum + p.value, 0));
 const totalMinor = computed(() => minorPoints.value.reduce((sum, p) => sum + p.value, 0));
+
+// Real % change badges from trends data
+const commitChange = computed(() => {
+  if (trends.value.length < 2) return null;
+  const current = trends.value[trends.value.length - 1]?.findingCount || 0;
+  const previous = trends.value[trends.value.length - 2]?.findingCount || 0;
+  if (previous === 0) return null;
+  return Math.round(((current - previous) / previous) * 100);
+});
+
+const findingChange = computed(() => {
+  if (trends.value.length < 2) return null;
+  const current = trends.value[trends.value.length - 1]?.findingCount || 0;
+  const previous = trends.value[trends.value.length - 2]?.findingCount || 0;
+  if (previous === 0) return null;
+  return Math.round(((current - previous) / previous) * 100);
+});
+
+const recommendations = computed(() => performance.value?.recommendations || []);
+
+function getRecommendationIcon(type: string): string {
+  switch (type) {
+    case 'book': return 'menu_book';
+    case 'article': return 'article';
+    case 'tutorial': return 'school';
+    case 'video': return 'play_circle';
+    default: return 'link';
+  }
+}
+
+const RECOMMENDATION_COLORS = ['primary', 'tertiary', 'primary-container'] as const;
 
 function formatCategory(category: string) {
   return category
@@ -208,48 +241,60 @@ const selectedUser = computed(() => users.value.find(u => u.id === selectedUserI
       </section>
 
       <!-- Stats Grid -->
-      <section class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6 mb-12">
+      <section v-if="performance" class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6 mb-12">
         <div class="bg-surface-container-low p-6 rounded-xl border-l-4 border-primary">
           <p class="text-outline text-xs font-bold uppercase tracking-wider mb-2">Total Commits</p>
           <div class="flex items-end justify-between">
-            <h3 class="text-3xl font-black">{{ performance?.commitCount ?? 0 }}</h3>
-            <span class="flex items-center text-primary text-xs font-bold bg-primary/10 px-2 py-1 rounded-full">
-              <span class="material-symbols-outlined text-xs mr-1">trending_up</span>
-              12%
+            <h3 class="text-3xl font-black">{{ performance.commitCount }}</h3>
+            <span v-if="commitChange !== null" :class="[
+              'flex items-center text-xs font-bold px-2 py-1 rounded-full',
+              commitChange >= 0 ? 'text-primary bg-primary/10' : 'text-error bg-error/10'
+            ]">
+              <span class="material-symbols-outlined text-xs mr-1">{{ commitChange >= 0 ? 'trending_up' : 'trending_down' }}</span>
+              {{ Math.abs(commitChange) }}%
             </span>
           </div>
         </div>
         <div class="bg-surface-container-low p-6 rounded-xl border-l-4 border-tertiary">
           <p class="text-outline text-xs font-bold uppercase tracking-wider mb-2">Total Findings</p>
           <div class="flex items-end justify-between">
-            <h3 class="text-3xl font-black">{{ performance?.findingCount ?? 0 }}</h3>
-            <span class="flex items-center text-tertiary text-xs font-bold bg-tertiary/10 px-2 py-1 rounded-full">
-              <span class="material-symbols-outlined text-xs mr-1">trending_down</span>
-              8%
+            <h3 class="text-3xl font-black">{{ performance.findingCount }}</h3>
+            <span v-if="findingChange !== null" :class="[
+              'flex items-center text-xs font-bold px-2 py-1 rounded-full',
+              findingChange <= 0 ? 'text-primary bg-primary/10' : 'text-error bg-error/10'
+            ]">
+              <span class="material-symbols-outlined text-xs mr-1">{{ findingChange <= 0 ? 'trending_down' : 'trending_up' }}</span>
+              {{ Math.abs(findingChange) }}%
             </span>
           </div>
         </div>
         <div class="bg-surface-container-low p-6 rounded-xl border-l-4 border-primary-container">
           <p class="text-outline text-xs font-bold uppercase tracking-wider mb-2">Fix Rate %</p>
           <div class="flex items-end justify-between">
-            <h3 class="text-3xl font-black">{{ performance?.fixRate ?? 0 }}%</h3>
+            <h3 class="text-3xl font-black">{{ performance.fixRate }}%</h3>
             <span class="flex items-center text-primary-container text-xs font-bold bg-primary-container/10 px-2 py-1 rounded-full">
               <span class="material-symbols-outlined text-xs mr-1">check_circle</span>
-              Good
+              {{ performance.fixRate >= 50 ? 'Good' : 'Needs work' }}
             </span>
           </div>
         </div>
         <div class="bg-surface-container-low p-6 rounded-xl border-l-4 border-outline">
           <p class="text-outline text-xs font-bold uppercase tracking-wider mb-2">Review Velocity</p>
           <div class="flex items-end justify-between">
-            <h3 class="text-3xl font-black">1.4d</h3>
-            <span class="text-outline text-xs font-bold">avg/PR</span>
+            <h3 class="text-3xl font-black">{{ trends.length }}w</h3>
+            <span class="text-outline text-xs font-bold">tracked</span>
           </div>
+        </div>
+      </section>
+      <section v-else-if="!loading" class="mb-12">
+        <div class="bg-surface-container-low p-8 rounded-xl text-center">
+          <span class="material-symbols-outlined text-4xl text-outline mb-2">analytics</span>
+          <p class="text-outline">No performance data available. Select a user and project to get started.</p>
         </div>
       </section>
 
       <!-- Analysis Section: Strengths & Growth -->
-      <section class="grid grid-cols-1 lg:grid-cols-2 gap-10 mb-12">
+      <section v-if="performance" class="grid grid-cols-1 lg:grid-cols-2 gap-10 mb-12">
         <!-- Strengths -->
         <div class="space-y-6">
           <h4 class="text-xl font-bold flex items-center gap-2">
@@ -258,7 +303,7 @@ const selectedUser = computed(() => users.value.find(u => u.id === selectedUserI
           </h4>
           <div class="bg-surface-container-low rounded-2xl p-6 space-y-4">
             <div
-              v-for="strength in (performance?.strengths || ['HTML Structure', 'Tailwind CSS'])"
+              v-for="strength in performance.strengths"
               :key="`strength-${strength}`"
               class="flex items-center justify-between p-4 bg-surface-container-lowest rounded-xl border border-outline-variant/10"
             >
@@ -273,6 +318,7 @@ const selectedUser = computed(() => users.value.find(u => u.id === selectedUserI
               </div>
               <span class="material-symbols-outlined text-primary" style="font-variation-settings: 'FILL' 1;">verified</span>
             </div>
+            <p v-if="!performance.strengths.length" class="text-sm text-outline text-center py-4">No strengths identified yet</p>
           </div>
         </div>
 
@@ -284,7 +330,7 @@ const selectedUser = computed(() => users.value.find(u => u.id === selectedUserI
           </h4>
           <div class="bg-surface-container-low rounded-2xl p-6 space-y-4">
             <div
-              v-for="area in (performance?.growthAreas || ['Code Duplication', 'Accessibility'])"
+              v-for="area in performance.growthAreas"
               :key="`growth-${area}`"
               class="flex items-center justify-between p-4 bg-surface-container-lowest rounded-xl border border-outline-variant/10"
             >
@@ -299,6 +345,7 @@ const selectedUser = computed(() => users.value.find(u => u.id === selectedUserI
               </div>
               <span class="material-symbols-outlined text-tertiary">arrow_upward</span>
             </div>
+            <p v-if="!performance.growthAreas.length" class="text-sm text-outline text-center py-4">No growth areas identified yet</p>
           </div>
         </div>
       </section>
@@ -332,39 +379,21 @@ const selectedUser = computed(() => users.value.find(u => u.id === selectedUserI
         </div>
       </section>
 
-      <!-- Recommendations -->
-      <section class="space-y-6">
+      <!-- Recommendations (from API) -->
+      <section v-if="recommendations.length" class="space-y-6 mb-12">
         <h4 class="text-2xl font-black tracking-tight">Recommended Learning</h4>
         <div class="grid grid-cols-1 md:grid-cols-3 gap-6">
-          <div class="glass-panel p-6 rounded-2xl border border-outline-variant/10 group hover:border-primary/30 transition-all duration-300">
+          <div
+            v-for="(rec, index) in recommendations.slice(0, 3)"
+            :key="rec.url"
+            class="glass-panel p-6 rounded-2xl border border-outline-variant/10 group hover:border-primary/30 transition-all duration-300"
+          >
             <div class="w-12 h-12 rounded-xl bg-surface-container flex items-center justify-center mb-4 group-hover:scale-110 transition-transform">
-              <span class="material-symbols-outlined text-primary">menu_book</span>
+              <span class="material-symbols-outlined" :class="`text-${RECOMMENDATION_COLORS[index % 3]}`">{{ getRecommendationIcon(rec.type) }}</span>
             </div>
-            <h5 class="font-bold text-lg mb-2">Django Templates</h5>
-            <p class="text-sm text-outline mb-6">Learn to use {% include %} and template inheritance to avoid code duplication.</p>
-            <a href="https://docs.djangoproject.com/en/5.0/ref/templates/builtins/#include" target="_blank" class="flex items-center gap-2 text-primary font-bold text-sm group/link">
-              View Resource
-              <span class="material-symbols-outlined text-sm group-hover/link:translate-x-1 transition-transform">arrow_forward</span>
-            </a>
-          </div>
-          <div class="glass-panel p-6 rounded-2xl border border-outline-variant/10 group hover:border-tertiary/30 transition-all duration-300">
-            <div class="w-12 h-12 rounded-xl bg-surface-container flex items-center justify-center mb-4 group-hover:scale-110 transition-transform">
-              <span class="material-symbols-outlined text-tertiary">accessibility</span>
-            </div>
-            <h5 class="font-bold text-lg mb-2">Web Accessibility</h5>
-            <p class="text-sm text-outline mb-6">ARIA attributes and screen reader best practices for navigation menus.</p>
-            <a href="https://www.w3.org/WAI/ARIA/apg/patterns/menu/" target="_blank" class="flex items-center gap-2 text-tertiary font-bold text-sm group/link">
-              View Resource
-              <span class="material-symbols-outlined text-sm group-hover/link:translate-x-1 transition-transform">arrow_forward</span>
-            </a>
-          </div>
-          <div class="glass-panel p-6 rounded-2xl border border-outline-variant/10 group hover:border-primary-container/30 transition-all duration-300">
-            <div class="w-12 h-12 rounded-xl bg-surface-container flex items-center justify-center mb-4 group-hover:scale-110 transition-transform">
-              <span class="material-symbols-outlined text-primary-container">security</span>
-            </div>
-            <h5 class="font-bold text-lg mb-2">GDPR & Third-Party</h5>
-            <p class="text-sm text-outline mb-6">Understanding privacy implications of loading external images and resources.</p>
-            <a href="https://gdpr.eu/third-party-cookies/" target="_blank" class="flex items-center gap-2 text-primary-container font-bold text-sm group/link">
+            <h5 class="font-bold text-lg mb-2">{{ rec.title }}</h5>
+            <p class="text-sm text-outline mb-6">{{ rec.reason }}</p>
+            <a :href="rec.url" target="_blank" rel="noopener noreferrer" class="flex items-center gap-2 text-primary font-bold text-sm group/link">
               View Resource
               <span class="material-symbols-outlined text-sm group-hover/link:translate-x-1 transition-transform">arrow_forward</span>
             </a>
