@@ -78,6 +78,10 @@ export const api = {
       client.get('/reviews/calendar', { params: { projectId, month } }),
     trigger: (projectId: number, branches?: string[]) =>
       client.post('/reviews/trigger', { projectId, branches }),
+    importMarkdown: (projectId: number, date: string) =>
+      client.post(`/reviews/import/${date}`, { projectId }),
+    syncMarkdown: (projectId: number) =>
+      client.post('/reviews/sync-markdown', { projectId }),
   },
   findings: {
     list: (params: FindingFilters = {}) => client.get('/findings', { params }),

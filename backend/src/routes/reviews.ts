@@ -3,6 +3,7 @@ import { PrismaClient, Category, Difficulty } from '@prisma/client';
 import { Octokit } from '@octokit/rest';
 import { authMiddleware } from '../middleware/auth';
 import { adminMiddleware } from '../middleware/admin';
+import { importMarkdownReview, syncAllMarkdownReviews } from '../services/markdownImport';
 
 const router = Router();
 const prisma = new PrismaClient();
@@ -90,6 +91,41 @@ router.get('/:id', async (req: Request, res: Response): Promise<void> => {
   res.json({ review });
 });
 
+// Import a specific day's review from markdown
+router.post('/import/:date', adminMiddleware, async (req: Request, res: Response): Promise<void> => {
+  const { date } = req.params;
+  const { projectId } = req.body;
+
+  if (!projectId || !/^\d{4}-\d{2}-\d{2}$/.test(date)) {
+    res.status(400).json({ error: 'Valid projectId and date (YYYY-MM-DD) required' });
+    return;
+  }
+
+  try {
+    const count = await importMarkdownReview(date, projectId);
+    res.json({ success: true, imported: count, date });
+  } catch (error: any) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// Sync all markdown reviews (scan directory, import missing)
+router.post('/sync-markdown', adminMiddleware, async (req: Request, res: Response): Promise<void> => {
+  const { projectId } = req.body;
+
+  if (!projectId) {
+    res.status(400).json({ error: 'projectId required' });
+    return;
+  }
+
+  try {
+    const result = await syncAllMarkdownReviews(projectId);
+    res.json({ success: true, ...result });
+  } catch (error: any) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
 // Trigger a new code review
 router.post('/trigger', adminMiddleware, async (req: Request, res: Response): Promise<void> => {
   const { projectId, branches } = req.body;
@@ -106,6 +142,14 @@ router.post('/trigger', adminMiddleware, async (req: Request, res: Response): Pr
   if (!project) {
     res.status(404).json({ error: 'Project not found' });
     return;
+  }
+
+  // First, sync any new markdown reviews from @code-review
+  let markdownResult = { imported: 0, skipped: 0, files: [] as string[] };
+  try {
+    markdownResult = await syncAllMarkdownReviews(projectId);
+  } catch (e) {
+    console.error('[Review] Markdown sync failed:', e);
   }
 
   // Get branches to review (all if not specified)
@@ -230,11 +274,13 @@ router.post('/trigger', adminMiddleware, async (req: Request, res: Response): Pr
 
   res.json({
     success: true,
-    message: totalFindings > 0 
-      ? `Review complete! Found ${totalFindings} issues across ${results.length} branches.`
+    message: totalFindings > 0 || markdownResult.imported > 0
+      ? `Review complete! Found ${totalFindings} code issues, imported ${markdownResult.imported} from markdown.`
       : 'Review complete. No new issues found.',
     results,
     totalFindings,
+    markdownImported: markdownResult.imported,
+    markdownFiles: markdownResult.files,
   });
 });
 
