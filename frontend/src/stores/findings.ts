@@ -16,6 +16,7 @@ export interface Finding {
   optimizedCode: string;
   prCreated?: boolean;
   prUrl?: string | null;
+  fixedAt?: string | null;
   markedUnderstood?: boolean;
   explanationRequested?: boolean;
   references?: Array<{ type: 'docs' | 'article' | 'tutorial'; title: string; url: string }>;
