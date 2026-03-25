@@ -1,10 +1,12 @@
 <script setup lang="ts">
-import { computed } from 'vue';
+import { computed, ref } from 'vue';
 import { useRouter } from 'vue-router';
 import type { Finding } from '@/stores/findings';
+import FileViewer from '@/components/code/FileViewer.vue';
 
 const props = defineProps<{ finding: Finding }>();
 const router = useRouter();
+const showFileViewer = ref(false);
 
 const categoryClass = computed(() => {
   const cat = props.finding.category.toLowerCase().replace('_', '');
@@ -80,10 +82,32 @@ async function openFinding() {
         </div>
         <span class="text-xs text-outline font-medium">{{ authorName }}</span>
       </div>
-      <button class="text-primary text-xs font-bold flex items-center gap-1 hover:underline">
-        View Details
-        <span class="material-symbols-outlined text-sm">arrow_forward</span>
-      </button>
+      <div class="flex items-center gap-3">
+        <button
+          v-if="finding.review?.project?.id"
+          class="text-outline text-xs font-medium flex items-center gap-1 hover:text-primary transition-colors"
+          @click.stop="showFileViewer = true"
+        >
+          <span class="material-symbols-outlined text-sm">visibility</span>
+          View File
+        </button>
+        <button class="text-primary text-xs font-bold flex items-center gap-1 hover:underline">
+          View Details
+          <span class="material-symbols-outlined text-sm">arrow_forward</span>
+        </button>
+      </div>
     </div>
+
+    <!-- File Viewer Modal -->
+    <FileViewer
+      v-if="showFileViewer && finding.review?.project?.id"
+      :projectId="finding.review.project.id"
+      :branch="finding.review?.branch || 'main'"
+      :filePath="finding.filePath"
+      :lineStart="finding.lineStart || 1"
+      :lineEnd="finding.lineEnd || finding.lineStart || 1"
+      :finding="finding"
+      @close="showFileViewer = false"
+    />
   </div>
 </template>

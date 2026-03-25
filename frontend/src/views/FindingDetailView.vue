@@ -3,6 +3,7 @@ import { computed, onMounted, ref } from 'vue';
 import { useRoute } from 'vue-router';
 import AppShell from '@/components/layout/AppShell.vue';
 import CodeComparison from '@/components/findings/CodeComparison.vue';
+import FileViewer from '@/components/code/FileViewer.vue';
 import { useFindingsStore } from '@/stores/findings';
 import { useAuthStore } from '@/stores/auth';
 import { api } from '@/composables/useApi';
@@ -14,6 +15,7 @@ const toastMessage = ref('');
 const actionLoading = ref(false);
 const applyFixLoading = ref(false);
 const errorMessage = ref('');
+const showFileViewer = ref(false);
 
 const findingId = computed(() => Number(route.params.id));
 const finding = computed(() => findingsStore.selectedFinding);
@@ -114,6 +116,14 @@ function clearToast() {
             <h1 class="text-3xl font-bold tracking-tight text-on-surface">
               {{ finding.filePath.split('/').pop() }}
             </h1>
+            <button
+              v-if="finding.review?.project?.id"
+              class="mt-2 flex items-center gap-1.5 text-sm text-primary font-medium hover:underline"
+              @click="showFileViewer = true"
+            >
+              <span class="material-symbols-outlined text-sm">visibility</span>
+              View full file
+            </button>
           </div>
           <div class="flex flex-wrap gap-2">
             <span :class="['px-3 py-1 rounded-full text-xs font-bold flex items-center gap-1.5 border', categoryClass]">
@@ -207,6 +217,18 @@ function clearToast() {
           </a>
         </p>
         <p v-if="errorMessage" class="text-sm text-error">{{ errorMessage }}</p>
+
+        <!-- File Viewer Modal -->
+        <FileViewer
+          v-if="showFileViewer && finding.review?.project?.id"
+          :projectId="finding.review.project.id"
+          :branch="finding.review?.branch || 'main'"
+          :filePath="finding.filePath"
+          :lineStart="finding.lineStart || 1"
+          :lineEnd="finding.lineEnd || finding.lineStart || 1"
+          :finding="finding"
+          @close="showFileViewer = false"
+        />
       </div>
 
       <!-- Loading State -->

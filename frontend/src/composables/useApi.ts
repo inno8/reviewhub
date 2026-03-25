@@ -91,6 +91,10 @@ export const api = {
     requestExplanation: (id: number) => client.post(`/findings/${id}/request-explanation`),
     applyFix: (id: number) => client.post(`/findings/${id}/apply-fix`),
   },
+  files: {
+    getContent: (projectId: number, branch: string, filePath: string) =>
+      client.get(`/files/${projectId}/${encodeURIComponent(branch)}/${filePath}`),
+  },
   users: {
     list: () => client.get('/users'),
     me: () => client.get('/users/me'),

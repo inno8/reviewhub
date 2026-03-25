@@ -54,7 +54,7 @@ router.get('/', async (req: Request, res: Response): Promise<void> => {
       ...where,
       include: {
         review: {
-          include: { project: { select: { name: true, displayName: true } } },
+          include: { project: { select: { id: true, name: true, displayName: true } } },
         },
         userFindings: {
           where: { userId: req.user!.userId },

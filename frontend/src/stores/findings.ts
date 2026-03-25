@@ -6,6 +6,8 @@ export interface Finding {
   id: number;
   commitAuthor?: string | null;
   filePath: string;
+  lineStart?: number | null;
+  lineEnd?: number | null;
   explanation: string;
   category: string;
   difficulty: string;
@@ -20,6 +22,7 @@ export interface Finding {
     branch?: string;
     reviewDate?: string;
     project?: {
+      id: number;
       displayName: string;
     };
   };
