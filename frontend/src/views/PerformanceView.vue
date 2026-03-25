@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { computed, onMounted, ref, watch } from 'vue';
 import AppShell from '@/components/layout/AppShell.vue';
+import TrendChart from '@/components/charts/TrendChart.vue';
 import { api } from '@/composables/useApi';
 import { useProjectsStore } from '@/stores/projects';
 
@@ -20,6 +21,14 @@ interface PerformanceData {
   fixRate: number;
 }
 
+interface TrendData {
+  weekStart: string;
+  weekEnd: string;
+  findingCount: number;
+  categories: Record<string, number>;
+  trend: 'improving' | 'stable' | 'declining';
+}
+
 const projectsStore = useProjectsStore();
 
 const users = ref<UserOption[]>([]);
@@ -27,6 +36,7 @@ const selectedUserId = ref<number | null>(null);
 const periodType = ref<PeriodType>('WEEKLY');
 const loading = ref(false);
 const performance = ref<PerformanceData | null>(null);
+const trends = ref<TrendData[]>([]);
 
 onMounted(async () => {
   await projectsStore.fetchProjects();
@@ -41,6 +51,10 @@ watch([() => selectedUserId.value, () => periodType.value], async () => {
   await loadPerformance();
 });
 
+watch([() => selectedUserId.value, () => projectsStore.selectedProjectId], async () => {
+  await loadTrends();
+});
+
 async function fetchProjectUsers() {
   if (!projectsStore.selectedProjectId) return;
   try {
@@ -50,7 +64,7 @@ async function fetchProjectUsers() {
     if (users.value.length > 0 && !selectedUserId.value) {
       selectedUserId.value = users.value[0].id;
     }
-    await loadPerformance();
+    await Promise.all([loadPerformance(), loadTrends()]);
   } catch (e) {
     console.error('Failed to fetch users', e);
   }
@@ -78,6 +92,52 @@ async function loadPerformance() {
     loading.value = false;
   }
 }
+
+async function loadTrends() {
+  if (!selectedUserId.value || !projectsStore.selectedProjectId) return;
+  try {
+    const { data } = await api.performance.trends(selectedUserId.value, {
+      projectId: projectsStore.selectedProjectId,
+      weeks: 8,
+    });
+    trends.value = data;
+  } catch (e) {
+    console.error('Failed to load trends', e);
+    trends.value = [];
+  }
+}
+
+const CRITICAL_CATEGORIES = ['SECURITY', 'ARCHITECTURE'];
+
+function formatWeekLabel(dateStr: string): string {
+  const date = new Date(dateStr);
+  return `W${getWeekNumber(date)}`;
+}
+
+function getWeekNumber(date: Date): number {
+  const firstDayOfYear = new Date(date.getFullYear(), 0, 1);
+  const pastDaysOfYear = (date.getTime() - firstDayOfYear.getTime()) / 86400000;
+  return Math.ceil((pastDaysOfYear + firstDayOfYear.getDay() + 1) / 7);
+}
+
+const criticalPoints = computed(() =>
+  trends.value.map((t) => ({
+    label: formatWeekLabel(t.weekStart),
+    value: CRITICAL_CATEGORIES.reduce((sum, cat) => sum + (t.categories[cat] || 0), 0),
+  })),
+);
+
+const minorPoints = computed(() =>
+  trends.value.map((t) => ({
+    label: formatWeekLabel(t.weekStart),
+    value: Object.entries(t.categories)
+      .filter(([cat]) => !CRITICAL_CATEGORIES.includes(cat))
+      .reduce((sum, [, count]) => sum + count, 0),
+  })),
+);
+
+const totalCritical = computed(() => criticalPoints.value.reduce((sum, p) => sum + p.value, 0));
+const totalMinor = computed(() => minorPoints.value.reduce((sum, p) => sum + p.value, 0));
 
 function formatCategory(category: string) {
   return category
@@ -246,52 +306,29 @@ const selectedUser = computed(() => users.value.find(u => u.id === selectedUserI
       <!-- Chart Section -->
       <section class="mb-12">
         <div class="bg-surface-container-low rounded-3xl p-8 border border-outline-variant/10 overflow-hidden relative">
-          <div class="flex justify-between items-center mb-10">
+          <div class="flex justify-between items-center mb-4">
             <div>
               <h4 class="text-xl font-bold">Finding Trends</h4>
-              <p class="text-sm text-outline">Frequency of detected issues over last 30 days</p>
+              <p class="text-sm text-outline">Issue frequency over the last 8 weeks</p>
             </div>
-            <div class="flex gap-2">
+            <div class="flex gap-4">
               <div class="flex items-center gap-2 text-xs font-bold">
-                <span class="w-3 h-3 rounded-full bg-primary"></span> Critical
+                <span class="w-3 h-3 rounded-full bg-primary"></span>
+                Critical ({{ totalCritical }})
               </div>
-              <div class="flex items-center gap-2 text-xs font-bold ml-4">
-                <span class="w-3 h-3 rounded-full bg-tertiary"></span> Minor
+              <div class="flex items-center gap-2 text-xs font-bold">
+                <span class="w-3 h-3 rounded-full" style="background-color: #F78166"></span>
+                Minor ({{ totalMinor }})
               </div>
             </div>
           </div>
-          <!-- Simulated Chart -->
-          <div class="h-64 w-full flex items-end gap-1 relative">
-            <div class="absolute inset-0 flex flex-col justify-between pointer-events-none">
-              <div class="w-full h-[1px] bg-outline-variant/10"></div>
-              <div class="w-full h-[1px] bg-outline-variant/10"></div>
-              <div class="w-full h-[1px] bg-outline-variant/10"></div>
-              <div class="w-full h-[1px] bg-outline-variant/10"></div>
-            </div>
-            <svg class="absolute inset-0 w-full h-full overflow-visible" preserveAspectRatio="none">
-              <path d="M0 180 Q 100 150, 200 190 T 400 120 T 600 160 T 800 80 T 1000 140" fill="none" stroke="#a2c9ff" stroke-linecap="round" stroke-width="4"></path>
-              <path d="M0 180 Q 100 150, 200 190 T 400 120 T 600 160 T 800 80 T 1000 140 V 256 H 0 Z" fill="url(#grad1)" opacity="0.1"></path>
-              <defs>
-                <linearGradient id="grad1" x1="0%" x2="0%" y1="0%" y2="100%">
-                  <stop offset="0%" style="stop-color:#a2c9ff;stop-opacity:1"></stop>
-                  <stop offset="100%" style="stop-color:#a2c9ff;stop-opacity:0"></stop>
-                </linearGradient>
-              </defs>
-            </svg>
-            <div class="flex-1 h-full flex items-end justify-around z-10">
-              <div class="w-2 h-2 rounded-full bg-primary ring-4 ring-background"></div>
-              <div class="w-2 h-2 rounded-full bg-primary ring-4 ring-background"></div>
-              <div class="w-2 h-2 rounded-full bg-primary ring-4 ring-background"></div>
-              <div class="w-2 h-2 rounded-full bg-primary ring-4 ring-background"></div>
-              <div class="w-2 h-2 rounded-full bg-primary ring-4 ring-background"></div>
-            </div>
-          </div>
-          <div class="flex justify-between mt-4 px-2 text-[10px] font-bold text-outline uppercase tracking-widest">
-            <span>Week 01</span>
-            <span>Week 02</span>
-            <span>Week 03</span>
-            <span>Week 04</span>
-          </div>
+          <TrendChart
+            title=""
+            :points="criticalPoints"
+            :secondary-points="minorPoints"
+            :width="800"
+            :height="300"
+          />
         </div>
       </section>
 
