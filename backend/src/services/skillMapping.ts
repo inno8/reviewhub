@@ -153,7 +153,7 @@ export async function calculateSkillScores(userId: number, projectId: number) {
       review: { projectId },
       commitAuthor: user.username,
     },
-    select: { explanation: true, category: true },
+    select: { explanation: true, category: true, skills: true },
   });
 
   // Get all skills
@@ -161,48 +161,30 @@ export async function calculateSkillScores(userId: number, projectId: number) {
     include: { category: true },
   });
 
+  // Count findings per skill using parsed skills (with keyword fallback)
+  const skillCounts: Record<string, number> = {};
+  for (const finding of findings) {
+    const parsedSkills = parseSkillsField(finding.skills);
+    if (parsedSkills.length > 0) {
+      // Use parsed skills directly
+      for (const s of parsedSkills) {
+        skillCounts[s] = (skillCounts[s] || 0) + 1;
+      }
+    } else {
+      // Fallback: keyword matching for findings without parsed skills
+      const detectedSkills = detectSkillsFromExplanation(finding.explanation);
+      for (const s of detectedSkills) {
+        skillCounts[s] = (skillCounts[s] || 0) + 1;
+      }
+    }
+  }
+
   const results = [];
 
   for (const skill of skills) {
-    const rules = SKILL_DETECTION_RULES[skill.name];
-    if (!rules) {
-      // No rules for this skill - default to high score (no issues found)
-      const score = 85;
-      const level = levelFromScore(score);
-      const userSkill = await prisma.userSkill.upsert({
-        where: { userId_skillId: { userId, skillId: skill.id } },
-        update: { score, level },
-        create: { userId, skillId: skill.id, score, level },
-      });
-      results.push(userSkill);
-      continue;
-    }
-
-    let negativeHits = 0;
-    let positiveHits = 0;
-
-    for (const finding of findings) {
-      const text = finding.explanation.toLowerCase();
-
-      if (rules.negative) {
-        for (const keyword of rules.negative) {
-          if (text.includes(keyword.toLowerCase())) {
-            negativeHits++;
-          }
-        }
-      }
-
-      if (rules.positive) {
-        for (const keyword of rules.positive) {
-          if (text.includes(keyword.toLowerCase())) {
-            positiveHits++;
-          }
-        }
-      }
-    }
-
-    // Start at 85, subtract 15 per negative hit, add 5 per positive hit
-    let score = 85 - negativeHits * 15 + positiveHits * 5;
+    const count = skillCounts[skill.name] || 0;
+    // Start at 85, subtract 15 per finding
+    let score = 85 - count * 15;
     score = Math.max(0, Math.min(100, score));
     const level = levelFromScore(score);
 
@@ -215,6 +197,34 @@ export async function calculateSkillScores(userId: number, projectId: number) {
   }
 
   return results;
+}
+
+/** Parse the JSON skills field from a finding, returning an array of skill names */
+function parseSkillsField(skills: string | null): string[] {
+  if (!skills) return [];
+  try {
+    const parsed = JSON.parse(skills);
+    return Array.isArray(parsed) ? parsed : [];
+  } catch {
+    return [];
+  }
+}
+
+/** Fallback: detect skills from explanation text using keyword rules */
+function detectSkillsFromExplanation(explanation: string): string[] {
+  const text = explanation.toLowerCase();
+  const matched: string[] = [];
+  for (const [skillName, rules] of Object.entries(SKILL_DETECTION_RULES)) {
+    if (rules.negative) {
+      for (const keyword of rules.negative) {
+        if (text.includes(keyword.toLowerCase())) {
+          matched.push(skillName);
+          break;
+        }
+      }
+    }
+  }
+  return matched;
 }
 
 export async function getSkillBreakdown(userId: number, skillId: number, projectId: number) {
@@ -251,11 +261,12 @@ export async function getSkillBreakdown(userId: number, skillId: number, project
       filePath: true,
       createdAt: true,
       category: true,
+      skills: true,
     },
     orderBy: { createdAt: 'desc' },
   });
 
-  // Build deductions array - which findings triggered which keyword matches
+  // Build deductions array - findings that match this skill
   const deductions: {
     findingId: number;
     explanation: string;
@@ -266,8 +277,24 @@ export async function getSkillBreakdown(userId: number, skillId: number, project
     date: string;
   }[] = [];
 
-  if (rules) {
-    for (const finding of findings) {
+  for (const finding of findings) {
+    const parsedSkills = parseSkillsField(finding.skills);
+
+    if (parsedSkills.length > 0) {
+      // Use parsed skills directly
+      if (parsedSkills.includes(skill.name)) {
+        deductions.push({
+          findingId: finding.id,
+          explanation: finding.explanation,
+          impact: -15,
+          keyword: skill.name,
+          type: 'negative',
+          filePath: finding.filePath,
+          date: finding.createdAt.toISOString(),
+        });
+      }
+    } else if (rules) {
+      // Fallback: keyword matching for findings without parsed skills
       const text = finding.explanation.toLowerCase();
 
       if (rules.negative) {

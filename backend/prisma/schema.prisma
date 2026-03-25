@@ -79,6 +79,7 @@ model Finding {
   optimizedCode String
   explanation   String
   references    String?    // JSON stored as string for SQLite compatibility
+  skills        String?    // JSON array of skill names, e.g. '["secrets_management","clean_code"]'
   category      Category
   difficulty    Difficulty
   prCreated     Boolean    @default(false)

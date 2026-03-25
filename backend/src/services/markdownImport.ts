@@ -16,6 +16,7 @@ interface ParsedFinding {
   branch: string;
   commitSha: string;
   commitAuthor: string;
+  skills: string[];
 }
 
 interface BranchInfo {
@@ -95,6 +96,12 @@ export function parseMarkdownReview(content: string): ParsedFinding[] {
       }
     }
 
+    // Parse skills from **Skills Affected:** line
+    const skillsMatch = body.match(/\*\*Skills Affected:\*\*\s*([^\n]+)/);
+    const skills = skillsMatch
+      ? skillsMatch[1].split(',').map(s => s.trim().toLowerCase().replace(/\s+/g, '_'))
+      : [];
+
     findings.push({
       filePath: fileHint || 'unknown',
       lineStart: 1,
@@ -107,6 +114,7 @@ export function parseMarkdownReview(content: string): ParsedFinding[] {
       branch,
       commitSha,
       commitAuthor: author,
+      skills,
     });
   }
 
@@ -227,6 +235,7 @@ export async function importMarkdownReview(date: string, projectId: number): Pro
               references: JSON.stringify([]),
               category: f.category,
               difficulty: f.difficulty,
+              skills: JSON.stringify(f.skills),
             },
           });
           totalImported++;
