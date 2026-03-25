@@ -117,6 +117,8 @@ export const api = {
   skills: {
     categories: () => client.get('/skills/categories'),
     user: (userId: number) => client.get(`/skills/user/${userId}`),
+    breakdown: (userId: number, skillId: number, projectId: number) =>
+      client.get(`/skills/user/${userId}/breakdown/${skillId}`, { params: { projectId } }),
     recalculate: (userId: number, projectId: number) =>
       client.post(`/skills/recalculate/${userId}`, null, { params: { projectId } }),
   },

@@ -2,6 +2,7 @@
 import { computed, onMounted, ref, watch } from 'vue';
 import AppShell from '@/components/layout/AppShell.vue';
 import TrendChart from '@/components/charts/TrendChart.vue';
+import SkillBreakdownDialog from '@/components/skills/SkillBreakdownDialog.vue';
 import { api } from '@/composables/useApi';
 import { useProjectsStore } from '@/stores/projects';
 
@@ -230,6 +231,19 @@ function categoryAverage(category: SkillCategory): number {
 }
 
 const selectedUser = computed(() => users.value.find(u => u.id === selectedUserId.value));
+
+// Skill breakdown dialog
+const breakdownOpen = ref(false);
+const breakdownSkillId = ref<number | null>(null);
+
+function openSkillBreakdown(skillId: number) {
+  breakdownSkillId.value = skillId;
+  breakdownOpen.value = true;
+}
+
+function closeSkillBreakdown() {
+  breakdownOpen.value = false;
+}
 </script>
 
 <template>
@@ -462,7 +476,12 @@ const selectedUser = computed(() => users.value.find(u => u.id === selectedUserI
             </div>
 
             <div class="space-y-3">
-              <div v-for="skill in category.skills" :key="skill.id" class="space-y-1">
+              <div
+                v-for="skill in category.skills"
+                :key="skill.id"
+                class="space-y-1 cursor-pointer rounded-lg p-1 -m-1 hover:bg-surface-container-highest/50 transition-colors"
+                @click="openSkillBreakdown(skill.id)"
+              >
                 <div class="flex justify-between text-xs">
                   <span>{{ skill.displayName }}</span>
                   <span class="text-outline">{{ getSkillLevel(skill.score) }} · {{ skill.score }}%</span>
@@ -487,5 +506,13 @@ const selectedUser = computed(() => users.value.find(u => u.id === selectedUserI
 
       <p v-if="loading" class="text-sm text-outline mt-8">Loading performance insights...</p>
     </div>
+
+    <SkillBreakdownDialog
+      :open="breakdownOpen"
+      :user-id="selectedUserId ?? 0"
+      :skill-id="breakdownSkillId"
+      :project-id="projectsStore.selectedProjectId ?? 0"
+      @close="closeSkillBreakdown"
+    />
   </AppShell>
 </template>

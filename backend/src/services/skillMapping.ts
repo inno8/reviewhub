@@ -217,6 +217,133 @@ export async function calculateSkillScores(userId: number, projectId: number) {
   return results;
 }
 
+export async function getSkillBreakdown(userId: number, skillId: number, projectId: number) {
+  const skill = await prisma.skill.findUnique({
+    where: { id: skillId },
+    include: {
+      category: true,
+      userSkills: { where: { userId } },
+    },
+  });
+  if (!skill) throw new Error('Skill not found');
+
+  const user = await prisma.user.findUnique({
+    where: { id: userId },
+    select: { username: true },
+  });
+  if (!user) throw new Error('User not found');
+
+  const userSkill = skill.userSkills[0];
+  const score = userSkill?.score ?? 0;
+  const level = userSkill?.level ?? 0;
+
+  const rules = SKILL_DETECTION_RULES[skill.name];
+
+  // Find all findings for user in project
+  const findings = await prisma.finding.findMany({
+    where: {
+      review: { projectId },
+      commitAuthor: user.username,
+    },
+    select: {
+      id: true,
+      explanation: true,
+      filePath: true,
+      createdAt: true,
+      category: true,
+    },
+    orderBy: { createdAt: 'desc' },
+  });
+
+  // Build deductions array - which findings triggered which keyword matches
+  const deductions: {
+    findingId: number;
+    explanation: string;
+    impact: number;
+    keyword: string;
+    type: 'positive' | 'negative';
+    filePath: string;
+    date: string;
+  }[] = [];
+
+  if (rules) {
+    for (const finding of findings) {
+      const text = finding.explanation.toLowerCase();
+
+      if (rules.negative) {
+        for (const keyword of rules.negative) {
+          if (text.includes(keyword.toLowerCase())) {
+            deductions.push({
+              findingId: finding.id,
+              explanation: finding.explanation,
+              impact: -15,
+              keyword,
+              type: 'negative',
+              filePath: finding.filePath,
+              date: finding.createdAt.toISOString(),
+            });
+          }
+        }
+      }
+
+      if (rules.positive) {
+        for (const keyword of rules.positive) {
+          if (text.includes(keyword.toLowerCase())) {
+            deductions.push({
+              findingId: finding.id,
+              explanation: finding.explanation,
+              impact: +5,
+              keyword,
+              type: 'positive',
+              filePath: finding.filePath,
+              date: finding.createdAt.toISOString(),
+            });
+          }
+        }
+      }
+    }
+  }
+
+  // Generate improvement tips based on score
+  const tips: string[] = [];
+  if (score < 50) {
+    tips.push(`Focus on addressing ${skill.displayName.toLowerCase()} issues in your code reviews`);
+    tips.push('Review the flagged findings below and apply fixes where possible');
+  }
+  if (score < 75) {
+    tips.push(`Study best practices for ${skill.category.displayName.toLowerCase()}`);
+  }
+  if (deductions.some(d => d.type === 'negative')) {
+    const topKeyword = deductions.filter(d => d.type === 'negative')[0]?.keyword;
+    if (topKeyword) {
+      tips.push(`Most common issue: "${topKeyword}" — pay extra attention to this pattern`);
+    }
+  }
+  if (score >= 75) {
+    tips.push('Great progress! Keep maintaining this quality level');
+  }
+
+  return {
+    skill: {
+      id: skill.id,
+      name: skill.name,
+      displayName: skill.displayName,
+      description: skill.description,
+      category: {
+        id: skill.category.id,
+        name: skill.category.name,
+        displayName: skill.category.displayName,
+        icon: skill.category.icon,
+      },
+    },
+    score,
+    level,
+    baseScore: 85,
+    deductions,
+    tips,
+  };
+}
+
 export async function getUserSkillsByCategory(userId: number) {
   const categories = await prisma.skillCategory.findMany({
     include: {
