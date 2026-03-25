@@ -2,7 +2,7 @@
 import { computed, onMounted, ref } from 'vue';
 import { useRoute } from 'vue-router';
 import AppShell from '@/components/layout/AppShell.vue';
-import CodeComparison from '@/components/findings/CodeComparison.vue';
+import DiffViewer from '@/components/code/DiffViewer.vue';
 import FileViewer from '@/components/code/FileViewer.vue';
 import { useFindingsStore } from '@/stores/findings';
 import { useAuthStore } from '@/stores/auth';
@@ -107,7 +107,7 @@ function clearToast() {
 <template>
   <AppShell>
     <div class="p-8 flex-1">
-      <div v-if="finding" class="max-w-6xl mx-auto space-y-8">
+      <div v-if="finding" class="max-w-[90rem] mx-auto space-y-8">
         <!-- Header Section -->
         <section class="flex flex-col md:flex-row md:items-end justify-between gap-6">
           <div class="space-y-3">
@@ -145,13 +145,9 @@ function clearToast() {
           </div>
         </section>
 
-        <!-- Code Comparison or Conceptual Issue -->
+        <!-- Full File Diff View or Conceptual Issue -->
         <template v-if="hasRealCode">
-          <CodeComparison
-            :original-code="finding.originalCode"
-            :optimized-code="finding.optimizedCode"
-            :file-path="finding.filePath"
-          />
+          <DiffViewer :finding="finding" />
         </template>
         <template v-else>
           <section class="bg-surface-container rounded-xl p-8 text-center space-y-4 border border-outline-variant/10">

@@ -4,6 +4,7 @@ import { api, type FindingFilters } from '@/composables/useApi';
 
 export interface Finding {
   id: number;
+  commitSha?: string | null;
   commitAuthor?: string | null;
   filePath: string;
   lineStart?: number | null;
@@ -24,6 +25,8 @@ export interface Finding {
     project?: {
       id: number;
       displayName: string;
+      githubOwner?: string;
+      githubRepo?: string;
     };
   };
 }

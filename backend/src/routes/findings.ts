@@ -85,7 +85,7 @@ router.get('/:id', async (req: Request, res: Response): Promise<void> => {
     where: { id: parseInt(req.params.id) },
     include: {
       review: {
-        include: { project: { select: { id: true, name: true, displayName: true } } },
+        include: { project: { select: { id: true, name: true, displayName: true, githubOwner: true, githubRepo: true } } },
       },
       userFindings: {
         where: { userId: req.user!.userId },
