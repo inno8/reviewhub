@@ -332,8 +332,8 @@ async function triggerSync() {
             </div>
             <div class="flex -space-x-2">
               <div
-                v-for="author in group.authors.slice(0, 3)"
-                :key="author"
+                v-for="(author, idx) in group.authors.slice(0, 3)"
+                :key="author ?? idx"
                 class="w-6 h-6 rounded-full bg-surface-container-highest flex items-center justify-center text-[10px] font-bold text-primary border-2 border-surface-container-low"
               >
                 {{ author?.charAt(0).toUpperCase() }}

@@ -1,310 +1,137 @@
-# ReviewHub: GitHub File Viewer with Issue Highlighting
+# ReviewHub: Full File Display with Diff Highlighting
 
 ## Goal
-When clicking a finding, show the full file content from GitHub with the problematic lines highlighted.
+Show the ENTIRE file content from GitHub with:
+- **ORIGINAL section**: Full file with issue lines highlighted in RED
+- **OPTIMIZED section**: Full file with the fix applied, highlighted in GREEN
 
-## Task 1: Backend - File Content Endpoint
+## Task 1: Backend - Fetch Full File Content
 
-**File:** `backend/src/routes/files.ts` (new)
+The `/api/files/:projectId/:branch/:filePath` endpoint already exists. Use it.
 
-```typescript
-import { Router, Request, Response } from 'express';
-import { PrismaClient } from '@prisma/client';
-import { Octokit } from '@octokit/rest';
-import { authMiddleware } from '../middleware/auth';
+## Task 2: Update Finding Detail View
 
-const router = Router();
-const prisma = new PrismaClient();
-const octokit = new Octokit({ auth: process.env.GITHUB_TOKEN });
+**File:** `frontend/src/views/FindingDetailView.vue`
 
-router.use(authMiddleware);
-
-// GET /api/files/:projectId/:branch/*path
-// Fetches file content from GitHub
-router.get('/:projectId/:branch/*', async (req: Request, res: Response): Promise<void> => {
-  const projectId = parseInt(req.params.projectId);
-  const branch = req.params.branch;
-  const filePath = req.params[0]; // Everything after branch/
-
-  if (!projectId || !branch || !filePath) {
-    res.status(400).json({ error: 'projectId, branch, and file path required' });
-    return;
-  }
-
-  const project = await prisma.project.findUnique({ where: { id: projectId } });
-  if (!project) {
-    res.status(404).json({ error: 'Project not found' });
-    return;
-  }
-
-  try {
-    const { data } = await octokit.repos.getContent({
-      owner: project.githubOwner,
-      repo: project.githubRepo,
-      path: filePath,
-      ref: branch,
-    });
-
-    if (Array.isArray(data) || data.type !== 'file') {
-      res.status(400).json({ error: 'Path is not a file' });
-      return;
-    }
-
-    // Decode base64 content
-    const content = Buffer.from(data.content, 'base64').toString('utf-8');
-
-    res.json({
-      content,
-      path: filePath,
-      sha: data.sha,
-      size: data.size,
-      encoding: 'utf-8',
-    });
-  } catch (error: any) {
-    if (error.status === 404) {
-      res.status(404).json({ error: 'File not found in repository' });
-    } else {
-      console.error('[GitHub] Failed to fetch file:', error);
-      res.status(500).json({ error: 'Failed to fetch file from GitHub' });
-    }
-  }
-});
-
-export default router;
-```
-
-**Register in `backend/src/app.ts`:**
-```typescript
-import filesRouter from './routes/files';
-app.use('/api/files', filesRouter);
-```
-
-## Task 2: Frontend - API Client Update
-
-**File:** `frontend/src/composables/useApi.ts`
-
-Add:
-```typescript
-files: {
-  getContent: (projectId: number, branch: string, filePath: string) =>
-    client.get(`/files/${projectId}/${encodeURIComponent(branch)}/${filePath}`),
-},
-```
-
-## Task 3: Frontend - FileViewer Component
-
-**File:** `frontend/src/components/code/FileViewer.vue`
-
-Create a modal component that:
-1. Fetches file content from the API
-2. Displays with syntax highlighting (use Prism.js or highlight.js)
-3. Highlights issue lines (lineStart to lineEnd) in yellow/red
-4. Auto-scrolls to the first highlighted line
-5. Shows line numbers
+Replace the current code comparison with a full-file diff view:
 
 ```vue
 <template>
-  <div class="fixed inset-0 bg-black/50 flex items-center justify-center z-50" @click.self="$emit('close')">
-    <div class="bg-white rounded-lg shadow-xl w-[90vw] max-w-5xl max-h-[85vh] flex flex-col">
-      <!-- Header -->
-      <div class="flex items-center justify-between p-4 border-b">
-        <div>
-          <h3 class="font-semibold text-lg">{{ filePath }}</h3>
-          <p class="text-sm text-gray-500">{{ branch }}</p>
-        </div>
-        <button @click="$emit('close')" class="p-2 hover:bg-gray-100 rounded">
-          <XIcon class="w-5 h-5" />
-        </button>
-      </div>
-
-      <!-- Code Content -->
-      <div class="flex-1 overflow-auto" ref="codeContainer">
-        <div v-if="loading" class="p-8 text-center text-gray-500">Loading file...</div>
-        <div v-else-if="error" class="p-8 text-center text-red-500">{{ error }}</div>
-        <div v-else class="code-viewer font-mono text-sm">
-          <div
-            v-for="(line, index) in lines"
-            :key="index"
-            :ref="el => { if (isHighlighted(index + 1)) highlightedRefs.push(el) }"
-            :class="[
-              'flex hover:bg-gray-50',
-              isHighlighted(index + 1) ? 'bg-yellow-100 border-l-4 border-yellow-500' : ''
-            ]"
-          >
-            <span class="w-12 px-2 py-0.5 text-right text-gray-400 select-none border-r bg-gray-50">
-              {{ index + 1 }}
-            </span>
-            <pre class="flex-1 px-4 py-0.5 overflow-x-auto"><code v-html="highlightLine(line)"></code></pre>
-          </div>
+  <div class="grid grid-cols-2 gap-4">
+    <!-- ORIGINAL: Full file with issue highlighted in red -->
+    <div class="code-panel">
+      <h3 class="header bg-red-900 text-white">ORIGINAL</h3>
+      <div class="code-content">
+        <div v-for="(line, idx) in originalLines" :key="idx"
+             :class="isIssueLine(idx + 1) ? 'bg-red-900/30 border-l-4 border-red-500' : ''">
+          <span class="line-number">{{ idx + 1 }}</span>
+          <code v-html="highlightSyntax(line)"></code>
         </div>
       </div>
-
-      <!-- Footer with issue info -->
-      <div v-if="finding" class="p-4 border-t bg-gray-50">
-        <p class="font-medium text-sm">{{ finding.category }}</p>
-        <p class="text-sm text-gray-600 mt-1">{{ finding.explanation }}</p>
+    </div>
+    
+    <!-- OPTIMIZED: Full file with fix highlighted in green -->
+    <div class="code-panel">
+      <h3 class="header bg-green-900 text-white">OPTIMIZED</h3>
+      <div class="code-content">
+        <div v-for="(line, idx) in optimizedLines" :key="idx"
+             :class="isFixLine(idx + 1) ? 'bg-green-900/30 border-l-4 border-green-500' : ''">
+          <span class="line-number">{{ idx + 1 }}</span>
+          <code v-html="highlightSyntax(line)"></code>
+        </div>
       </div>
     </div>
   </div>
 </template>
-
-<script setup lang="ts">
-import { ref, onMounted, nextTick, computed } from 'vue';
-import { XIcon } from 'lucide-vue-next';
-import { api } from '@/composables/useApi';
-import Prism from 'prismjs';
-import 'prismjs/themes/prism.css';
-// Import language support as needed
-import 'prismjs/components/prism-markup';
-import 'prismjs/components/prism-css';
-import 'prismjs/components/prism-javascript';
-import 'prismjs/components/prism-python';
-
-const props = defineProps<{
-  projectId: number;
-  branch: string;
-  filePath: string;
-  lineStart: number;
-  lineEnd: number;
-  finding?: any;
-}>();
-
-const emit = defineEmits(['close']);
-
-const loading = ref(true);
-const error = ref('');
-const content = ref('');
-const codeContainer = ref<HTMLElement>();
-const highlightedRefs = ref<HTMLElement[]>([]);
-
-const lines = computed(() => content.value.split('\n'));
-
-const language = computed(() => {
-  const ext = props.filePath.split('.').pop()?.toLowerCase();
-  const langMap: Record<string, string> = {
-    html: 'markup',
-    htm: 'markup',
-    vue: 'markup',
-    xml: 'markup',
-    js: 'javascript',
-    ts: 'javascript',
-    jsx: 'javascript',
-    tsx: 'javascript',
-    py: 'python',
-    css: 'css',
-    scss: 'css',
-  };
-  return langMap[ext || ''] || 'markup';
-});
-
-function isHighlighted(lineNum: number): boolean {
-  return lineNum >= props.lineStart && lineNum <= props.lineEnd;
-}
-
-function highlightLine(line: string): string {
-  try {
-    return Prism.highlight(line || ' ', Prism.languages[language.value], language.value);
-  } catch {
-    return escapeHtml(line || ' ');
-  }
-}
-
-function escapeHtml(text: string): string {
-  return text
-    .replace(/&/g, '&amp;')
-    .replace(/</g, '&lt;')
-    .replace(/>/g, '&gt;');
-}
-
-onMounted(async () => {
-  try {
-    const { data } = await api.files.getContent(props.projectId, props.branch, props.filePath);
-    content.value = data.content;
-  } catch (e: any) {
-    error.value = e.response?.data?.error || 'Failed to load file';
-  } finally {
-    loading.value = false;
-  }
-
-  // Scroll to highlighted line after render
-  await nextTick();
-  if (highlightedRefs.value.length > 0) {
-    highlightedRefs.value[0]?.scrollIntoView({ behavior: 'smooth', block: 'center' });
-  }
-});
-</script>
-
-<style scoped>
-.code-viewer {
-  min-width: max-content;
-}
-pre {
-  margin: 0;
-  white-space: pre;
-}
-code {
-  background: none;
-  padding: 0;
-}
-</style>
 ```
 
-## Task 4: Install Prism.js
+### Logic:
+1. On mount, fetch full file from GitHub: `api.files.getContent(projectId, branch, filePath)`
+2. `originalLines` = full file content split by newlines
+3. `optimizedLines` = full file content with the fix applied (replace issue lines with optimized code)
+4. Highlight issue lines (lineStart to lineEnd) in RED in original
+5. Highlight fix lines in GREEN in optimized
+6. Use Prism.js for syntax highlighting
+7. Sync scroll between both panels
 
-```bash
-cd frontend
-npm install prismjs @types/prismjs
-```
-
-## Task 5: Integrate into FindingCard
-
-**File:** `frontend/src/components/findings/FindingCard.vue` (or wherever findings are displayed)
-
-Add a "View File" button that opens the FileViewer:
-
+### Header Info (above code panels):
 ```vue
-<template>
-  <!-- existing finding card content -->
-  <button @click="showFileViewer = true" class="text-sm text-blue-600 hover:underline">
-    View full file
-  </button>
-  
-  <FileViewer
-    v-if="showFileViewer"
-    :projectId="projectId"
-    :branch="finding.review.branch"
-    :filePath="finding.filePath"
-    :lineStart="finding.lineStart"
-    :lineEnd="finding.lineEnd"
-    :finding="finding"
-    @close="showFileViewer = false"
-  />
-</template>
+<div class="file-header">
+  <div class="flex items-center gap-4">
+    <span class="font-mono text-sm">{{ finding.filePath }}</span>
+    <a :href="commitUrl" target="_blank" class="text-blue-400 hover:underline">
+      {{ finding.commitSha }}
+    </a>
+  </div>
+  <div class="text-sm text-gray-400">
+    <span>Author: {{ finding.commitAuthor }}</span>
+    <span class="mx-2">•</span>
+    <span>Branch: {{ finding.review.branch }}</span>
+  </div>
+</div>
 ```
 
-## Task 6: Handle Missing Line Numbers
+## Task 3: Generate Optimized File Content
 
-Some imported findings have lineStart/lineEnd = 1. For better UX:
-- If lineStart === lineEnd === 1 and we have `originalCode`, search for that code in the file content to find the actual line numbers
-- Highlight all matching occurrences
+When we have the original file and the fix suggestion, generate the optimized version:
 
-## Testing
+```typescript
+function generateOptimizedFile(originalContent: string, finding: Finding): string {
+  const lines = originalContent.split('\n');
+  
+  // If we have specific optimizedCode, replace the lines
+  if (finding.optimizedCode && finding.lineStart && finding.lineEnd) {
+    const before = lines.slice(0, finding.lineStart - 1);
+    const after = lines.slice(finding.lineEnd);
+    const fixLines = finding.optimizedCode.split('\n');
+    return [...before, ...fixLines, ...after].join('\n');
+  }
+  
+  // Otherwise return original (no automatic fix available)
+  return originalContent;
+}
+```
 
-1. Click a finding with a valid filePath (e.g., `home.html`)
-2. FileViewer modal should open
-3. Full file content displayed with syntax highlighting
-4. Issue lines (lineStart to lineEnd) highlighted in yellow
-5. Auto-scroll to highlighted section
-6. Close button works
+## Task 4: Sync Scroll Between Panels
 
-## Files to Create/Modify
+Both panels should scroll together:
 
-- **CREATE:** `backend/src/routes/files.ts`
-- **MODIFY:** `backend/src/app.ts` (register route)
-- **CREATE:** `frontend/src/components/code/FileViewer.vue`
-- **MODIFY:** `frontend/src/composables/useApi.ts`
-- **MODIFY:** Finding display component (add "View File" button)
-- **INSTALL:** `prismjs` package
+```typescript
+const originalPanel = ref<HTMLElement>();
+const optimizedPanel = ref<HTMLElement>();
+
+function syncScroll(source: 'original' | 'optimized') {
+  if (source === 'original' && originalPanel.value && optimizedPanel.value) {
+    optimizedPanel.value.scrollTop = originalPanel.value.scrollTop;
+  } else if (source === 'optimized' && originalPanel.value && optimizedPanel.value) {
+    originalPanel.value.scrollTop = optimizedPanel.value.scrollTop;
+  }
+}
+```
+
+## Task 5: Build Commit URL
+
+```typescript
+const commitUrl = computed(() => {
+  if (!finding.value?.review?.project) return '';
+  const p = finding.value.review.project;
+  return `https://github.com/${p.githubOwner}/${p.githubRepo}/commit/${finding.value.commitSha}`;
+});
+```
+
+## Files to Modify
+
+- `frontend/src/views/FindingDetailView.vue` - Complete rewrite of code display
+- `frontend/src/components/code/DiffViewer.vue` - New component for side-by-side diff
+
+## Expected Result
+
+When viewing a finding:
+1. Full file loads from GitHub
+2. Left panel (ORIGINAL): Shows entire file, issue lines 20-21 highlighted RED
+3. Right panel (OPTIMIZED): Shows entire file with fix applied, fix lines highlighted GREEN
+4. Both panels scroll in sync
+5. Header shows: file path, commit link, author, branch
 
 ---
 
