@@ -181,10 +181,10 @@ async def process_commit(
             "findings": [f.model_dump() for f in all_findings]
         })
         
-        print(f"✅ Processed commit {commit['id'][:7]}: {len(all_findings)} findings, score {overall_score:.1f}")
+        print(f"[OK] Processed commit {commit['id'][:7]}: {len(all_findings)} findings, score {overall_score:.1f}")
         
     except Exception as e:
-        print(f"❌ Error processing commit {commit['id'][:7]}: {str(e)}")
+        print(f"[ERROR] Error processing commit {commit['id'][:7]}: {str(e)}")
         # TODO: Store error in Django
 
 

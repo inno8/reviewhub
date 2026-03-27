@@ -78,7 +78,9 @@ diff --git a/example.py b/example.py
         }
         
     except Exception as e:
+        import traceback
         return {
             "success": False,
-            "error": str(e)
+            "error": str(e),
+            "traceback": traceback.format_exc()
         }
