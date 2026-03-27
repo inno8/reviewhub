@@ -4,9 +4,8 @@ Project API Views
 from rest_framework import generics, permissions, status
 from rest_framework.response import Response
 from rest_framework.views import APIView
+from django.contrib.auth import get_user_model
 from django.db import models
-from django.shortcuts import get_object_or_404
-
 from .models import Project, ProjectMember
 from .serializers import (
     ProjectSerializer, 
@@ -16,8 +15,9 @@ from .serializers import (
     UpdateMemberRoleSerializer,
     WebhookInfoSerializer
 )
-from .permissions import IsProjectMember, IsProjectOwnerOrAdmin, CanManageProjectMembers
-from users.models import User
+from .permissions import IsProjectMember, CanManageProjectMembers
+
+User = get_user_model()
 
 
 class ProjectListCreateView(generics.ListCreateAPIView):
@@ -57,7 +57,13 @@ class ProjectWebhookView(APIView):
     
     def get(self, request, pk):
         """Get webhook URL and secret."""
-        project = get_object_or_404(Project, pk=pk)
+        try:
+            project = Project.objects.get(pk=pk)
+        except Project.DoesNotExist:
+            return Response(
+                {'error': 'Project not found'},
+                status=status.HTTP_404_NOT_FOUND
+            )
         
         # Generate instructions based on provider
         instructions = self._get_instructions(project)
@@ -71,7 +77,14 @@ class ProjectWebhookView(APIView):
     
     def post(self, request, pk):
         """Regenerate webhook secret."""
-        project = get_object_or_404(Project, pk=pk)
+        try:
+            project = Project.objects.get(pk=pk)
+        except Project.DoesNotExist:
+            return Response(
+                {'error': 'Project not found'},
+                status=status.HTTP_404_NOT_FOUND
+            )
+        
         new_secret = project.regenerate_webhook_secret()
         
         return Response({
@@ -112,30 +125,43 @@ class ProjectMemberListView(APIView):
     
     def get(self, request, pk):
         """List all members of a project."""
-        project = get_object_or_404(Project, pk=pk)
+        try:
+            project = Project.objects.get(pk=pk)
+        except Project.DoesNotExist:
+            return Response(
+                {'error': 'Project not found'},
+                status=status.HTTP_404_NOT_FOUND
+            )
+        
         members = ProjectMember.objects.filter(project=project).select_related('user')
         serializer = ProjectMemberSerializer(members, many=True)
         return Response(serializer.data)
     
     def post(self, request, pk):
         """Invite a member to the project by email."""
-        project = get_object_or_404(Project, pk=pk)
-        serializer = InviteMemberSerializer(data=request.data)
+        try:
+            project = Project.objects.get(pk=pk)
+        except Project.DoesNotExist:
+            return Response(
+                {'error': 'Project not found'},
+                status=status.HTTP_404_NOT_FOUND
+            )
         
+        serializer = InviteMemberSerializer(data=request.data)
         if not serializer.is_valid():
             return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
         
         email = serializer.validated_data['email']
-        role = serializer.validated_data.get('role', ProjectMember.ProjectRole.DEVELOPER)
+        role = serializer.validated_data['role']
         git_email = serializer.validated_data.get('git_email', '')
         git_username = serializer.validated_data.get('git_username', '')
         
-        # Find user by email
+        # Get user by email
         try:
             user = User.objects.get(email=email)
         except User.DoesNotExist:
             return Response(
-                {'error': f'No user found with email: {email}'},
+                {'error': 'User not found with this email'},
                 status=status.HTTP_404_NOT_FOUND
             )
         
@@ -151,14 +177,12 @@ class ProjectMemberListView(APIView):
             project=project,
             user=user,
             role=role,
-            git_email=git_email or '',
-            git_username=git_username or ''
+            git_email=git_email or user.email,
+            git_username=git_username or user.username
         )
         
-        return Response(
-            ProjectMemberSerializer(member).data,
-            status=status.HTTP_201_CREATED
-        )
+        result_serializer = ProjectMemberSerializer(member)
+        return Response(result_serializer.data, status=status.HTTP_201_CREATED)
 
 
 class ProjectMemberDetailView(APIView):
@@ -168,59 +192,59 @@ class ProjectMemberDetailView(APIView):
     
     def patch(self, request, pk, user_id):
         """Update member role."""
-        project = get_object_or_404(Project, pk=pk)
-        member = get_object_or_404(ProjectMember, project=project, user_id=user_id)
+        try:
+            project = Project.objects.get(pk=pk)
+        except Project.DoesNotExist:
+            return Response(
+                {'error': 'Project not found'},
+                status=status.HTTP_404_NOT_FOUND
+            )
+        
+        try:
+            member = ProjectMember.objects.get(project=project, user_id=user_id)
+        except ProjectMember.DoesNotExist:
+            return Response(
+                {'error': 'Member not found'},
+                status=status.HTTP_404_NOT_FOUND
+            )
         
         serializer = UpdateMemberRoleSerializer(data=request.data)
         if not serializer.is_valid():
             return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
         
-        # Prevent removing last owner
-        if member.role == ProjectMember.ProjectRole.OWNER:
-            owner_count = ProjectMember.objects.filter(
-                project=project,
-                role=ProjectMember.ProjectRole.OWNER
-            ).count()
-            if owner_count <= 1 and serializer.validated_data['role'] != ProjectMember.ProjectRole.OWNER:
-                return Response(
-                    {'error': 'Cannot remove the last owner from the project'},
-                    status=status.HTTP_400_BAD_REQUEST
-                )
-        
         member.role = serializer.validated_data['role']
-        member.save()
+        member.save(update_fields=['role'])
         
-        return Response(ProjectMemberSerializer(member).data)
+        result_serializer = ProjectMemberSerializer(member)
+        return Response(result_serializer.data)
     
     def delete(self, request, pk, user_id):
         """Remove a member from the project."""
-        project = get_object_or_404(Project, pk=pk)
-        member = get_object_or_404(ProjectMember, project=project, user_id=user_id)
+        try:
+            project = Project.objects.get(pk=pk)
+        except Project.DoesNotExist:
+            return Response(
+                {'error': 'Project not found'},
+                status=status.HTTP_404_NOT_FOUND
+            )
         
-        # Prevent removing last owner
-        if member.role == ProjectMember.ProjectRole.OWNER:
-            owner_count = ProjectMember.objects.filter(
-                project=project,
-                role=ProjectMember.ProjectRole.OWNER
-            ).count()
-            if owner_count <= 1:
-                return Response(
-                    {'error': 'Cannot remove the last owner from the project'},
-                    status=status.HTTP_400_BAD_REQUEST
-                )
+        try:
+            member = ProjectMember.objects.get(project=project, user_id=user_id)
+        except ProjectMember.DoesNotExist:
+            return Response(
+                {'error': 'Member not found'},
+                status=status.HTTP_404_NOT_FOUND
+            )
         
-        # Prevent removing yourself unless you're not the last owner
-        if member.user == request.user:
-            if member.role == ProjectMember.ProjectRole.OWNER:
-                owner_count = ProjectMember.objects.filter(
-                    project=project,
-                    role=ProjectMember.ProjectRole.OWNER
-                ).exclude(user=request.user).count()
-                if owner_count == 0:
-                    return Response(
-                        {'error': 'You cannot remove yourself as the last owner'},
-                        status=status.HTTP_400_BAD_REQUEST
-                    )
+        # Prevent removing the project creator
+        if project.created_by_id == user_id:
+            return Response(
+                {'error': 'Cannot remove project creator'},
+                status=status.HTTP_400_BAD_REQUEST
+            )
         
         member.delete()
-        return Response(status=status.HTTP_204_NO_CONTENT)
+        return Response(
+            {'message': 'Member removed successfully'},
+            status=status.HTTP_200_OK
+        )

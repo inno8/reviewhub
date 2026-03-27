@@ -2,8 +2,10 @@
 Project Serializers
 """
 from rest_framework import serializers
+from django.contrib.auth import get_user_model
 from .models import Project, ProjectMember
-from users.serializers import UserSerializer
+
+User = get_user_model()
 
 
 class ProjectSerializer(serializers.ModelSerializer):
@@ -11,7 +13,8 @@ class ProjectSerializer(serializers.ModelSerializer):
     
     full_name = serializers.ReadOnlyField()
     webhook_url = serializers.ReadOnlyField()
-    created_by = UserSerializer(read_only=True)
+    created_by_email = serializers.EmailField(source='created_by.email', read_only=True)
+    member_count = serializers.SerializerMethodField()
     
     class Meta:
         model = Project
@@ -19,12 +22,16 @@ class ProjectSerializer(serializers.ModelSerializer):
             'id', 'name', 'description', 'provider', 'repo_url',
             'repo_owner', 'repo_name', 'default_branch',
             'webhook_active', 'webhook_url', 'full_name',
-            'team', 'created_by', 'settings', 'created_at', 'updated_at'
+            'team', 'created_by', 'created_by_email', 'member_count',
+            'settings', 'created_at', 'updated_at'
         ]
         read_only_fields = ['id', 'webhook_url', 'created_by', 'created_at', 'updated_at']
         extra_kwargs = {
             'webhook_secret': {'write_only': True}
         }
+    
+    def get_member_count(self, obj):
+        return obj.members.count()
 
 
 class ProjectCreateSerializer(serializers.ModelSerializer):
@@ -45,16 +52,17 @@ class ProjectCreateSerializer(serializers.ModelSerializer):
 class ProjectMemberSerializer(serializers.ModelSerializer):
     """Project member serializer."""
     
-    user = UserSerializer(read_only=True)
+    user_email = serializers.EmailField(source='user.email', read_only=True)
+    user_name = serializers.CharField(source='user.display_name', read_only=True)
     
     class Meta:
         model = ProjectMember
-        fields = ['id', 'user', 'role', 'git_email', 'git_username', 'joined_at']
-        read_only_fields = ['id', 'joined_at']
+        fields = ['id', 'user', 'user_email', 'user_name', 'role', 'git_email', 'git_username', 'joined_at']
+        read_only_fields = ['id', 'user', 'joined_at']
 
 
 class InviteMemberSerializer(serializers.Serializer):
-    """Serializer for inviting members by email."""
+    """Serializer for inviting a member by email."""
     
     email = serializers.EmailField(required=True)
     role = serializers.ChoiceField(
@@ -63,6 +71,14 @@ class InviteMemberSerializer(serializers.Serializer):
     )
     git_email = serializers.EmailField(required=False, allow_blank=True)
     git_username = serializers.CharField(required=False, allow_blank=True)
+    
+    def validate_email(self, value):
+        """Check if user exists."""
+        try:
+            User.objects.get(email=value)
+        except User.DoesNotExist:
+            raise serializers.ValidationError("User with this email does not exist.")
+        return value
 
 
 class UpdateMemberRoleSerializer(serializers.Serializer):
