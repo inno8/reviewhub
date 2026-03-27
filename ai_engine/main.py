@@ -15,7 +15,7 @@ async def lifespan(app: FastAPI):
     """Application lifespan handler."""
     # Startup
     print("ReviewHub AI Engine starting...")
-    print(f"   Django API: {settings.DJANGO_API_URL}")
+    print(f"   Backend API: {settings.BACKEND_API_URL}")
     print(f"   LLM Provider: {settings.LLM_PROVIDER or 'OpenClaw (fallback)'}")
     yield
     # Shutdown

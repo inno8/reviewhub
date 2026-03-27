@@ -239,64 +239,122 @@ class LLMAdapter:
         file_path: str
     ) -> Optional[EvaluationResult]:
         """
-        Call OpenClaw as fallback.
+        OpenClaw fallback - rule-based code analysis.
         
-        This routes through the OpenClaw gateway, which will use
-        the configured model (yo handles the actual LLM call).
+        When no LLM API key is configured, uses basic pattern matching
+        to provide initial code review feedback. For full AI-powered
+        reviews, configure LLM_PROVIDER and LLM_API_KEY.
         """
-        if not settings.OPENCLAW_WEBHOOK_URL:
-            print("⚠️ OPENCLAW_WEBHOOK_URL not configured")
-            return None
+        print(f"[ANALYSIS] Using rule-based analysis for: {file_path}")
         
-        try:
-            async with httpx.AsyncClient() as client:
-                # Send webhook to OpenClaw
-                headers = {"Content-Type": "application/json"}
-                if settings.OPENCLAW_API_KEY:
-                    headers["Authorization"] = f"Bearer {settings.OPENCLAW_API_KEY}"
-                
-                payload = {
-                    "type": "code_review",
-                    "data": {
-                        "prompt": prompt,
-                        "diff": diff,
-                        "file_path": file_path,
-                        "model": self.model_name
-                    }
-                }
-                
-                print(f"📤 Sending code review to OpenClaw: {file_path}")
-                
-                response = await client.post(
-                    settings.OPENCLAW_WEBHOOK_URL,
-                    headers=headers,
-                    json=payload,
-                    timeout=180.0  # 3 minutes for code review
-                )
-                
-                response.raise_for_status()
-                data = response.json()
-                
-                # Extract response (assuming OpenClaw returns JSON)
-                if "content" in data:
-                    content = data["content"]
-                elif "response" in data:
-                    content = data["response"]
-                else:
-                    content = json.dumps(data)
-                
-                tokens = data.get("tokens_used", 0)
-                
-                print(f"✅ Received OpenClaw response ({len(content)} chars)")
-                
-                return self._parse_response(content, tokens)
-                
-        except httpx.HTTPError as e:
-            print(f"❌ OpenClaw HTTP error: {e}")
-            return None
-        except Exception as e:
-            print(f"❌ OpenClaw error: {e}")
-            return None
+        findings = []
+        skill_scores = {}
+        
+        # Basic pattern-based analysis
+        lines = diff.split('\n')
+        added_lines = [l for l in lines if l.startswith('+') and not l.startswith('+++')]
+        
+        # Check for common issues
+        for i, line in enumerate(added_lines):
+            line_num = i + 1
+            
+            # Security: hardcoded secrets
+            if any(pattern in line.lower() for pattern in ['password=', 'api_key=', 'secret=', 'token=']):
+                if '=' in line and not line.strip().startswith('#'):
+                    findings.append(FindingSchema(
+                        title="Potential Hardcoded Secret",
+                        description="This line appears to contain a hardcoded credential or secret.",
+                        severity=Severity.CRITICAL,
+                        file_path=file_path,
+                        line_start=line_num,
+                        line_end=line_num,
+                        original_code=line[1:],
+                        suggested_code="# Use environment variables instead",
+                        explanation="Hardcoded secrets are a security risk. Use environment variables or a secrets manager.",
+                        skills_affected=["secrets_management", "auth_practices"]
+                    ))
+            
+            # Code style: print statements in production code
+            if 'print(' in line and not any(ext in file_path for ext in ['test', 'debug', 'log']):
+                findings.append(FindingSchema(
+                    title="Debug Print Statement",
+                    description="Print statement found in production code.",
+                    severity=Severity.INFO,
+                    file_path=file_path,
+                    line_start=line_num,
+                    line_end=line_num,
+                    original_code=line[1:],
+                    suggested_code="# Use proper logging instead of print",
+                    explanation="Use a logging framework for better control over output levels and formatting.",
+                    skills_affected=["clean_code", "error_handling"]
+                ))
+            
+            # Security: SQL without parameterization
+            if any(pattern in line.lower() for pattern in ['execute(f"', "execute(f'", '% (', '.format(']):
+                if 'select' in line.lower() or 'insert' in line.lower() or 'update' in line.lower():
+                    findings.append(FindingSchema(
+                        title="Potential SQL Injection",
+                        description="SQL query appears to use string formatting instead of parameterized queries.",
+                        severity=Severity.CRITICAL,
+                        file_path=file_path,
+                        line_start=line_num,
+                        line_end=line_num,
+                        original_code=line[1:],
+                        suggested_code="# Use parameterized queries: cursor.execute('SELECT * FROM users WHERE id = ?', (user_id,))",
+                        explanation="String formatting in SQL queries can lead to SQL injection attacks.",
+                        skills_affected=["input_validation", "database_queries"]
+                    ))
+            
+            # Error handling: bare except
+            if 'except:' in line or 'except Exception:' in line:
+                findings.append(FindingSchema(
+                    title="Broad Exception Handling",
+                    description="Catching all exceptions can hide bugs and make debugging difficult.",
+                    severity=Severity.WARNING,
+                    file_path=file_path,
+                    line_start=line_num,
+                    line_end=line_num,
+                    original_code=line[1:],
+                    suggested_code="# Catch specific exceptions: except ValueError as e:",
+                    explanation="Be specific about which exceptions to catch to avoid masking unexpected errors.",
+                    skills_affected=["error_handling", "clean_code"]
+                ))
+        
+        # Calculate score based on findings
+        critical_count = sum(1 for f in findings if f.severity == Severity.CRITICAL)
+        warning_count = sum(1 for f in findings if f.severity == Severity.WARNING)
+        info_count = sum(1 for f in findings if f.severity == Severity.INFO)
+        
+        base_score = 100
+        base_score -= critical_count * 20
+        base_score -= warning_count * 10
+        base_score -= info_count * 2
+        overall_score = max(0, min(100, base_score))
+        
+        # Set skill scores based on findings
+        for finding in findings:
+            for skill in finding.skills_affected:
+                if skill not in skill_scores:
+                    skill_scores[skill] = 80  # Default good score
+                # Deduct based on severity
+                if finding.severity == Severity.CRITICAL:
+                    skill_scores[skill] = max(0, skill_scores[skill] - 30)
+                elif finding.severity == Severity.WARNING:
+                    skill_scores[skill] = max(0, skill_scores[skill] - 15)
+        
+        summary = f"Rule-based analysis found {len(findings)} issues: {critical_count} critical, {warning_count} warnings, {info_count} informational."
+        if not findings:
+            summary = "No issues detected by rule-based analysis. For deeper AI review, configure LLM_PROVIDER."
+        
+        print(f"[OK] Analysis complete: {len(findings)} findings, score {overall_score}")
+        
+        return EvaluationResult(
+            overall_score=overall_score,
+            findings=findings,
+            skill_scores=skill_scores,
+            summary=summary,
+            tokens_used=0
+        )
     
     def _parse_response(self, content: str, tokens: int) -> Optional[EvaluationResult]:
         """Parse LLM response into EvaluationResult."""
