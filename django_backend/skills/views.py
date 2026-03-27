@@ -126,3 +126,205 @@ class SkillTrendsView(APIView):
             })
         
         return Response(trends)
+
+
+class DashboardOverviewView(APIView):
+    """
+    Get overall dashboard stats for current user.
+    Returns: total evaluations, findings, avg score, etc.
+    """
+    
+    permission_classes = [permissions.IsAuthenticated]
+    
+    def get(self, request):
+        from evaluations.models import Evaluation, Finding
+        from django.db.models import Avg, Count
+        
+        project_id = request.query_params.get('project')
+        
+        # Get user's evaluations
+        evaluations = Evaluation.objects.filter(author=request.user)
+        if project_id:
+            evaluations = evaluations.filter(project_id=project_id)
+        
+        # Get user's findings
+        findings = Finding.objects.filter(evaluation__author=request.user)
+        if project_id:
+            findings = findings.filter(evaluation__project_id=project_id)
+        
+        # Calculate stats
+        total_evaluations = evaluations.count()
+        total_findings = findings.count()
+        avg_score = evaluations.aggregate(avg=Avg('overall_score'))['avg'] or 0
+        
+        # Findings by severity
+        critical_count = findings.filter(severity=Finding.Severity.CRITICAL).count()
+        warning_count = findings.filter(severity=Finding.Severity.WARNING).count()
+        info_count = findings.filter(severity=Finding.Severity.INFO).count()
+        
+        # Fixed count
+        fixed_count = findings.filter(is_fixed=True).count()
+        fix_rate = (fixed_count / total_findings * 100) if total_findings > 0 else 0
+        
+        return Response({
+            'total_evaluations': total_evaluations,
+            'total_findings': total_findings,
+            'avg_score': round(avg_score, 1),
+            'critical_count': critical_count,
+            'warning_count': warning_count,
+            'info_count': info_count,
+            'fixed_count': fixed_count,
+            'fix_rate': round(fix_rate, 1)
+        })
+
+
+class DashboardSkillsView(APIView):
+    """
+    Get skill scores grouped by category for radar chart.
+    Returns: categories with avg scores.
+    """
+    
+    permission_classes = [permissions.IsAuthenticated]
+    
+    def get(self, request):
+        from django.db.models import Avg
+        
+        project_id = request.query_params.get('project')
+        
+        # Get user's metrics grouped by category
+        metrics = SkillMetric.objects.filter(
+            user=request.user
+        ).select_related('skill', 'skill__category')
+        
+        if project_id:
+            metrics = metrics.filter(project_id=project_id)
+        
+        # Group by category and calculate averages
+        categories = {}
+        for metric in metrics:
+            cat_name = metric.skill.category.name
+            if cat_name not in categories:
+                categories[cat_name] = {
+                    'name': cat_name,
+                    'scores': [],
+                    'color': metric.skill.category.color
+                }
+            categories[cat_name]['scores'].append(metric.score)
+        
+        # Calculate averages
+        result = []
+        for cat_name, data in categories.items():
+            avg_score = sum(data['scores']) / len(data['scores']) if data['scores'] else 0
+            result.append({
+                'category': cat_name,
+                'score': round(avg_score, 1),
+                'color': data['color']
+            })
+        
+        return Response(result)
+
+
+class DashboardProgressView(APIView):
+    """
+    Get skill progress over time for line chart.
+    Returns: time series data for skills.
+    """
+    
+    permission_classes = [permissions.IsAuthenticated]
+    
+    def get(self, request):
+        from evaluations.models import Evaluation
+        from django.db.models import Avg
+        from datetime import datetime, timedelta
+        
+        project_id = request.query_params.get('project')
+        weeks = int(request.query_params.get('weeks', 8))
+        
+        # Get evaluations for the last N weeks
+        end_date = datetime.now()
+        start_date = end_date - timedelta(weeks=weeks)
+        
+        evaluations = Evaluation.objects.filter(
+            author=request.user,
+            created_at__gte=start_date
+        ).order_by('created_at')
+        
+        if project_id:
+            evaluations = evaluations.filter(project_id=project_id)
+        
+        # Group by week and calculate avg score
+        weekly_data = []
+        current_week_start = start_date
+        
+        while current_week_start < end_date:
+            week_end = current_week_start + timedelta(days=7)
+            
+            week_evals = evaluations.filter(
+                created_at__gte=current_week_start,
+                created_at__lt=week_end
+            )
+            
+            avg_score = week_evals.aggregate(avg=Avg('overall_score'))['avg'] or 0
+            finding_count = sum(e.finding_count for e in week_evals)
+            
+            weekly_data.append({
+                'week_start': current_week_start.strftime('%Y-%m-%d'),
+                'week_end': week_end.strftime('%Y-%m-%d'),
+                'avg_score': round(avg_score, 1),
+                'evaluation_count': week_evals.count(),
+                'finding_count': finding_count
+            })
+            
+            current_week_start = week_end
+        
+        return Response(weekly_data)
+
+
+class DashboardRecentView(APIView):
+    """
+    Get recent findings with skill tags.
+    Returns: recent findings with associated skills.
+    """
+    
+    permission_classes = [permissions.IsAuthenticated]
+    
+    def get(self, request):
+        from evaluations.models import Finding
+        
+        project_id = request.query_params.get('project')
+        limit = int(request.query_params.get('limit', 10))
+        
+        # Get recent findings
+        findings = Finding.objects.filter(
+            evaluation__author=request.user
+        ).select_related(
+            'evaluation'
+        ).prefetch_related(
+            'skills'
+        ).order_by('-created_at')[:limit]
+        
+        if project_id:
+            findings = findings.filter(evaluation__project_id=project_id)
+        
+        # Format response
+        result = []
+        for finding in findings:
+            result.append({
+                'id': finding.id,
+                'title': finding.title,
+                'description': finding.description,
+                'severity': finding.severity,
+                'file_path': finding.file_path,
+                'line_start': finding.line_start,
+                'is_fixed': finding.is_fixed,
+                'created_at': finding.created_at.isoformat(),
+                'skills': [
+                    {
+                        'id': skill.id,
+                        'name': skill.name,
+                        'category': skill.category.name
+                    } for skill in finding.skills.all()
+                ]
+            })
+        
+        return Response(result)

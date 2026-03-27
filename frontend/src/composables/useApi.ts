@@ -143,6 +143,12 @@ export const api = {
     recalculate: (userId: number, projectId: number) =>
       client.post(`/skills/recalculate/${userId}/`, null, { params: { projectId } }),
   },
+  dashboard: {
+    overview: (projectId?: number) => client.get('/skills/dashboard/overview/', { params: { project: projectId } }),
+    skills: (projectId?: number) => client.get('/skills/dashboard/skills/', { params: { project: projectId } }),
+    progress: (projectId?: number, weeks?: number) => client.get('/skills/dashboard/progress/', { params: { project: projectId, weeks } }),
+    recent: (projectId?: number, limit?: number) => client.get('/skills/dashboard/recent/', { params: { project: projectId, limit } }),
+  },
 };
 
 export function useApi() {

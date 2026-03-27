@@ -31,6 +31,7 @@ onMounted(async () => {
 
 const navItems = [
   { name: 'Dashboard', icon: 'dashboard', path: '/' },
+  { name: 'Skills', icon: 'school', path: '/skills' },
   { name: 'Insights', icon: 'analytics', path: '/insights' },
   { name: 'Team Management', icon: 'group', path: '/team', adminOnly: true },
 ];
