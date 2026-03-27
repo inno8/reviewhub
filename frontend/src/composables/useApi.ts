@@ -62,9 +62,13 @@ client.interceptors.response.use(
 
 export const api = {
   auth: {
-    login: (email: string, password: string) => client.post('/auth/login', { email, password }),
-    me: () => client.get('/auth/me'),
-    logout: () => client.post('/auth/logout'),
+    // Django JWT uses username field, but we pass email as username
+    login: (email: string, password: string) => client.post('/auth/token/', { username: email, password }),
+    me: () => client.get('/users/me/'),
+    logout: () => {
+      localStorage.removeItem('reviewhub_token');
+      return Promise.resolve({ data: { message: 'Logged out' } });
+    },
   },
   projects: {
     list: () => client.get('/projects'),
@@ -72,25 +76,40 @@ export const api = {
     getBranches: (id: number) => client.get(`/projects/${id}/branches`),
     createFromUrl: (url: string) => client.post('/projects/from-url', { url }),
   },
+  evaluations: {
+    list: (params: ReviewFilters = {}) => client.get('/evaluations/', { params }),
+    get: (id: number) => client.get(`/evaluations/${id}/`),
+    dashboard: (projectId?: number) => client.get('/evaluations/dashboard/', { params: { project: projectId } }),
+    // Legacy reviews API (for backward compatibility during migration)
+    calendar: (projectId: number, month: string) => {
+      console.warn('Calendar API not yet implemented in Django backend');
+      return Promise.resolve({ data: [] });
+    },
+    trigger: (projectId: number, branches?: string[]) => {
+      console.warn('Manual trigger not needed - use webhook flow');
+      return Promise.resolve({ data: { message: 'Use webhooks instead' } });
+    },
+  },
+  // Keep reviews as alias during migration
   reviews: {
-    list: (params: ReviewFilters = {}) => client.get('/reviews', { params }),
-    calendar: (projectId: number, month: string) =>
-      client.get('/reviews/calendar', { params: { projectId, month } }),
-    trigger: (projectId: number, branches?: string[]) =>
-      client.post('/reviews/trigger', { projectId, branches }),
-    importMarkdown: (projectId: number, date: string) =>
-      client.post(`/reviews/import/${date}`, { projectId }),
-    syncMarkdown: (projectId: number) =>
-      client.post('/reviews/sync-markdown', { projectId }),
+    list: (params: ReviewFilters = {}) => client.get('/evaluations/', { params }),
+    calendar: (projectId: number, month: string) => Promise.resolve({ data: [] }),
+    trigger: (projectId: number, branches?: string[]) => Promise.resolve({ data: {} }),
+    importMarkdown: (projectId: number, date: string) => Promise.resolve({ data: {} }),
+    syncMarkdown: (projectId: number) => Promise.resolve({ data: {} }),
   },
   findings: {
-    list: (params: FindingFilters = {}) => client.get('/findings', { params }),
-    get: (id: number) => client.get(`/findings/${id}`),
-    getFileContent: (id: number) => client.get(`/findings/${id}/file-content`),
-    markUnderstood: (id: number) => client.patch(`/findings/${id}/understood`),
-    requestExplanation: (id: number) => client.post(`/findings/${id}/request-explanation`),
-    applyFix: (id: number) => client.post(`/findings/${id}/apply-fix`),
-    markFixed: (id: number) => client.patch(`/findings/${id}/fixed`),
+    list: (params: FindingFilters = {}) => client.get('/evaluations/findings/', { params }),
+    get: (id: number) => client.get(`/evaluations/findings/${id}/`),
+    markFixed: (id: number, commitSha?: string) => client.post(`/evaluations/findings/${id}/fix/`, { commit_sha: commitSha }),
+    // Not yet implemented in Django
+    getFileContent: (id: number) => {
+      console.warn('File content API not yet implemented');
+      return Promise.resolve({ data: { content: '' } });
+    },
+    markUnderstood: (id: number) => Promise.resolve({ data: {} }),
+    requestExplanation: (id: number) => Promise.resolve({ data: {} }),
+    applyFix: (id: number) => Promise.resolve({ data: {} }),
   },
   files: {
     getContent: (projectId: number, branch: string, filePath: string) =>
