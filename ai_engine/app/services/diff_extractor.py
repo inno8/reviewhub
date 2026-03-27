@@ -44,7 +44,9 @@ class DiffExtractor:
                 ["git", "fetch", "--all"],
                 cwd=repo_path,
                 capture_output=True,
-                check=True
+                check=True,
+                encoding='utf-8',
+                errors='replace'
             )
         else:
             # Clone
@@ -52,7 +54,9 @@ class DiffExtractor:
                 subprocess.run,
                 ["git", "clone", "--bare", repo_url, str(repo_path)],
                 capture_output=True,
-                check=True
+                check=True,
+                encoding='utf-8',
+                errors='replace'
             )
         
         return repo_path
@@ -90,7 +94,9 @@ class DiffExtractor:
                 ["git", "show", "--format=", "--patch", "--no-color", commit_sha],
                 cwd=repo_path,
                 capture_output=True,
-                text=True
+                text=True,
+                encoding='utf-8',
+                errors='replace'
             )
             
             if result.returncode != 0:

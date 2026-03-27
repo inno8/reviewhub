@@ -244,17 +244,59 @@ class LLMAdapter:
         This routes through the OpenClaw gateway, which will use
         the configured model (yo handles the actual LLM call).
         """
-        # TODO: Implement OpenClaw webhook integration
-        # For now, return a placeholder
-        print("OpenClaw fallback not yet implemented - returning mock result")
+        if not settings.OPENCLAW_WEBHOOK_URL:
+            print("⚠️ OPENCLAW_WEBHOOK_URL not configured")
+            return None
         
-        return EvaluationResult(
-            overall_score=75.0,
-            findings=[],
-            skill_scores={},
-            summary="OpenClaw evaluation (mock)",
-            tokens_used=0
-        )
+        try:
+            async with httpx.AsyncClient() as client:
+                # Send webhook to OpenClaw
+                headers = {"Content-Type": "application/json"}
+                if settings.OPENCLAW_API_KEY:
+                    headers["Authorization"] = f"Bearer {settings.OPENCLAW_API_KEY}"
+                
+                payload = {
+                    "type": "code_review",
+                    "data": {
+                        "prompt": prompt,
+                        "diff": diff,
+                        "file_path": file_path,
+                        "model": self.model_name
+                    }
+                }
+                
+                print(f"📤 Sending code review to OpenClaw: {file_path}")
+                
+                response = await client.post(
+                    settings.OPENCLAW_WEBHOOK_URL,
+                    headers=headers,
+                    json=payload,
+                    timeout=180.0  # 3 minutes for code review
+                )
+                
+                response.raise_for_status()
+                data = response.json()
+                
+                # Extract response (assuming OpenClaw returns JSON)
+                if "content" in data:
+                    content = data["content"]
+                elif "response" in data:
+                    content = data["response"]
+                else:
+                    content = json.dumps(data)
+                
+                tokens = data.get("tokens_used", 0)
+                
+                print(f"✅ Received OpenClaw response ({len(content)} chars)")
+                
+                return self._parse_response(content, tokens)
+                
+        except httpx.HTTPError as e:
+            print(f"❌ OpenClaw HTTP error: {e}")
+            return None
+        except Exception as e:
+            print(f"❌ OpenClaw error: {e}")
+            return None
     
     def _parse_response(self, content: str, tokens: int) -> Optional[EvaluationResult]:
         """Parse LLM response into EvaluationResult."""

@@ -11,6 +11,7 @@ import userRoutes from './routes/users';
 import performanceRoutes from './routes/performance';
 import skillsRoutes from './routes/skills';
 import filesRoutes from './routes/files';
+import evaluationsRoutes from './routes/evaluations';
 
 const app = express();
 
@@ -27,6 +28,7 @@ app.use('/api/users', userRoutes);
 app.use('/api/performance', performanceRoutes);
 app.use('/api/skills', skillsRoutes);
 app.use('/api/files', filesRoutes);
+app.use('/api/evaluations', evaluationsRoutes);
 
 // Health check
 app.get('/api/health', (_req, res) => {

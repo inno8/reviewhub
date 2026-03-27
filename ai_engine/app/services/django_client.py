@@ -1,5 +1,5 @@
 """
-Django API Client - Communication with Django backend.
+Backend API Client - Communication with Node.js/Prisma backend.
 """
 import httpx
 from typing import Optional
@@ -9,7 +9,7 @@ from app.core.config import settings
 
 class DjangoClient:
     """
-    HTTP client for Django API communication.
+    HTTP client for backend API communication.
     
     Handles:
     - Creating evaluations
@@ -18,8 +18,8 @@ class DjangoClient:
     """
     
     def __init__(self):
-        self.base_url = settings.DJANGO_API_URL.rstrip("/")
-        self.api_key = settings.DJANGO_API_KEY
+        self.base_url = settings.BACKEND_API_URL.rstrip("/")
+        self.api_key = settings.BACKEND_API_KEY
     
     def _get_headers(self) -> dict:
         """Get request headers."""

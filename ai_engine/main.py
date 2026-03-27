@@ -14,12 +14,12 @@ from app.core.config import settings
 async def lifespan(app: FastAPI):
     """Application lifespan handler."""
     # Startup
-    print("🚀 ReviewHub AI Engine starting...")
+    print("ReviewHub AI Engine starting...")
     print(f"   Django API: {settings.DJANGO_API_URL}")
     print(f"   LLM Provider: {settings.LLM_PROVIDER or 'OpenClaw (fallback)'}")
     yield
     # Shutdown
-    print("👋 ReviewHub AI Engine shutting down...")
+    print("ReviewHub AI Engine shutting down...")
 
 
 app = FastAPI(

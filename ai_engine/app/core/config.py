@@ -12,9 +12,9 @@ class Settings(BaseSettings):
     # App
     DEBUG: bool = False
     
-    # Django API
-    DJANGO_API_URL: str = "http://localhost:8000"
-    DJANGO_API_KEY: Optional[str] = None  # For internal API calls
+    # Backend API
+    BACKEND_API_URL: str = "http://localhost:3000"
+    BACKEND_API_KEY: Optional[str] = None  # For internal API calls
     
     # LLM Configuration
     LLM_PROVIDER: Optional[str] = None  # openai, anthropic, or None for OpenClaw

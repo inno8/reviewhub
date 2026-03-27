@@ -49,13 +49,17 @@ async def github_webhook(
     body = await request.body()
     
     # Verify signature (if secret is configured)
+    print(f"DEBUG: GITHUB_WEBHOOK_SECRET = {repr(settings.GITHUB_WEBHOOK_SECRET)}")
     if settings.GITHUB_WEBHOOK_SECRET:
+        print(f"DEBUG: Verifying signature...")
         if not verify_github_signature(
             body, 
             x_hub_signature_256 or "", 
             settings.GITHUB_WEBHOOK_SECRET
         ):
             raise HTTPException(status_code=401, detail="Invalid signature")
+    else:
+        print("DEBUG: Skipping signature verification (no secret configured)")
     
     # Only process push events
     if x_github_event != "push":
