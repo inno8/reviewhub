@@ -152,5 +152,23 @@ export const api = {
 };
 
 export function useApi() {
-  return client;
+  return {
+    ...api,
+    // Project member management
+    getProjectMembers: async (projectId: number) => {
+      const response = await client.get(`/projects/${projectId}/members/`);
+      return response.data;
+    },
+    inviteProjectMember: async (projectId: number, email: string, role: string) => {
+      const response = await client.post(`/projects/${projectId}/members/`, { email, role });
+      return response.data;
+    },
+    updateProjectMemberRole: async (projectId: number, userId: number, role: string) => {
+      const response = await client.patch(`/projects/${projectId}/members/${userId}/`, { role });
+      return response.data;
+    },
+    removeProjectMember: async (projectId: number, userId: number) => {
+      await client.delete(`/projects/${projectId}/members/${userId}/`);
+    },
+  };
 }

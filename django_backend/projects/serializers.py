@@ -53,6 +53,27 @@ class ProjectMemberSerializer(serializers.ModelSerializer):
         read_only_fields = ['id', 'joined_at']
 
 
+class InviteMemberSerializer(serializers.Serializer):
+    """Serializer for inviting members by email."""
+    
+    email = serializers.EmailField(required=True)
+    role = serializers.ChoiceField(
+        choices=ProjectMember.ProjectRole.choices,
+        default=ProjectMember.ProjectRole.DEVELOPER
+    )
+    git_email = serializers.EmailField(required=False, allow_blank=True)
+    git_username = serializers.CharField(required=False, allow_blank=True)
+
+
+class UpdateMemberRoleSerializer(serializers.Serializer):
+    """Serializer for updating member role."""
+    
+    role = serializers.ChoiceField(
+        choices=ProjectMember.ProjectRole.choices,
+        required=True
+    )
+
+
 class WebhookInfoSerializer(serializers.Serializer):
     """Webhook setup information."""
     
