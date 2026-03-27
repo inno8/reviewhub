@@ -90,7 +90,7 @@ async function loadDashboardData() {
   
   loading.value = true;
   try {
-    const projectId = projectsStore.selectedProjectId;
+    const projectId = projectsStore.selectedProjectId ?? undefined;
     
     // Load all dashboard data in parallel
     const [overviewRes, skillsRes, progressRes, recentRes] = await Promise.all([

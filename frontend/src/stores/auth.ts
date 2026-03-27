@@ -23,8 +23,11 @@ export const useAuthStore = defineStore('auth', () => {
     try {
       const { data } = await api.auth.login(email, password);
       // Django JWT returns { access, refresh }
-      token.value = data.access || data.token; // Support both formats
-      localStorage.setItem('reviewhub_token', token.value);
+      const newToken = data.access || data.token; // Support both formats
+      if (newToken) {
+        token.value = newToken;
+        localStorage.setItem('reviewhub_token', newToken);
+      }
       
       // Fetch user profile separately
       const meResponse = await api.auth.me();

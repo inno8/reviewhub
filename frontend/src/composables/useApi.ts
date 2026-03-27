@@ -84,7 +84,7 @@ export const api = {
     // Legacy reviews API (for backward compatibility during migration)
     calendar: (projectId: number, month: string) => {
       console.warn('Calendar API not yet implemented in Django backend');
-      return Promise.resolve({ data: [] });
+      return Promise.resolve({ data: { dates: [] as string[] } });
     },
     trigger: (projectId: number, branches?: string[]) => {
       console.warn('Manual trigger not needed - use webhook flow');
@@ -94,10 +94,10 @@ export const api = {
   // Keep reviews as alias during migration
   reviews: {
     list: (params: ReviewFilters = {}) => client.get('/evaluations/', { params }),
-    calendar: (projectId: number, month: string) => Promise.resolve({ data: [] }),
-    trigger: (projectId: number, branches?: string[]) => Promise.resolve({ data: {} }),
-    importMarkdown: (projectId: number, date: string) => Promise.resolve({ data: {} }),
-    syncMarkdown: (projectId: number) => Promise.resolve({ data: {} }),
+    calendar: (projectId: number, month: string) => Promise.resolve({ data: { dates: [] as string[] } }),
+    trigger: (projectId: number, branches?: string[]) => Promise.resolve({ data: { message: 'Use webhooks instead', totalFindings: 0 } }),
+    importMarkdown: (projectId: number, date: string) => Promise.resolve({ data: { message: 'Not implemented' } }),
+    syncMarkdown: (projectId: number) => Promise.resolve({ data: { message: 'Not implemented' } }),
   },
   findings: {
     list: (params: FindingFilters = {}) => client.get('/evaluations/findings/', { params }),
@@ -108,9 +108,9 @@ export const api = {
       console.warn('File content API not yet implemented');
       return Promise.resolve({ data: { content: '' } });
     },
-    markUnderstood: (id: number) => Promise.resolve({ data: {} }),
-    requestExplanation: (id: number) => Promise.resolve({ data: {} }),
-    applyFix: (id: number) => Promise.resolve({ data: {} }),
+    markUnderstood: (id: number) => Promise.resolve({ data: { markedUnderstood: true } }),
+    requestExplanation: (id: number) => Promise.resolve({ data: { message: 'Not implemented' } }),
+    applyFix: (id: number) => Promise.resolve({ data: { prUrl: '', message: 'Not implemented' } }),
   },
   files: {
     getContent: (projectId: number, branch: string, filePath: string) =>

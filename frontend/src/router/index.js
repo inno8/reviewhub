@@ -4,7 +4,6 @@ import DashboardView from '@/views/DashboardView.vue';
 import FindingDetailView from '@/views/FindingDetailView.vue';
 import FileReviewView from '@/views/FileReviewView.vue';
 import PerformanceView from '@/views/PerformanceView.vue';
-import SkillsDashboardView from '@/views/SkillsDashboardView.vue';
 import UserManagementView from '@/views/UserManagementView.vue';
 import SettingsView from '@/views/SettingsView.vue';
 import { useAuthStore } from '@/stores/auth';
@@ -16,7 +15,6 @@ const router = createRouter({
         { path: '/findings/:id', name: 'finding-detail', component: FindingDetailView, props: true },
         { path: '/file-review', name: 'file-review', component: FileReviewView },
         { path: '/insights', name: 'insights', component: PerformanceView },
-        { path: '/skills', name: 'skills-dashboard', component: SkillsDashboardView },
         { path: '/team', name: 'team', component: UserManagementView, meta: { admin: true } },
         { path: '/settings', name: 'settings', component: SettingsView },
     ],
