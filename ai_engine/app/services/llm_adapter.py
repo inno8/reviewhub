@@ -245,7 +245,7 @@ class LLMAdapter:
         to provide initial code review feedback. For full AI-powered
         reviews, configure LLM_PROVIDER and LLM_API_KEY.
         """
-        print(f"[ANALYSIS] Using rule-based analysis for: {file_path}")
+        print(f"[ANALYSIS] Using rule-based analysis for: {file_path}", flush=True)
         
         findings = []
         skill_scores = {}
@@ -346,7 +346,7 @@ class LLMAdapter:
         if not findings:
             summary = "No issues detected by rule-based analysis. For deeper AI review, configure LLM_PROVIDER."
         
-        print(f"[OK] Analysis complete: {len(findings)} findings, score {overall_score}")
+        print(f"[OK] Analysis complete: {len(findings)} findings, score {overall_score}", flush=True)
         
         return EvaluationResult(
             overall_score=overall_score,

@@ -13,7 +13,7 @@ PROJECT_ID = 1
 # Test data - simulating AI engine output
 test_evaluation = {
     "project_id": PROJECT_ID,
-    "commit_sha": "abc123def456789",
+    "commit_sha": "def456abc789012",
     "commit_message": "Test commit for findings verification",
     "commit_timestamp": datetime.now().isoformat(),
     "branch": "test-branch",
@@ -37,7 +37,7 @@ test_evaluation = {
             "original_code": "def create_user(data):\n    return User.objects.create(**data)",
             "suggested_code": "def create_user(data):\n    validate_user_data(data)\n    return User.objects.create(**data)",
             "explanation": "Always validate user input before using it",
-            "skills_affected": ["input-validation", "security-practices"]
+            "skills_affected": ["input_validation", "auth_practices"]
         },
         {
             "title": "Missing error handling",
@@ -49,7 +49,7 @@ test_evaluation = {
             "original_code": "user = User.objects.get(id=user_id)",
             "suggested_code": "try:\n    user = User.objects.get(id=user_id)\nexcept User.DoesNotExist:\n    return None",
             "explanation": "Handle potential database errors",
-            "skills_affected": ["error-handling", "backend-architecture"]
+            "skills_affected": ["error_handling", "api_design"]
         },
         {
             "title": "Poor code structure",
@@ -61,7 +61,7 @@ test_evaluation = {
             "original_code": "# Long function...",
             "suggested_code": "# Split into smaller functions...",
             "explanation": "Follow single responsibility principle",
-            "skills_affected": ["code-structure", "clean-code", "solid-principles"]
+            "skills_affected": ["code_structure", "clean_code", "solid_principles"]
         }
     ]
 }
