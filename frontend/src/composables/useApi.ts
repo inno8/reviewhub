@@ -62,8 +62,9 @@ client.interceptors.response.use(
 
 export const api = {
   auth: {
-    // Django JWT uses username field, but we pass email as username
-    login: (email: string, password: string) => client.post('/auth/token/', { username: email, password }),
+    // Django JWT uses email field for authentication
+    login: (email: string, password: string) => client.post('/auth/token/', { email, password }),
+    register: (data: CreateUser) => client.post('/users/register/', data),
     me: () => client.get('/users/me/'),
     logout: () => {
       localStorage.removeItem('reviewhub_token');
@@ -71,10 +72,10 @@ export const api = {
     },
   },
   projects: {
-    list: () => client.get('/projects'),
-    get: (id: number) => client.get(`/projects/${id}`),
-    getBranches: (id: number) => client.get(`/projects/${id}/branches`),
-    createFromUrl: (url: string) => client.post('/projects/from-url', { url }),
+    list: () => client.get('/projects/'),
+    get: (id: number) => client.get(`/projects/${id}/`),
+    getBranches: (id: number) => client.get(`/projects/${id}/branches/`),
+    createFromUrl: (url: string) => client.post('/projects/', { url }),
   },
   evaluations: {
     list: (params: ReviewFilters = {}) => client.get('/evaluations/', { params }),
@@ -116,14 +117,14 @@ export const api = {
       client.get(`/files/${projectId}/${encodeURIComponent(branch)}/${encodeURIComponent(filePath)}`),
   },
   users: {
-    list: () => client.get('/users'),
-    me: () => client.get('/users/me'),
-    updateMe: (data: Omit<UpdateUser, 'role' | 'projectIds'>) => client.patch('/users/me', data),
-    create: (data: CreateUser) => client.post('/users', data),
-    update: (id: number, data: UpdateUser) => client.patch(`/users/${id}`, data),
-    delete: (id: number) => client.delete(`/users/${id}`),
-    getProjects: (id: number) => client.get(`/users/${id}/projects`),
-    assignProjects: (id: number, projectIds: number[]) => client.post(`/users/${id}/projects`, { projectIds }),
+    list: () => client.get('/users/'),
+    me: () => client.get('/users/me/'),
+    updateMe: (data: Omit<UpdateUser, 'role' | 'projectIds'>) => client.patch('/users/me/', data),
+    create: (data: CreateUser) => client.post('/users/', data),
+    update: (id: number, data: UpdateUser) => client.patch(`/users/${id}/`, data),
+    delete: (id: number) => client.delete(`/users/${id}/`),
+    getProjects: (id: number) => client.get(`/users/${id}/projects/`),
+    assignProjects: (id: number, projectIds: number[]) => client.post(`/users/${id}/projects/`, { projectIds }),
   },
   performance: {
     get: (userId: number, params: PerformanceParams) => client.get(`/performance/${userId}`, { params }),
@@ -135,12 +136,12 @@ export const api = {
       client.get('/performance/leaderboard', { params }),
   },
   skills: {
-    categories: () => client.get('/skills/categories'),
-    user: (userId: number) => client.get(`/skills/user/${userId}`),
+    categories: () => client.get('/skills/categories/'),
+    user: (userId: number) => client.get(`/skills/user/${userId}/`),
     breakdown: (userId: number, skillId: number, projectId: number) =>
-      client.get(`/skills/user/${userId}/breakdown/${skillId}`, { params: { projectId } }),
+      client.get(`/skills/user/${userId}/breakdown/${skillId}/`, { params: { projectId } }),
     recalculate: (userId: number, projectId: number) =>
-      client.post(`/skills/recalculate/${userId}`, null, { params: { projectId } }),
+      client.post(`/skills/recalculate/${userId}/`, null, { params: { projectId } }),
   },
 };
 
