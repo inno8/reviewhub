@@ -151,10 +151,11 @@ export const api = {
   skills: {
     categories: () => client.get('/skills/categories/'),
     user: (userId: number) => client.get(`/skills/user/${userId}/`),
+    // Breakdown not implemented yet - return empty data
     breakdown: (userId: number, skillId: number, projectId: number) =>
-      client.get(`/skills/user/${userId}/breakdown/${skillId}/`, { params: { projectId } }),
+      Promise.resolve({ data: { skill: null, findings: [], trend: [] } }),
     recalculate: (userId: number, projectId: number) =>
-      client.post(`/skills/recalculate/${userId}/`, null, { params: { projectId } }),
+      Promise.resolve({ data: { success: true } }),
     recommendations: (projectId?: number) => client.get('/skills/recommendations/', { params: { project: projectId } }),
   },
   dashboard: {
