@@ -1,166 +1,155 @@
-# ReviewHub: Parse Skills from @code-review Markdown
+# Task: Create Onboard Page (First-Time User Password Setup)
 
-## Context
-@code-review now includes **Skills Affected** in each finding. We need to:
-1. Parse the skills from markdown
-2. Store them with findings
-3. Use them directly instead of keyword matching
+## Overview
+Create an onboarding flow for users logging in for the first time. The flow:
+1. User enters email
+2. System searches for user in DB
+3. If found, welcome user by name and send 5-digit OTP to their email
+4. Show OTP input fields
+5. On correct OTP, prompt user to set password
+6. Update user record in DB and redirect to login
 
-## Task 1: Update Prisma Schema
+## Tech Stack
+- **Backend:** Django + Django REST Framework (in `django_backend/`)
+- **Frontend:** Vue 3 + TypeScript + Tailwind (in `frontend/`)
+- **Auth:** JWT via djangorestframework-simplejwt
 
-**File:** `backend/prisma/schema.prisma`
+## Backend Changes (Django)
 
-Add skills field to Finding:
+### 1. New Model: `OnboardCode` in `django_backend/users/models.py`
 
-```prisma
-model Finding {
-  // ... existing fields
-  skills      String[]   // Array of skill names like ['secrets_management', 'clean_code']
-}
-```
-
-Run migration: `npx prisma migrate dev --name add_finding_skills`
-
-## Task 2: Update Markdown Parser
-
-**File:** `backend/src/services/markdownImport.ts`
-
-Parse the **Skills Affected:** line:
-
-```typescript
-interface ParsedFinding {
-  // ... existing
-  skills: string[];  // Add this
-}
-
-// In parseMarkdownReview():
-// Look for: **Skills Affected:** skill1, skill2
-const skillsMatch = body.match(/\*\*Skills Affected:\*\*\s*([^\n]+)/);
-const skills = skillsMatch 
-  ? skillsMatch[1].split(',').map(s => s.trim().toLowerCase().replace(/\s+/g, '_'))
-  : [];
-
-findings.push({
-  // ... existing
-  skills,
-});
-```
-
-Update the import function to save skills:
-
-```typescript
-await prisma.finding.create({
-  data: {
-    // ... existing fields
-    skills: f.skills,  // Add this
-  },
-});
-```
-
-## Task 3: Update Skill Scoring
-
-**File:** `backend/src/services/skillMapping.ts`
-
-Update `calculateSkillScores()` to use the `finding.skills` array directly instead of keyword matching:
-
-```typescript
-export async function calculateSkillScores(userId: number, projectId: number) {
-  const findings = await prisma.finding.findMany({
-    where: {
-      review: { projectId },
-      commitAuthor: username
-    },
-    select: {
-      id: true,
-      skills: true,  // Use the parsed skills
-      explanation: true,
-      filePath: true,
-      review: { select: { reviewDate: true } }
-    }
-  });
-
-  // Count findings per skill directly
-  const skillCounts: Record<string, number> = {};
-  for (const finding of findings) {
-    for (const skill of finding.skills) {
-      skillCounts[skill] = (skillCounts[skill] || 0) + 1;
-    }
-  }
-
-  // Calculate scores (100 - 5 per finding)
-  const skills = await prisma.skill.findMany();
-  for (const skill of skills) {
-    const count = skillCounts[skill.name] || 0;
-    const score = Math.max(0, 100 - (count * 5));
+```python
+class OnboardCode(models.Model):
+    """Temporary OTP codes for first-time user onboarding."""
+    user = models.ForeignKey(User, on_delete=models.CASCADE, related_name='onboard_codes')
+    code = models.CharField(max_length=5)  # 5-digit code
+    expires_at = models.DateTimeField()
+    used = models.BooleanField(default=False)
+    created_at = models.DateTimeField(auto_now_add=True)
     
-    await prisma.userSkill.upsert({
-      where: { userId_skillId: { userId, skillId: skill.id } },
-      update: { score, updatedAt: new Date() },
-      create: { userId, skillId: skill.id, score }
-    });
-  }
-}
+    class Meta:
+        db_table = 'onboard_codes'
+        indexes = [
+            models.Index(fields=['user', 'code']),
+        ]
 ```
 
-## Task 4: Update Skill Breakdown
+Also add to User model:
+```python
+onboard_completed = models.BooleanField(default=False)
+```
 
-**File:** `backend/src/routes/skills.ts`
+Run migrations after schema changes.
 
-In the breakdown endpoint, return findings that have this skill in their `skills` array:
+### 2. New Views in `django_backend/users/views.py`
 
+Create three endpoints:
+
+#### `POST /api/onboard/check-email/`
+- Input: `{ "email": "..." }`
+- Find user by email
+- If not found: return `{ "found": false }`
+- If found and `onboard_completed=True`: return `{ "found": true, "already_onboarded": true }`
+- If found and not onboarded:
+  - Generate 5-digit code (random, numeric)
+  - Save to `OnboardCode` with 15-minute expiry
+  - Log code to console (for now): `print(f"[ONBOARD] Code for {email}: {code}")`
+  - Return `{ "found": true, "username": user.username, "code_sent": true }`
+
+#### `POST /api/onboard/verify-code/`
+- Input: `{ "email": "...", "code": "..." }`
+- Find user by email
+- Find valid (not used, not expired) OnboardCode for user
+- If code matches:
+  - Mark code as used
+  - Generate short-lived JWT token for password reset (5 min expiry)
+  - Return `{ "valid": true, "reset_token": "..." }`
+- If invalid: return `{ "valid": false, "error": "Invalid or expired code" }`
+
+#### `POST /api/onboard/set-password/`
+- Input: `{ "token": "...", "password": "..." }`
+- Verify reset token
+- Hash password with Django's `make_password()`
+- Update user: `password`, `onboard_completed=True`
+- Return `{ "success": true }`
+
+### 3. Register URLs in `django_backend/users/urls.py`
+```python
+path('onboard/check-email/', OnboardCheckEmailView.as_view()),
+path('onboard/verify-code/', OnboardVerifyCodeView.as_view()),
+path('onboard/set-password/', OnboardSetPasswordView.as_view()),
+```
+
+## Frontend Changes
+
+### 1. New View: `frontend/src/views/OnboardView.vue`
+
+Multi-step form matching existing design (see LoginView.vue for styling):
+
+**Step 1: Email Entry**
+- Same card styling as LoginView
+- Email input field
+- "Continue" button
+- Link: "Already have password? Sign in"
+
+**Step 2: OTP Verification** (shown after email found)
+- Welcome message: "Welcome, {username}!"
+- Subtitle: "We sent a 5-digit code to {email}"
+- 5 separate input boxes for OTP (auto-focus next on input)
+- "Verify Code" button
+- "Resend code" link (rate-limited, 60 second cooldown)
+
+**Step 3: Set Password** (shown after OTP verified)
+- Password input
+- Confirm password input
+- Password requirements hint (8+ chars)
+- "Set Password" button
+
+**Step 4: Success**
+- Success message with checkmark icon
+- Auto-redirect to /login after 3 seconds
+- Manual "Go to Login" button
+
+### 2. Add Route in `frontend/src/router/index.ts`
 ```typescript
-const findings = await prisma.finding.findMany({
-  where: {
-    review: { projectId },
-    commitAuthor: username,
-    skills: { has: skill.name }  // Prisma array contains
-  },
-  select: {
-    id: true,
-    explanation: true,
-    filePath: true,
-    review: { select: { reviewDate: true } }
-  }
-});
+import OnboardView from '@/views/OnboardView.vue';
+// ...
+{ path: '/onboard', name: 'onboard', component: OnboardView, meta: { public: true } },
 ```
 
-## Task 5: Backfill Existing Findings (Optional)
+### 3. API calls
+Add to appropriate API service or inline in component.
 
-For existing findings without skills, run the keyword matcher as a fallback:
+## Design Notes
+- Match the existing dark theme from LoginView.vue
+- Use same color tokens: `primary`, `surface-container-*`, `on-surface`, etc.
+- Use Material Symbols icons
+- Add subtle animations for step transitions
+- OTP boxes should be large, centered, with auto-advance
 
-```typescript
-async function backfillSkills() {
-  const findings = await prisma.finding.findMany({
-    where: { skills: { isEmpty: true } }
-  });
-  
-  for (const finding of findings) {
-    const skills = detectSkillsFromExplanation(finding.explanation);
-    await prisma.finding.update({
-      where: { id: finding.id },
-      data: { skills }
-    });
-  }
-}
-```
+## Validation
+- Email: valid email format
+- OTP: exactly 5 digits
+- Password: min 8 chars, must match confirmation
 
----
+## Testing
+After implementation:
+1. Start Django backend + Vue frontend
+2. Create a test user without password (Django shell or admin)
+3. Navigate to /onboard
+4. Enter test user email
+5. Check console for OTP code
+6. Enter OTP
+7. Set password
+8. Try logging in with new password
 
-## Summary of Changes
+## Files to Create/Modify
+- `django_backend/users/models.py` (add OnboardCode model, update User)
+- `django_backend/users/views.py` (add 3 views)
+- `django_backend/users/urls.py` (add 3 routes)
+- Run: `python manage.py makemigrations && python manage.py migrate`
+- `frontend/src/views/OnboardView.vue` (new)
+- `frontend/src/router/index.ts` (add route)
 
-| File | Change |
-|------|--------|
-| `schema.prisma` | Add `skills String[]` to Finding |
-| `markdownImport.ts` | Parse **Skills Affected:** line |
-| `skillMapping.ts` | Use `finding.skills` instead of keyword matching |
-| `routes/skills.ts` | Query by `skills: { has: skillName }` |
-
-## Migration
-
-```bash
-npx prisma migrate dev --name add_finding_skills
-```
-
----
-
-Commit: feat: parse skills directly from @code-review findings
+## Commit Message
+After implementation: `feat: add onboard page for first-time user password setup`

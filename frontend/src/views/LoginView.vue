@@ -110,8 +110,8 @@ async function handleSubmit() {
           <!-- Footer Links -->
           <div class="mt-8 pt-6 border-t border-outline-variant/10 text-center">
             <p class="text-sm text-on-surface-variant">
-              New to the hub?
-              <a href="#" class="text-primary-container font-semibold hover:underline ml-1">Request Access</a>
+              First time here?
+              <router-link to="/onboard" class="text-primary-container font-semibold hover:underline ml-1">Set up your account</router-link>
             </p>
           </div>
         </div>

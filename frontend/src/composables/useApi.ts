@@ -51,8 +51,11 @@ client.interceptors.response.use(
   (response) => response,
   (error) => {
     if (error?.response?.status === 401) {
-      localStorage.removeItem('reviewhub_token');
-      if (window.location.pathname !== '/login') {
+      // Don't redirect on public pages (login, onboard)
+      const publicPaths = ['/login', '/onboard'];
+      const isPublicPage = publicPaths.some(p => window.location.pathname.startsWith(p));
+      if (!isPublicPage) {
+        localStorage.removeItem('reviewhub_token');
         window.location.href = '/login';
       }
     }
