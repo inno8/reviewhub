@@ -53,13 +53,63 @@ export const useFindingsStore = defineStore('findings', () => {
         page: nextFilters.page ?? page.value,
         limit: nextFilters.limit ?? limit.value,
       });
-      findings.value = data.findings;
-      total.value = data.total;
-      page.value = data.page;
-      totalPages.value = data.totalPages;
+      
+      // Map Django REST Framework response to expected structure
+      if (data.results) {
+        // DRF paginated response
+        findings.value = data.results.map((finding: any) => ({
+          id: finding.id,
+          commitSha: finding.fixed_in_commit || null,
+          commitAuthor: null, // Not in current API response
+          filePath: finding.file_path,
+          lineStart: finding.line_start,
+          lineEnd: finding.line_end,
+          explanation: finding.explanation,
+          category: mapSeverityToCategory(finding.severity),
+          difficulty: 'INTERMEDIATE', // Default for now
+          originalCode: finding.original_code,
+          optimizedCode: finding.suggested_code,
+          prCreated: false,
+          prUrl: null,
+          fixedAt: finding.fixed_at,
+          markedUnderstood: false,
+          explanationRequested: false,
+          references: [],
+          review: {
+            branch: 'main',
+            reviewDate: finding.created_at,
+          }
+        }));
+        total.value = data.count;
+        page.value = nextFilters.page ?? page.value;
+        // Calculate total pages from count and limit
+        const perPage = nextFilters.limit ?? limit.value;
+        totalPages.value = Math.ceil(data.count / perPage);
+      } else {
+        // Legacy V1 response
+        findings.value = data.findings;
+        total.value = data.total;
+        page.value = data.page;
+        totalPages.value = data.totalPages;
+      }
+      
       limit.value = nextFilters.limit ?? limit.value;
     } finally {
       loading.value = false;
+    }
+  }
+  
+  function mapSeverityToCategory(severity: string): string {
+    // Map Django severity to V1 categories
+    switch (severity) {
+      case 'critical':
+        return 'SECURITY';
+      case 'warning':
+        return 'CODE_STYLE';
+      case 'info':
+        return 'ARCHITECTURE';
+      default:
+        return 'CODE_STYLE';
     }
   }
 
@@ -71,8 +121,34 @@ export const useFindingsStore = defineStore('findings', () => {
     detailsLoading.value = true;
     try {
       const { data } = await api.findings.get(id);
-      selectedFinding.value = data.finding;
-      findingDetailsCache.value[id] = data.finding;
+      
+      // Map Django response to expected structure
+      const finding = {
+        id: data.id,
+        commitSha: data.fixed_in_commit || null,
+        commitAuthor: null,
+        filePath: data.file_path,
+        lineStart: data.line_start,
+        lineEnd: data.line_end,
+        explanation: data.explanation,
+        category: mapSeverityToCategory(data.severity),
+        difficulty: 'INTERMEDIATE',
+        originalCode: data.original_code,
+        optimizedCode: data.suggested_code,
+        prCreated: false,
+        prUrl: null,
+        fixedAt: data.fixed_at,
+        markedUnderstood: false,
+        explanationRequested: false,
+        references: [],
+        review: {
+          branch: 'main',
+          reviewDate: data.created_at,
+        }
+      };
+      
+      selectedFinding.value = finding;
+      findingDetailsCache.value[id] = finding;
     } finally {
       detailsLoading.value = false;
     }

@@ -19,7 +19,19 @@ export const useProjectsStore = defineStore('projects', () => {
     loading.value = true;
     try {
       const { data } = await api.projects.list();
-      projects.value = data.projects;
+      
+      // Map Django DRF response to expected structure
+      if (data.results) {
+        projects.value = data.results.map((project: any) => ({
+          id: project.id,
+          name: project.name,
+          displayName: project.name, // Use same name for display
+        }));
+      } else {
+        // Legacy V1 response
+        projects.value = data.projects;
+      }
+      
       if (!selectedProjectId.value && projects.value.length > 0) {
         selectedProjectId.value = projects.value[0].id;
         localStorage.setItem('reviewhub_project_id', String(selectedProjectId.value));

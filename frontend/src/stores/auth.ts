@@ -31,7 +31,13 @@ export const useAuthStore = defineStore('auth', () => {
       
       // Fetch user profile separately
       const meResponse = await api.auth.me();
-      user.value = meResponse.data;
+      // Map Django user to frontend format
+      user.value = {
+        id: meResponse.data.id,
+        username: meResponse.data.username,
+        email: meResponse.data.email,
+        role: mapDjangoRoleToFrontend(meResponse.data.role),
+      };
     } finally {
       loading.value = false;
     }
@@ -57,12 +63,26 @@ export const useAuthStore = defineStore('auth', () => {
     }
     try {
       const { data } = await api.auth.me();
-      user.value = data; // Django returns user object directly
+      // Map Django user to frontend format
+      user.value = {
+        id: data.id,
+        username: data.username,
+        email: data.email,
+        role: mapDjangoRoleToFrontend(data.role),
+      };
     } catch {
       await logout();
     } finally {
       initialized.value = true;
     }
+  }
+  
+  function mapDjangoRoleToFrontend(role: string): 'ADMIN' | 'INTERN' {
+    // Map Django roles (admin, developer, viewer) to frontend roles (ADMIN, INTERN)
+    if (role === 'admin') {
+      return 'ADMIN';
+    }
+    return 'INTERN'; // developer and viewer map to INTERN
   }
 
   return { token, user, loading, initialized, isAuthenticated, isAdmin, login, logout, bootstrap };
