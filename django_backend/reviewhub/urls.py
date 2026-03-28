@@ -6,6 +6,7 @@ from django.urls import path, include
 from rest_framework_simplejwt.views import TokenRefreshView
 from users.serializers import CustomTokenObtainPairSerializer
 from rest_framework_simplejwt.views import TokenObtainPairView
+from users.views import OnboardCheckEmailView, OnboardVerifyCodeView, OnboardSetPasswordView
 
 
 class CustomTokenObtainPairView(TokenObtainPairView):
@@ -14,18 +15,23 @@ class CustomTokenObtainPairView(TokenObtainPairView):
 
 urlpatterns = [
     path('admin/', admin.site.urls),
-    
+
     # JWT Auth
     path('api/auth/token/', CustomTokenObtainPairView.as_view(), name='token_obtain'),
     path('api/auth/token/refresh/', TokenRefreshView.as_view(), name='token_refresh'),
-    
+
     # API endpoints
     path('api/users/', include('users.urls')),
     path('api/projects/', include('projects.urls')),
     path('api/evaluations/', include('evaluations.urls')),
     path('api/skills/', include('skills.urls')),
     path('api/notifications/', include('notifications.urls')),
-    
+
+    # Onboard (public endpoints)
+    path('api/onboard/check-email/', OnboardCheckEmailView.as_view(), name='onboard-check-email'),
+    path('api/onboard/verify-code/', OnboardVerifyCodeView.as_view(), name='onboard-verify-code'),
+    path('api/onboard/set-password/', OnboardSetPasswordView.as_view(), name='onboard-set-password'),
+
     # Health check
     path('api/health/', lambda r: __import__('django.http', fromlist=['JsonResponse']).JsonResponse({'status': 'healthy'})),
 ]

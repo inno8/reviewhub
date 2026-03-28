@@ -62,9 +62,9 @@ client.interceptors.response.use(
 
 export const api = {
   onboard: {
-    checkEmail: (email: string) => client.post('/onboard/check-email', { email }),
-    verifyCode: (email: string, code: string) => client.post('/onboard/verify-code', { email, code }),
-    setPassword: (token: string, password: string) => client.post('/onboard/set-password', { token, password }),
+    checkEmail: (email: string) => client.post('/onboard/check-email/', { email }),
+    verifyCode: (email: string, code: string) => client.post('/onboard/verify-code/', { email, code }),
+    setPassword: (token: string, password: string) => client.post('/onboard/set-password/', { token, password }),
   },
   auth: {
     // Django JWT uses email field for authentication

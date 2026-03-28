@@ -5,6 +5,7 @@ from django.contrib.auth.models import AbstractUser
 from django.db import models
 from cryptography.fernet import Fernet
 from django.conf import settings
+from django.utils import timezone
 import os
 
 
@@ -28,6 +29,7 @@ class User(AbstractUser):
         default=Role.DEVELOPER
     )
     avatar_url = models.URLField(blank=True, null=True)
+    onboard_completed = models.BooleanField(default=False)
     
     # LLM Configuration (encrypted)
     llm_provider = models.CharField(
@@ -154,3 +156,25 @@ class TeamMember(models.Model):
     
     def __str__(self):
         return f"{self.user.email} in {self.team.name}"
+
+
+class OnboardCode(models.Model):
+    """Temporary OTP codes for first-time user onboarding."""
+    user = models.ForeignKey(User, on_delete=models.CASCADE, related_name='onboard_codes')
+    code = models.CharField(max_length=5)
+    expires_at = models.DateTimeField()
+    used = models.BooleanField(default=False)
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        db_table = 'onboard_codes'
+        indexes = [
+            models.Index(fields=['user', 'code']),
+        ]
+
+    @property
+    def is_expired(self):
+        return timezone.now() > self.expires_at
+
+    def __str__(self):
+        return f"OnboardCode for {self.user.email}"

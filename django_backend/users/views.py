@@ -1,14 +1,21 @@
 """
 User API Views
 """
+import random
+from datetime import timedelta
+
 from rest_framework import generics, permissions, status
 from rest_framework.response import Response
 from rest_framework.views import APIView
 from django.contrib.auth import update_session_auth_hash
-from .models import User
+from django.contrib.auth.hashers import make_password
+from django.utils import timezone
+from rest_framework_simplejwt.tokens import AccessToken
+
+from .models import User, OnboardCode
 from .serializers import (
-    UserSerializer, 
-    UserCreateSerializer, 
+    UserSerializer,
+    UserCreateSerializer,
     UserLLMConfigSerializer,
     ChangePasswordSerializer
 )
@@ -141,3 +148,109 @@ class UserByEmailView(APIView):
                 {'error': 'User not found'},
                 status=status.HTTP_404_NOT_FOUND
             )
+
+
+class OnboardCheckEmailView(APIView):
+    """Check if email exists and send OTP code for onboarding."""
+    permission_classes = [permissions.AllowAny]
+
+    def post(self, request):
+        email = request.data.get('email', '').strip().lower()
+        if not email:
+            return Response({'error': 'Email is required'}, status=status.HTTP_400_BAD_REQUEST)
+
+        try:
+            user = User.objects.get(email=email)
+        except User.DoesNotExist:
+            return Response({'found': False})
+
+        if user.onboard_completed:
+            return Response({'found': True, 'alreadyOnboarded': True})
+
+        # Generate 5-digit code
+        code = f"{random.randint(0, 99999):05d}"
+
+        # Save code with 15-minute expiry
+        OnboardCode.objects.create(
+            user=user,
+            code=code,
+            expires_at=timezone.now() + timedelta(minutes=15),
+        )
+
+        # Log code to console (email sending not implemented yet)
+        print(f"[ONBOARD] Code for {email}: {code}")
+
+        return Response({
+            'found': True,
+            'username': user.username,
+            'codeSent': True,
+        })
+
+
+class OnboardVerifyCodeView(APIView):
+    """Verify OTP code for onboarding."""
+    permission_classes = [permissions.AllowAny]
+
+    def post(self, request):
+        email = request.data.get('email', '').strip().lower()
+        code = request.data.get('code', '').strip()
+
+        if not email or not code:
+            return Response({'error': 'Email and code are required'}, status=status.HTTP_400_BAD_REQUEST)
+
+        try:
+            user = User.objects.get(email=email)
+        except User.DoesNotExist:
+            return Response({'valid': False, 'error': 'Invalid or expired code'})
+
+        # Find valid (not used, not expired) code
+        onboard_code = OnboardCode.objects.filter(
+            user=user,
+            code=code,
+            used=False,
+            expires_at__gt=timezone.now(),
+        ).order_by('-created_at').first()
+
+        if not onboard_code:
+            return Response({'valid': False, 'error': 'Invalid or expired code'})
+
+        # Mark code as used
+        onboard_code.used = True
+        onboard_code.save()
+
+        # Generate short-lived token (5 min) for password reset
+        token = AccessToken.for_user(user)
+        token.set_exp(lifetime=timedelta(minutes=5))
+
+        return Response({
+            'valid': True,
+            'token': str(token),
+        })
+
+
+class OnboardSetPasswordView(APIView):
+    """Set password for first-time onboarding."""
+    permission_classes = [permissions.AllowAny]
+
+    def post(self, request):
+        token_str = request.data.get('token', '')
+        password = request.data.get('password', '')
+
+        if not token_str or not password:
+            return Response({'error': 'Token and password are required'}, status=status.HTTP_400_BAD_REQUEST)
+
+        if len(password) < 8:
+            return Response({'error': 'Password must be at least 8 characters'}, status=status.HTTP_400_BAD_REQUEST)
+
+        try:
+            token = AccessToken(token_str)
+            user_id = token['user_id']
+            user = User.objects.get(id=user_id)
+        except Exception:
+            return Response({'error': 'Invalid or expired token'}, status=status.HTTP_400_BAD_REQUEST)
+
+        user.password = make_password(password)
+        user.onboard_completed = True
+        user.save()
+
+        return Response({'success': True})
