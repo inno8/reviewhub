@@ -1,6 +1,6 @@
 import { computed, ref } from 'vue';
 import { defineStore } from 'pinia';
-import { api } from '@/composables/useApi';
+import { api, setSkipAuthRedirect } from '@/composables/useApi';
 
 export interface AuthUser {
   id: number;
@@ -61,6 +61,8 @@ export const useAuthStore = defineStore('auth', () => {
       initialized.value = true;
       return;
     }
+    // Skip auth redirect during bootstrap to prevent redirect loops
+    setSkipAuthRedirect(true);
     try {
       const { data } = await api.auth.me();
       // Map Django user to frontend format
@@ -71,8 +73,12 @@ export const useAuthStore = defineStore('auth', () => {
         role: mapDjangoRoleToFrontend(data.role),
       };
     } catch {
-      await logout();
+      // Token is invalid, clear it silently
+      token.value = null;
+      user.value = null;
+      localStorage.removeItem('reviewhub_token');
     } finally {
+      setSkipAuthRedirect(false);
       initialized.value = true;
     }
   }

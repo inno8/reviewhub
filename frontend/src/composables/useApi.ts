@@ -47,14 +47,20 @@ client.interceptors.request.use((config) => {
   return config;
 });
 
+// Track if we're currently on a public page to prevent redirect loops
+let skipAuthRedirect = false;
+export function setSkipAuthRedirect(skip: boolean) {
+  skipAuthRedirect = skip;
+}
+
 client.interceptors.response.use(
   (response) => response,
   (error) => {
     if (error?.response?.status === 401) {
-      // Don't redirect on public pages (login, onboard)
+      // Don't redirect if we're on a public page or during bootstrap
       const publicPaths = ['/login', '/onboard'];
       const isPublicPage = publicPaths.some(p => window.location.pathname.startsWith(p));
-      if (!isPublicPage) {
+      if (!isPublicPage && !skipAuthRedirect) {
         localStorage.removeItem('reviewhub_token');
         window.location.href = '/login';
       }
