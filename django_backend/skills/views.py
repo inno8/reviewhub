@@ -294,17 +294,20 @@ class DashboardRecentView(APIView):
         project_id = request.query_params.get('project')
         limit = int(request.query_params.get('limit', 10))
         
-        # Get recent findings
-        findings = Finding.objects.filter(
+        # Build query - filter BEFORE slicing
+        queryset = Finding.objects.filter(
             evaluation__author=request.user
         ).select_related(
             'evaluation'
         ).prefetch_related(
             'skills'
-        ).order_by('-created_at')[:limit]
+        )
         
         if project_id:
-            findings = findings.filter(evaluation__project_id=project_id)
+            queryset = queryset.filter(evaluation__project_id=project_id)
+        
+        # Apply ordering and limit AFTER all filters
+        findings = queryset.order_by('-created_at')[:limit]
         
         # Format response
         result = []
