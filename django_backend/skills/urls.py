@@ -3,6 +3,7 @@ Skills API URLs
 """
 from django.urls import path
 from . import views
+from .recommendations import LearningRecommendationsView
 
 urlpatterns = [
     path('', views.SkillListView.as_view(), name='skill-list'),
@@ -16,4 +17,7 @@ urlpatterns = [
     path('dashboard/skills/', views.DashboardSkillsView.as_view(), name='dashboard-skills'),
     path('dashboard/progress/', views.DashboardProgressView.as_view(), name='dashboard-progress'),
     path('dashboard/recent/', views.DashboardRecentView.as_view(), name='dashboard-recent'),
+    
+    # Recommendations
+    path('recommendations/', LearningRecommendationsView.as_view(), name='learning-recommendations'),
 ]

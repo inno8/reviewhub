@@ -25,7 +25,7 @@
         class="flex items-center justify-between p-3 bg-gray-700 rounded-lg"
       >
         <div class="flex items-center space-x-3">
-          <div class="w-10 h-10 bg-indigo-600 rounded-full flex items-center justify-center text-white font-medium">
+          <div class="w-10 h-10 bg-primary-container rounded-full flex items-center justify-center text-white font-medium">
             {{ getInitials(member.user) }}
           </div>
           <div>
@@ -225,5 +225,8 @@ async function removeMember(member: any) {
 
 onMounted(() => {
   loadMembers()
+})
+</script>
+)
 })
 </script>

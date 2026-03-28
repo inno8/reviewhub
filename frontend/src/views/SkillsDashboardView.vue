@@ -5,6 +5,7 @@ import SkillRadarChart from '@/components/charts/SkillRadarChart.vue';
 import ProgressChart from '@/components/charts/ProgressChart.vue';
 import RecentFindings from '@/components/dashboard/RecentFindings.vue';
 import SkillCard from '@/components/dashboard/SkillCard.vue';
+import RecommendationsWidget from '@/components/skills/RecommendationsWidget.vue';
 import { api } from '@/composables/useApi';
 import { useProjectsStore } from '@/stores/projects';
 import { useAuthStore } from '@/stores/auth';
@@ -227,6 +228,11 @@ const statCards = computed(() => {
             :data="progressData"
             title="Weekly Progress (Last 8 Weeks)"
           />
+        </section>
+
+        <!-- Recommendations Section -->
+        <section class="mb-12">
+          <RecommendationsWidget :project-id="projectsStore.selectedProjectId" />
         </section>
 
         <!-- Recent Findings & Skills -->

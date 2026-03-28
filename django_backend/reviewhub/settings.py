@@ -38,6 +38,7 @@ INSTALLED_APPS = [
     'projects',
     'evaluations',
     'skills',
+    'notifications',
 ]
 
 MIDDLEWARE = [

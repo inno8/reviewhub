@@ -43,13 +43,13 @@ const chartData = computed(() => ({
     {
       label: 'Skill Score',
       data: props.data.map(d => d.score),
-      backgroundColor: 'rgba(99, 102, 241, 0.2)',
-      borderColor: 'rgba(99, 102, 241, 1)',
+      backgroundColor: 'rgba(162, 201, 255, 0.2)',
+      borderColor: 'rgba(162, 201, 255, 1)',
       borderWidth: 2,
-      pointBackgroundColor: 'rgba(99, 102, 241, 1)',
+      pointBackgroundColor: 'rgba(162, 201, 255, 1)',
       pointBorderColor: '#fff',
       pointHoverBackgroundColor: '#fff',
-      pointHoverBorderColor: 'rgba(99, 102, 241, 1)',
+      pointHoverBorderColor: 'rgba(162, 201, 255, 1)',
       pointRadius: 4,
       pointHoverRadius: 6,
     }

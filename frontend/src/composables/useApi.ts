@@ -149,6 +149,12 @@ export const api = {
     progress: (projectId?: number, weeks?: number) => client.get('/skills/dashboard/progress/', { params: { project: projectId, weeks } }),
     recent: (projectId?: number, limit?: number) => client.get('/skills/dashboard/recent/', { params: { project: projectId, limit } }),
   },
+  notifications: {
+    list: (limit?: number) => client.get('/notifications/', { params: { limit } }),
+    markAsRead: (id: number) => client.patch(`/notifications/${id}/read/`),
+    markAllRead: () => client.post('/notifications/mark-all-read/'),
+    unreadCount: () => client.get('/notifications/unread-count/'),
+  },
 };
 
 export function useApi() {
