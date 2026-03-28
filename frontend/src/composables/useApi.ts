@@ -127,13 +127,15 @@ export const api = {
     assignProjects: (id: number, projectIds: number[]) => client.post(`/users/${id}/projects/`, { projectIds }),
   },
   performance: {
-    get: (userId: number, params: PerformanceParams) => client.get(`/performance/${userId}`, { params }),
+    // Performance endpoints not yet implemented in Django v2 - return mock data
+    get: (userId: number, params: PerformanceParams) => 
+      Promise.resolve({ data: { totalReviews: 0, averageScore: 0, criticalIssues: 0, recommendations: [] } }),
     trends: (userId: number, params: { projectId: number; weeks?: number }) =>
-      client.get(`/performance/${userId}/trends`, { params }),
+      Promise.resolve({ data: [] }),
     recommendations: (userId: number, params: { projectId: number }) =>
-      client.get(`/performance/${userId}/recommendations`, { params }),
+      Promise.resolve({ data: [] }),
     leaderboard: (params: { projectId: number; periodType: 'DAILY' | 'WEEKLY' | 'MONTHLY' }) =>
-      client.get('/performance/leaderboard', { params }),
+      Promise.resolve({ data: [] }),
   },
   skills: {
     categories: () => client.get('/skills/categories/'),
