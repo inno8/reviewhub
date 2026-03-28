@@ -129,7 +129,18 @@ export const api = {
   performance: {
     // Performance endpoints not yet implemented in Django v2 - return mock data
     get: (userId: number, params: PerformanceParams) => 
-      Promise.resolve({ data: { totalReviews: 0, averageScore: 0, criticalIssues: 0, recommendations: [] } }),
+      Promise.resolve({ data: { 
+        totalReviews: 0, 
+        averageScore: 0, 
+        criticalIssues: 0, 
+        recommendations: [],
+        commitCount: 0,
+        findingCount: 0,
+        fixRate: 0,
+        reviewVelocity: null,
+        strengths: [],
+        growthAreas: []
+      } }),
     trends: (userId: number, params: { projectId: number; weeks?: number }) =>
       Promise.resolve({ data: [] }),
     recommendations: (userId: number, params: { projectId: number }) =>
