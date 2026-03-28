@@ -151,9 +151,24 @@ export const api = {
   skills: {
     categories: () => client.get('/skills/categories/'),
     user: (userId: number) => client.get(`/skills/user/${userId}/`),
-    // Breakdown not implemented yet - return empty data
+    // Breakdown not implemented yet - return empty placeholder data
     breakdown: (userId: number, skillId: number, projectId: number) =>
-      Promise.resolve({ data: { skill: null, findings: [], trend: [] } }),
+      Promise.resolve({ data: { 
+        skill: { 
+          id: skillId, 
+          name: 'Skill', 
+          displayName: 'Skill', 
+          description: 'Skill details not available yet.',
+          category: { id: 1, name: 'General', displayName: 'General', icon: 'school' }
+        }, 
+        score: 0,
+        level: 0,
+        baseScore: 100,
+        deductions: [],
+        tips: ['Complete more code reviews to build your skill profile.'],
+        findings: [], 
+        trend: [] 
+      } }),
     recalculate: (userId: number, projectId: number) =>
       Promise.resolve({ data: { success: true } }),
     recommendations: (projectId?: number) => client.get('/skills/recommendations/', { params: { project: projectId } }),
