@@ -85,5 +85,22 @@ export const useAuthStore = defineStore('auth', () => {
     return 'INTERN'; // developer and viewer map to INTERN
   }
 
-  return { token, user, loading, initialized, isAuthenticated, isAdmin, login, logout, bootstrap };
+  function setTokens(accessToken: string, refreshToken?: string) {
+    token.value = accessToken;
+    localStorage.setItem('reviewhub_token', accessToken);
+    if (refreshToken) {
+      localStorage.setItem('reviewhub_refresh_token', refreshToken);
+    }
+  }
+
+  function setUser(userData: any) {
+    user.value = {
+      id: userData.id,
+      username: userData.username,
+      email: userData.email,
+      role: mapDjangoRoleToFrontend(userData.role || 'developer'),
+    };
+  }
+
+  return { token, user, loading, initialized, isAuthenticated, isAdmin, login, logout, bootstrap, setTokens, setUser };
 });

@@ -54,6 +54,14 @@ export const useFindingsStore = defineStore('findings', () => {
         limit: nextFilters.limit ?? limit.value,
       });
       
+      // Handle null/undefined data
+      if (!data) {
+        findings.value = [];
+        total.value = 0;
+        totalPages.value = 1;
+        return;
+      }
+      
       // Map Django REST Framework response to expected structure
       if (data.results) {
         // DRF paginated response
@@ -85,15 +93,51 @@ export const useFindingsStore = defineStore('findings', () => {
         // Calculate total pages from count and limit
         const perPage = nextFilters.limit ?? limit.value;
         totalPages.value = Math.ceil(data.count / perPage);
-      } else {
+      } else if (data.findings) {
         // Legacy V1 response
         findings.value = data.findings;
-        total.value = data.total;
-        page.value = data.page;
-        totalPages.value = data.totalPages;
+        total.value = data.total ?? 0;
+        page.value = data.page ?? 1;
+        totalPages.value = data.totalPages ?? 1;
+      } else if (Array.isArray(data)) {
+        // Direct array response
+        findings.value = data.map((finding: any) => ({
+          id: finding.id,
+          commitSha: finding.fixed_in_commit || null,
+          commitAuthor: null,
+          filePath: finding.file_path || finding.filePath,
+          lineStart: finding.line_start || finding.lineStart,
+          lineEnd: finding.line_end || finding.lineEnd,
+          explanation: finding.explanation,
+          category: mapSeverityToCategory(finding.severity || 'info'),
+          difficulty: 'INTERMEDIATE',
+          originalCode: finding.original_code || finding.originalCode || '',
+          optimizedCode: finding.suggested_code || finding.optimizedCode || '',
+          prCreated: false,
+          prUrl: null,
+          fixedAt: finding.fixed_at || finding.fixedAt,
+          markedUnderstood: false,
+          explanationRequested: false,
+          references: [],
+          review: {
+            branch: 'main',
+            reviewDate: finding.created_at || finding.createdAt,
+          }
+        }));
+        total.value = data.length;
+        totalPages.value = 1;
+      } else {
+        findings.value = [];
+        total.value = 0;
+        totalPages.value = 1;
       }
       
       limit.value = nextFilters.limit ?? limit.value;
+    } catch (error) {
+      console.error('Failed to fetch findings:', error);
+      findings.value = [];
+      total.value = 0;
+      totalPages.value = 1;
     } finally {
       loading.value = false;
     }
