@@ -12,6 +12,7 @@ import performanceRoutes from './routes/performance';
 import skillsRoutes from './routes/skills';
 import filesRoutes from './routes/files';
 import evaluationsRoutes from './routes/evaluations';
+import onboardRoutes from './routes/onboard';
 
 const app = express();
 
@@ -29,6 +30,7 @@ app.use('/api/performance', performanceRoutes);
 app.use('/api/skills', skillsRoutes);
 app.use('/api/files', filesRoutes);
 app.use('/api/evaluations', evaluationsRoutes);
+app.use('/api/onboard', onboardRoutes);
 
 // Health check
 app.get('/api/health', (_req, res) => {

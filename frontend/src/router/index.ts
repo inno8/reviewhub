@@ -6,12 +6,14 @@ import FileReviewView from '@/views/FileReviewView.vue';
 import PerformanceView from '@/views/PerformanceView.vue';
 import UserManagementView from '@/views/UserManagementView.vue';
 import SettingsView from '@/views/SettingsView.vue';
+import OnboardView from '@/views/OnboardView.vue';
 import { useAuthStore } from '@/stores/auth';
 
 const router = createRouter({
   history: createWebHistory(),
   routes: [
     { path: '/login', name: 'login', component: LoginView, meta: { public: true } },
+    { path: '/onboard', name: 'onboard', component: OnboardView, meta: { public: true } },
     { path: '/', name: 'dashboard', component: DashboardView },
     { path: '/findings/:id', name: 'finding-detail', component: FindingDetailView, props: true },
     { path: '/file-review', name: 'file-review', component: FileReviewView },
