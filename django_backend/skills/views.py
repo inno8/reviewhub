@@ -331,3 +331,68 @@ class DashboardRecentView(APIView):
             })
         
         return Response(result)
+
+
+class UserSkillsView(APIView):
+    """
+    Get skill metrics for a specific user, grouped by category.
+    """
+    
+    permission_classes = [permissions.IsAuthenticated]
+    
+    def get(self, request, user_id):
+        from users.models import User
+        
+        # Verify user exists
+        try:
+            user = User.objects.get(id=user_id)
+        except User.DoesNotExist:
+            return Response(
+                {'error': 'User not found'},
+                status=status.HTTP_404_NOT_FOUND
+            )
+        
+        # Get project filter
+        project_id = request.query_params.get('project')
+        
+        # Get all categories with skills
+        categories = SkillCategory.objects.prefetch_related('skills').order_by('order')
+        
+        # Get user's skill metrics
+        metrics_query = SkillMetric.objects.filter(user=user)
+        if project_id:
+            metrics_query = metrics_query.filter(project_id=project_id)
+        
+        # Build metrics lookup
+        metrics_map = {}
+        for metric in metrics_query.select_related('skill'):
+            metrics_map[metric.skill_id] = metric
+        
+        # Build response
+        result = {
+            'user_id': user_id,
+            'categories': []
+        }
+        
+        for category in categories:
+            cat_data = {
+                'id': category.id,
+                'name': category.name,
+                'displayName': category.name.replace('_', ' ').title(),
+                'description': category.description or '',
+                'icon': category.icon or 'school',
+                'skills': []
+            }
+            
+            for skill in category.skills.all().order_by('order'):
+                metric = metrics_map.get(skill.id)
+                cat_data['skills'].append({
+                    'id': skill.id,
+                    'displayName': skill.name,
+                    'score': metric.score if metric else 0,
+                    'level': metric.level if metric else 0,
+                })
+            
+            result['categories'].append(cat_data)
+        
+        return Response(result)

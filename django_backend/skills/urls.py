@@ -11,6 +11,7 @@ urlpatterns = [
     path('metrics/', views.SkillMetricListView.as_view(), name='skill-metric-list'),
     path('metrics/update/', views.UpdateSkillMetricsView.as_view(), name='skill-metric-update'),
     path('trends/', views.SkillTrendsView.as_view(), name='skill-trends'),
+    path('user/<int:user_id>/', views.UserSkillsView.as_view(), name='user-skills'),
     
     # Dashboard endpoints
     path('dashboard/overview/', views.DashboardOverviewView.as_view(), name='dashboard-overview'),
