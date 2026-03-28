@@ -24,20 +24,15 @@ const router = createRouter({
 });
 
 router.beforeEach(async (to) => {
-  console.log('[Router] Navigating to:', to.path, 'meta:', to.meta);
   const auth = useAuthStore();
   if (!auth.initialized) {
-    console.log('[Router] Bootstrap starting...');
     await auth.bootstrap();
-    console.log('[Router] Bootstrap done, isAuthenticated:', auth.isAuthenticated);
   }
 
   if (to.meta.public) {
-    console.log('[Router] Public route, allowing');
     return true;
   }
   if (!auth.isAuthenticated) {
-    console.log('[Router] Not authenticated, redirecting to login');
     return { name: 'login' };
   }
   if (to.meta.admin && auth.user?.role !== 'ADMIN') {
