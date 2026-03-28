@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { ref, onMounted } from 'vue';
-import { api } from '@/services/api';
+import axios from 'axios';
 
 const props = defineProps<{
   projectId?: string;
@@ -12,11 +12,19 @@ const loading = ref(false);
 async function fetchRecommendations() {
   try {
     loading.value = true;
+    const token = localStorage.getItem('reviewhub_token');
     const params = props.projectId ? { project: props.projectId } : {};
-    const response = await api.get('/skills/recommendations/', { params });
-    recommendations.value = response.data;
+    const response = await axios.get(
+      `${import.meta.env.VITE_API_URL}/skills/recommendations/`,
+      { 
+        params,
+        headers: token ? { Authorization: `Bearer ${token}` } : {}
+      }
+    );
+    recommendations.value = response.data || [];
   } catch (error) {
     console.error('Failed to fetch recommendations:', error);
+    recommendations.value = [];
   } finally {
     loading.value = false;
   }

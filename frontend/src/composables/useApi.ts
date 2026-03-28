@@ -142,6 +142,7 @@ export const api = {
       client.get(`/skills/user/${userId}/breakdown/${skillId}/`, { params: { projectId } }),
     recalculate: (userId: number, projectId: number) =>
       client.post(`/skills/recalculate/${userId}/`, null, { params: { projectId } }),
+    recommendations: (projectId?: number) => client.get('/skills/recommendations/', { params: { project: projectId } }),
   },
   dashboard: {
     overview: (projectId?: number) => client.get('/skills/dashboard/overview/', { params: { project: projectId } }),
