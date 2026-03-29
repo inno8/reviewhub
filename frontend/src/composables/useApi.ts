@@ -199,6 +199,16 @@ export const api = {
     markAllRead: () => client.post('/notifications/mark-all-read/'),
     unreadCount: () => client.get('/notifications/unread-count/'),
   },
+  batch: {
+    listJobs: () => client.get('/batch/jobs/'),
+    getJob: (id: number) => client.get(`/batch/jobs/${id}/`),
+    createJob: (data: { repo_url: string; branch?: string; target_email?: string; max_commits?: number }) => 
+      client.post('/batch/jobs/', data),
+    cancelJob: (id: number) => client.delete(`/batch/jobs/${id}/`),
+    getJobResults: (id: number) => client.get(`/batch/jobs/${id}/results/`),
+    getProfile: () => client.get('/batch/profile/'),
+    getStats: () => client.get('/batch/stats/'),
+  },
 };
 
 export function useApi() {
