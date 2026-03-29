@@ -371,7 +371,7 @@ async function triggerSync() {
 
     <!-- Footer -->
     <footer class="flex justify-between items-center w-full px-8 py-4 mt-auto bg-background border-t border-outline-variant/15">
-      <span class="text-xs uppercase tracking-widest text-outline">© 2024 ReviewHub</span>
+      <span class="text-xs uppercase tracking-widest text-outline">© 2026 ReviewHub</span>
       <div class="flex gap-6">
         <a href="#" class="text-xs uppercase tracking-widest text-outline hover:text-primary transition-opacity">Documentation</a>
         <a href="#" class="text-xs uppercase tracking-widest text-outline hover:text-primary transition-opacity">System Status</a>

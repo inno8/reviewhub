@@ -348,7 +348,7 @@ async function handleSetPassword() {
     <!-- Footer -->
     <footer class="mt-auto py-8 w-full max-w-4xl flex flex-col md:flex-row justify-between items-center px-6 gap-4">
       <div class="text-[10px] uppercase tracking-[0.2em] text-outline font-medium">
-        &copy; 2024 ReviewHub
+        &copy; 2026 ReviewHub
       </div>
       <div class="flex gap-6">
         <a href="#" class="text-[10px] uppercase tracking-[0.2em] text-outline hover:text-primary transition-colors">Documentation</a>
