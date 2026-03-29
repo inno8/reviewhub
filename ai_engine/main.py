@@ -6,7 +6,7 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from contextlib import asynccontextmanager
 
-from app.api import webhooks, analysis, health
+from app.api import webhooks, analysis, health, batch
 from app.core.config import settings
 
 
@@ -45,6 +45,7 @@ app.add_middleware(
 app.include_router(health.router, prefix="/api/v1", tags=["Health"])
 app.include_router(webhooks.router, prefix="/api/v1/webhook", tags=["Webhooks"])
 app.include_router(analysis.router, prefix="/api/v1/analyze", tags=["Analysis"])
+app.include_router(batch.router, prefix="/batch", tags=["Batch Processing"])
 
 
 @app.get("/")

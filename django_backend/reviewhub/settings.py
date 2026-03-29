@@ -39,6 +39,7 @@ INSTALLED_APPS = [
     'evaluations',
     'skills',
     'notifications',
+    'batch',  # Phase 6: Batch commit analysis
 ]
 
 MIDDLEWARE = [

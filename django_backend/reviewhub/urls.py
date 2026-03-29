@@ -26,6 +26,7 @@ urlpatterns = [
     path('api/evaluations/', include('evaluations.urls')),
     path('api/skills/', include('skills.urls')),
     path('api/notifications/', include('notifications.urls')),
+    path('api/batch/', include('batch.urls')),  # Phase 6: Batch analysis
 
     # Onboard (public endpoints)
     path('api/onboard/check-email/', OnboardCheckEmailView.as_view(), name='onboard-check-email'),
