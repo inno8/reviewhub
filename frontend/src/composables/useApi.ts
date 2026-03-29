@@ -76,10 +76,10 @@ export const api = {
     setPassword: (token: string, password: string) => client.post('/onboard/set-password/', { token, password }),
   },
   auth: {
-    // Django JWT uses email field for authentication
-    login: (email: string, password: string) => client.post('/auth/token/', { email, password }),
-    register: (data: CreateUser) => client.post('/users/register/', data),
-    me: () => client.get('/users/me/'),
+    // Express JWT authentication
+    login: (email: string, password: string) => client.post('/auth/login', { email, password }),
+    register: (data: CreateUser) => client.post('/auth/register', data),
+    me: () => client.get('/auth/me'),
     logout: () => {
       localStorage.removeItem('reviewhub_token');
       return Promise.resolve({ data: { message: 'Logged out' } });

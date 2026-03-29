@@ -31,12 +31,13 @@ export const useAuthStore = defineStore('auth', () => {
       
       // Fetch user profile separately
       const meResponse = await api.auth.me();
-      // Map Django user to frontend format
+      // Express returns { user: {...} }
+      const userData = meResponse.data.user || meResponse.data;
       user.value = {
-        id: meResponse.data.id,
-        username: meResponse.data.username,
-        email: meResponse.data.email,
-        role: mapDjangoRoleToFrontend(meResponse.data.role),
+        id: userData.id,
+        username: userData.username,
+        email: userData.email,
+        role: mapRoleToFrontend(userData.role),
       };
     } finally {
       loading.value = false;
@@ -65,12 +66,13 @@ export const useAuthStore = defineStore('auth', () => {
     setSkipAuthRedirect(true);
     try {
       const { data } = await api.auth.me();
-      // Map Django user to frontend format
+      // Express returns { user: {...} }
+      const userData = data.user || data;
       user.value = {
-        id: data.id,
-        username: data.username,
-        email: data.email,
-        role: mapDjangoRoleToFrontend(data.role),
+        id: userData.id,
+        username: userData.username,
+        email: userData.email,
+        role: mapRoleToFrontend(userData.role),
       };
     } catch {
       // Token is invalid, clear it silently
@@ -83,12 +85,12 @@ export const useAuthStore = defineStore('auth', () => {
     }
   }
   
-  function mapDjangoRoleToFrontend(role: string): 'ADMIN' | 'INTERN' {
-    // Map Django roles (admin, developer, viewer) to frontend roles (ADMIN, INTERN)
-    if (role === 'admin') {
+  function mapRoleToFrontend(role: string): 'ADMIN' | 'INTERN' {
+    // Map roles to frontend format (Express uses ADMIN/INTERN directly)
+    if (role === 'ADMIN' || role === 'admin') {
       return 'ADMIN';
     }
-    return 'INTERN'; // developer and viewer map to INTERN
+    return 'INTERN';
   }
 
   function setTokens(accessToken: string, refreshToken?: string) {
@@ -104,7 +106,7 @@ export const useAuthStore = defineStore('auth', () => {
       id: userData.id,
       username: userData.username,
       email: userData.email,
-      role: mapDjangoRoleToFrontend(userData.role || 'developer'),
+      role: mapRoleToFrontend(userData.role || 'INTERN'),
     };
   }
 
