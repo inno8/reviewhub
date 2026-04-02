@@ -275,6 +275,13 @@ const selectedUserObj = computed(() => adminUsers.value.find(u => u.id === selec
           </section>
 
           <section class="mb-12">
+            <div class="flex items-center gap-3 mb-4">
+              <span class="material-symbols-outlined text-primary text-2xl">route</span>
+              <div>
+                <h3 class="text-xl font-bold">Your Learning Path</h3>
+                <p class="text-xs text-outline">Personalized recommendations based on your code patterns and skill gaps</p>
+              </div>
+            </div>
             <RecommendationsWidget
               :project-id="projectsStore.selectedProjectId != null ? String(projectsStore.selectedProjectId) : undefined"
             />

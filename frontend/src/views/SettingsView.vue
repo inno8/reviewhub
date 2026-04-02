@@ -1038,6 +1038,32 @@ const tabs = computed(() => {
             </ol>
           </div>
 
+          <!-- Local Development with ngrok -->
+          <div class="bg-surface-container-lowest rounded-xl p-6 border border-outline-variant/10 mb-8">
+            <h3 class="text-sm font-bold text-on-surface mb-4 flex items-center gap-2">
+              <span class="material-symbols-outlined text-tertiary text-sm">lan</span>
+              Local Development (ngrok)
+            </h3>
+            <p class="text-sm text-on-surface-variant mb-4">
+              If your ReviewHub server runs locally, GitHub can't reach <code class="bg-surface-container-highest px-1 rounded">localhost</code>.
+              Use <strong>ngrok</strong> to create a public tunnel:
+            </p>
+            <ol class="space-y-3 text-sm text-on-surface-variant list-decimal list-inside mb-4">
+              <li>Install ngrok: <code class="bg-surface-container-highest px-1 rounded">npm install -g ngrok</code> or download from <a href="https://ngrok.com" target="_blank" class="text-primary">ngrok.com</a></li>
+              <li>Start tunnel: <code class="bg-surface-container-highest px-1 rounded">ngrok http 8001</code></li>
+              <li>Copy the <strong class="text-on-surface">https://</strong> URL (e.g. <code class="bg-surface-container-highest px-1 rounded">https://abc123.ngrok-free.dev</code>)</li>
+              <li>Set <code class="bg-surface-container-highest px-1 rounded">FASTAPI_URL=https://abc123.ngrok-free.dev</code> in your <code class="bg-surface-container-highest px-1 rounded">.env</code></li>
+              <li>Restart Django — webhook URLs will now use the public tunnel</li>
+              <li>Use the new webhook URL in your GitHub repository settings</li>
+            </ol>
+            <div class="p-3 bg-tertiary/5 rounded-lg border border-tertiary/20">
+              <p class="text-xs text-tertiary">
+                <strong>Tip:</strong> For a stable URL, use <code class="bg-surface-container-highest px-1 rounded">ngrok http 8001 --domain your-name.ngrok-free.dev</code> with a free static domain.
+                Every push to your repo will automatically trigger a code review.
+              </p>
+            </div>
+          </div>
+
           <!-- Test webhook -->
           <div class="border-t border-outline-variant/10 pt-6">
             <h3 class="text-sm font-bold text-on-surface mb-4">Test Webhook Connection</h3>

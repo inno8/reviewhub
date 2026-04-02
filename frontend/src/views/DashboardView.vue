@@ -79,10 +79,25 @@ const selectedDate = ref<string | null>(null);
 const categories = ['SECURITY', 'PERFORMANCE', 'CODE_STYLE', 'TESTING', 'ARCHITECTURE'];
 const difficulties = ['BEGINNER', 'INTERMEDIATE', 'ADVANCED'];
 
+// Developer overview data (priorities, patterns, profile)
+const devOverview = ref<any>(null);
+
+async function loadDevOverview(projectId?: number) {
+  if (authStore.isAdmin) return;
+  try {
+    const params: any = {};
+    if (projectId) params.project = projectId;
+    const { data } = await api.dashboard.overview(params.project);
+    devOverview.value = data;
+  } catch { devOverview.value = null; }
+}
+
 onMounted(async () => {
   await projectsStore.fetchProjects();
   if (authStore.isAdmin) {
     await loadAdminData();
+  } else {
+    await loadDevOverview();
   }
   applyIssuesProjectFromRoute();
 });
@@ -98,6 +113,7 @@ function selectDevProject(projectId: number) {
   devSelectedProject.value = projectId;
   projectsStore.setSelectedProject(projectId);
   findingsStore.fetchFindings({ projectId });
+  loadDevOverview(projectId);
 }
 
 function applyIssuesProjectFromRoute() {
@@ -351,6 +367,40 @@ function scoreColor(score: number) {
               <span class="text-primary font-semibold">{{ filteredFindings.length }} findings</span> across {{ fileGroups.length }} files
             </p>
           </header>
+
+          <!-- Focus Priorities -->
+          <div v-if="devOverview?.priorities?.length" class="mb-6 p-5 rounded-xl bg-primary/5 border border-primary/20">
+            <div class="flex items-center gap-2 mb-3">
+              <span class="material-symbols-outlined text-primary">target</span>
+              <h3 class="text-sm font-bold text-primary uppercase tracking-wider">This week, focus on:</h3>
+            </div>
+            <div class="flex flex-wrap gap-3">
+              <div v-for="p in devOverview.priorities" :key="p.skill_slug"
+                class="flex items-center gap-2 px-4 py-2 rounded-lg bg-surface-container border border-outline-variant/20">
+                <div class="w-8 h-8 rounded-full flex items-center justify-center text-xs font-black"
+                  :class="p.score < 40 ? 'bg-red-500/20 text-red-400' : p.score < 60 ? 'bg-orange-500/20 text-orange-400' : 'bg-yellow-500/20 text-yellow-400'">
+                  {{ Math.round(p.score) }}
+                </div>
+                <div>
+                  <p class="text-sm font-bold">{{ p.skill }}</p>
+                  <p class="text-[10px] text-outline">{{ p.issues }} issues · {{ p.trend || 'stable' }}</p>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <!-- Pattern Alerts -->
+          <div v-if="devOverview?.pattern_insights?.length" class="mb-6 space-y-2">
+            <div v-for="pat in devOverview.pattern_insights.slice(0, 3)" :key="pat.key"
+              class="flex items-center gap-3 p-3 rounded-lg bg-tertiary/5 border border-tertiary/20">
+              <span class="material-symbols-outlined text-tertiary">repeat</span>
+              <p class="text-sm">
+                <span class="font-bold text-tertiary">{{ pat.type }}:</span>
+                {{ pat.message }}.
+                <router-link to="/skills" class="text-primary font-semibold ml-1">View recommendations →</router-link>
+              </p>
+            </div>
+          </div>
 
           <!-- Filter Bar -->
           <div class="flex flex-wrap items-center gap-4 mb-8 bg-surface-container-low p-3 rounded-xl border border-outline-variant/10">
