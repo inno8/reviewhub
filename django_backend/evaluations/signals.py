@@ -17,6 +17,10 @@ def create_finding_notification(sender, instance, created, **kwargs):
     # Only create notification if the evaluation has an author
     if not instance.evaluation.author:
         return
+
+    # Skip individual notifications for batch evaluations
+    if getattr(instance.evaluation, '_batch_skip_notifications', False):
+        return
     
     from notifications.models import Notification
     

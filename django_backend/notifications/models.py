@@ -13,6 +13,7 @@ class Notification(models.Model):
         ('skill_improvement', 'Skill Improvement'),
         ('weekly_summary', 'Weekly Summary'),
         ('team_update', 'Team Update'),
+        ('batch_summary', 'Batch Analysis Summary'),
     ]
 
     user = models.ForeignKey(

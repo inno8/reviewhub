@@ -139,10 +139,58 @@ class LearningRecommendationsView(APIView):
                     'improvement_tip': self._get_improvement_tip(metric.skill.slug, metric.issue_count)
                 })
         
+        # 4. Pattern-based recommendations (recurring issues)
+        from evaluations.models import Pattern
+        high_freq_patterns = Pattern.objects.filter(
+            user=request.user,
+            frequency__gte=3,
+            is_resolved=False,
+        ).order_by('-frequency')[:5]
+
+        for pattern in high_freq_patterns:
+            if not any(
+                r.get('pattern_key') == pattern.pattern_key for r in recommendations
+            ):
+                recommendations.append({
+                    'skill': {
+                        'id': None,
+                        'name': pattern.pattern_type,
+                        'slug': pattern.pattern_key,
+                        'category': pattern.pattern_type,
+                    },
+                    'current_score': None,
+                    'reason': (
+                        f'Recurring pattern: {pattern.frequency} occurrences '
+                        f'of {pattern.pattern_type} issues'
+                    ),
+                    'priority': 'high' if pattern.frequency >= 10 else 'medium',
+                    'issue_count': pattern.frequency,
+                    'pattern_key': pattern.pattern_key,
+                    'improvement_tip': (
+                        f'You have {pattern.frequency} recurring {pattern.pattern_type} '
+                        f'issues. Focus on this area to see the biggest improvement.'
+                    ),
+                    'suggested_resources': self._get_resources_for_skill(
+                        pattern.pattern_key.split('_')[0]
+                    ),
+                })
+
+        # 5. Add profile context (user level)
+        user_level = 'intermediate'
+        try:
+            from batch.models import DeveloperProfile
+            profile = DeveloperProfile.objects.get(user=request.user)
+            user_level = profile.level
+        except Exception:
+            pass
+
+        for rec in recommendations:
+            rec['user_level'] = user_level
+
         # Sort by priority and limit
         priority_order = {'high': 0, 'medium': 1, 'low': 2}
         recommendations.sort(key=lambda x: priority_order.get(x['priority'], 3))
-        
+
         return Response(recommendations[:limit])
     
     def _get_resources_for_skill(self, skill_slug):
