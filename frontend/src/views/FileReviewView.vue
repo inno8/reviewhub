@@ -45,6 +45,7 @@ const findingLineRanges = ref<Map<number, { start: number; end: number }>>(new M
 
 const filePath = computed(() => route.query.file as string);
 const findingIds = computed(() => (route.query.ids as string)?.split(',').map(Number) || []);
+const evaluationId = computed(() => route.query.evaluationId ? Number(route.query.evaluationId) : null);
 
 /** File path that `fileContent` was last loaded for (avoids refetch when switching issues in same file). */
 const contentSourcePath = ref<string | null>(null);
@@ -78,12 +79,41 @@ onMounted(async () => {
   loading.value = true;
   try {
     const fetchedFindings: Finding[] = [];
-    for (const id of findingIds.value) {
-      await findingsStore.fetchFinding(id);
-      if (findingsStore.selectedFinding) {
-        fetchedFindings.push({ ...findingsStore.selectedFinding });
+
+    if (evaluationId.value) {
+      // Coming from Commit Timeline — fetch evaluation findings
+      try {
+        const { data } = await api.evaluations.get(evaluationId.value);
+        const evalFindings = data.findings || [];
+        for (const f of evalFindings) {
+          fetchedFindings.push({
+            id: f.id,
+            title: f.title,
+            description: f.description,
+            severity: f.severity,
+            filePath: f.file_path,
+            lineStart: f.line_start,
+            lineEnd: f.line_end,
+            originalCode: f.original_code,
+            suggestedCode: f.suggested_code,
+            explanation: f.explanation,
+            isFixed: f.is_fixed,
+            skills: (f.skills || []).map((s: any) => ({ id: s.id, name: s.name, slug: s.slug })),
+          } as Finding);
+        }
+      } catch (e) {
+        console.error('Failed to load evaluation findings:', e);
+      }
+    } else {
+      // Coming from Dashboard — use finding IDs from query
+      for (const id of findingIds.value) {
+        await findingsStore.fetchFinding(id);
+        if (findingsStore.selectedFinding) {
+          fetchedFindings.push({ ...findingsStore.selectedFinding });
+        }
       }
     }
+
     findings.value = fetchedFindings;
 
     if (findings.value.length > 0) {

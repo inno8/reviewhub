@@ -4,7 +4,7 @@ Skills API Views
 from rest_framework import generics, permissions, status
 from rest_framework.response import Response
 from rest_framework.views import APIView
-from django.db.models import Q
+from django.db.models import Q, Count
 from django.utils import timezone as tz
 
 from .models import SkillCategory, Skill, SkillMetric
@@ -330,8 +330,10 @@ class PerformanceTrendsView(APIView):
             weekly[week_start][cat] += 1
 
         result = []
-        cur = start_date
-        while cur < end_date:
+        # Align to Monday of start week
+        cur = start_date - timedelta(days=start_date.weekday())
+        end_monday = end_date - timedelta(days=end_date.weekday()) + timedelta(weeks=1)
+        while cur <= end_monday:
             ws = cur.strftime('%Y-%m-%d')
             result.append({'weekStart': ws, 'categories': dict(weekly.get(ws, {}))})
             cur += timedelta(weeks=1)
