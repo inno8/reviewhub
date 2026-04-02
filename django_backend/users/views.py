@@ -254,3 +254,33 @@ class OnboardSetPasswordView(APIView):
         user.save()
 
         return Response({'success': True})
+
+
+class DevProfileView(APIView):
+    """GET/POST developer profile questionnaire data."""
+
+    permission_classes = [permissions.IsAuthenticated]
+
+    def get(self, request):
+        """Return the user's dev profile data."""
+        user = request.user
+        if not user.dev_profile_completed:
+            return Response(
+                {"completed": False, "data": {}},
+                status=status.HTTP_200_OK
+            )
+        return Response({
+            "completed": True,
+            "data": user.dev_profile_data or {},
+        })
+
+    def post(self, request):
+        """Save developer profile questionnaire answers."""
+        user = request.user
+        user.dev_profile_data = request.data
+        user.dev_profile_completed = True
+        user.save(update_fields=['dev_profile_data', 'dev_profile_completed'])
+        return Response({
+            "completed": True,
+            "data": user.dev_profile_data,
+        }, status=status.HTTP_200_OK)
