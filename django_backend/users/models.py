@@ -30,7 +30,13 @@ class User(AbstractUser):
     )
     avatar_url = models.URLField(blank=True, null=True)
     onboard_completed = models.BooleanField(default=False)
-    
+    dev_profile_completed = models.BooleanField(default=False)
+    dev_profile_data = models.JSONField(
+        default=dict,
+        blank=True,
+        help_text="Developer profile questionnaire answers"
+    )
+
     # LLM Configuration (encrypted)
     llm_provider = models.CharField(
         max_length=20,

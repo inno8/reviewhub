@@ -23,7 +23,8 @@ class UserSerializer(serializers.ModelSerializer):
         fields = [
             'id', 'email', 'username', 'first_name', 'last_name',
             'display_name', 'role', 'avatar_url', 'has_llm_configured',
-            'llm_provider', 'llm_model', 'created_at', 'updated_at'
+            'llm_provider', 'llm_model', 'dev_profile_completed',
+            'created_at', 'updated_at'
         ]
         read_only_fields = ['id', 'created_at', 'updated_at']
 
