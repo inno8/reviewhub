@@ -3,7 +3,7 @@ User Serializers
 """
 from rest_framework import serializers
 from rest_framework_simplejwt.serializers import TokenObtainPairSerializer
-from .models import User, Team, TeamMember
+from .models import User, Team, TeamMember, UserCategory, GitProviderConnection, UserDevProfile
 
 
 class CustomTokenObtainPairSerializer(TokenObtainPairSerializer):
@@ -14,18 +14,57 @@ class CustomTokenObtainPairSerializer(TokenObtainPairSerializer):
 
 class UserSerializer(serializers.ModelSerializer):
     """User serializer for API responses."""
-    
+
     display_name = serializers.ReadOnlyField()
     has_llm_configured = serializers.ReadOnlyField()
-    
+    dev_profile_completed = serializers.ReadOnlyField()
+
     class Meta:
         model = User
         fields = [
             'id', 'email', 'username', 'first_name', 'last_name',
             'display_name', 'role', 'avatar_url', 'has_llm_configured',
-            'llm_provider', 'llm_model', 'created_at', 'updated_at'
+            'llm_provider', 'llm_model', 'dev_profile_completed',
+            'created_at', 'updated_at',
         ]
         read_only_fields = ['id', 'created_at', 'updated_at']
+
+
+class UserDevProfileSerializer(serializers.ModelSerializer):
+    """Read/write serializer for the developer onboarding questionnaire."""
+
+    class Meta:
+        model = UserDevProfile
+        fields = [
+            'job_role', 'experience_years', 'primary_language', 'other_languages',
+            'self_scores',
+            'focus_first', 'writes_tests', 'edge_case_handling', 'debugging_approach',
+            'can_design_system', 'comfortable_with', 'worked_on',
+            'enjoy_most', 'want_to_improve',
+            'current_goal', 'learning_style',
+            'proud_code', 'struggled_code',
+            'completed_at', 'updated_at',
+        ]
+        read_only_fields = ['completed_at', 'updated_at']
+
+
+class GitProviderConnectionSerializer(serializers.ModelSerializer):
+    """Linked Git host identity (multiple per user)."""
+
+    class Meta:
+        model = GitProviderConnection
+        fields = ['id', 'provider', 'username', 'email', 'created_at', 'updated_at']
+        read_only_fields = ['id', 'created_at', 'updated_at']
+
+    def validate_username(self, value):
+        v = (value or '').strip()
+        if not v:
+            raise serializers.ValidationError('Username is required.')
+        return v[:100]
+
+    def create(self, validated_data):
+        validated_data['user'] = self.context['request'].user
+        return super().create(validated_data)
 
 
 class UserCreateSerializer(serializers.ModelSerializer):
@@ -89,6 +128,45 @@ class UserLLMConfigSerializer(serializers.Serializer):
     )
     llm_api_key = serializers.CharField(required=False, allow_blank=True)
     llm_model = serializers.CharField(required=False, allow_blank=True)
+
+
+class UserCategorySerializer(serializers.ModelSerializer):
+    member_count = serializers.SerializerMethodField()
+    member_ids = serializers.PrimaryKeyRelatedField(
+        source='members', many=True, queryset=User.objects.all(), required=False
+    )
+    
+    class Meta:
+        model = UserCategory
+        fields = ['id', 'name', 'description', 'member_count', 'member_ids', 'created_at']
+        read_only_fields = ['id', 'created_at']
+    
+    def get_member_count(self, obj):
+        return obj.members.count()
+    
+    def create(self, validated_data):
+        members = validated_data.pop('members', [])
+        validated_data['created_by'] = self.context['request'].user
+        category = UserCategory.objects.create(**validated_data)
+        if members:
+            category.members.set(members)
+        return category
+    
+    def update(self, instance, validated_data):
+        members = validated_data.pop('members', None)
+        for attr, value in validated_data.items():
+            setattr(instance, attr, value)
+        instance.save()
+        if members is not None:
+            instance.members.set(members)
+        return instance
+
+
+class UserCategoryDetailSerializer(UserCategorySerializer):
+    members = UserSerializer(many=True, read_only=True)
+    
+    class Meta(UserCategorySerializer.Meta):
+        fields = UserCategorySerializer.Meta.fields + ['members']
 
 
 class TeamSerializer(serializers.ModelSerializer):

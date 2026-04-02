@@ -2,7 +2,59 @@
 Evaluation Models - Code reviews, findings, and patterns
 """
 from django.db import models
+from django.db.models import Q
 from django.conf import settings
+
+
+class EvaluationQuerySet(models.QuerySet):
+    """Query helpers for evaluations visible in dashboards and insights."""
+
+    def for_user(self, user):
+        """
+        Evaluations tied to this account. Matches:
+          1. author FK set to this user.
+          2. author is null AND author_email matches any of:
+             - user.email
+             - GitProviderConnection.email (git commit email)
+             - GitProviderConnection.username (push sender stored as email)
+             - ProjectMember.git_email
+             - ProjectMember.git_username
+        This covers the common case where webhook/batch stores a git username
+        (e.g. "assignon") in author_email instead of a real email address.
+        """
+        if user is None:
+            return self.none()
+
+        # Collect all identifiers this user is known by
+        identifiers: set[str] = set()
+        login_email = (getattr(user, 'email', None) or '').strip().lower()
+        if login_email:
+            identifiers.add(login_email)
+
+        # Git provider connections (email + username)
+        from users.models import GitProviderConnection
+        for conn in GitProviderConnection.objects.filter(user=user):
+            if conn.email:
+                identifiers.add(conn.email.strip().lower())
+            if conn.username:
+                identifiers.add(conn.username.strip().lower().lstrip('@'))
+
+        # Project member git identifiers
+        from projects.models import ProjectMember
+        for pm in ProjectMember.objects.filter(user=user):
+            if getattr(pm, 'git_email', None):
+                identifiers.add(pm.git_email.strip().lower())
+            if getattr(pm, 'git_username', None):
+                identifiers.add(pm.git_username.strip().lower().lstrip('@'))
+
+        q = Q(author=user)
+        if identifiers:
+            q |= Q(author__isnull=True, author_email__in=identifiers)
+            # Also case-insensitive match in case DB is case-sensitive
+            for ident in list(identifiers):
+                q |= Q(author__isnull=True, author_email__iexact=ident)
+
+        return self.filter(q).distinct()
 
 
 class Evaluation(models.Model):
@@ -22,6 +74,14 @@ class Evaluation(models.Model):
         on_delete=models.CASCADE,
         related_name='evaluations'
     )
+    batch_job = models.ForeignKey(
+        'batch.BatchJob',
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name='evaluations',
+        help_text="Set when this evaluation was produced by a batch run",
+    )
     author = models.ForeignKey(
         settings.AUTH_USER_MODEL,
         on_delete=models.SET_NULL,
@@ -39,7 +99,7 @@ class Evaluation(models.Model):
     
     # Author info (from git, used for matching)
     author_name = models.CharField(max_length=100)
-    author_email = models.EmailField()
+    author_email = models.CharField(max_length=255, blank=True)
     
     # Stats
     files_changed = models.PositiveIntegerField(default=0)
@@ -68,10 +128,22 @@ class Evaluation(models.Model):
         help_text="Processing time in milliseconds"
     )
     error_message = models.TextField(blank=True)
+    commit_complexity = models.CharField(
+        max_length=10,
+        blank=True,
+        help_text="Commit complexity tier: simple | medium | complex"
+    )
+    complexity_score = models.FloatField(
+        null=True,
+        blank=True,
+        help_text="Raw heuristic score from CommitClassifier"
+    )
     
     # Timestamps
     created_at = models.DateTimeField(auto_now_add=True)
     evaluated_at = models.DateTimeField(null=True, blank=True)
+
+    objects = EvaluationQuerySet.as_manager()
     
     class Meta:
         db_table = 'evaluations'
@@ -276,6 +348,28 @@ class Pattern(models.Model):
         if finding:
             self.sample_findings.add(finding)
         self.save()
+    
+    def apply_decay(self, decay_rate: float = 0.9, min_frequency: int = 1):
+        """
+        Reduce frequency over time. Called periodically (e.g. weekly).
+        Patterns that decay below min_frequency are marked resolved.
+        """
+        from django.utils import timezone
+        
+        self.frequency = max(min_frequency, int(self.frequency * decay_rate))
+        if self.frequency <= min_frequency:
+            self.is_resolved = True
+            self.resolved_at = timezone.now()
+        self.save()
+    
+    @classmethod
+    def apply_global_decay(cls, decay_rate: float = 0.9):
+        """Apply decay to all active (unresolved) patterns."""
+        from django.utils import timezone
+        
+        active = cls.objects.filter(is_resolved=False)
+        for pattern in active:
+            pattern.apply_decay(decay_rate)
 
 
 class LearningRecommendation(models.Model):

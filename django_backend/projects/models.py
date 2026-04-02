@@ -30,7 +30,11 @@ class Project(models.Model):
         choices=Provider.choices,
         default=Provider.GITHUB
     )
-    repo_url = models.URLField(help_text="Full repository URL")
+    repo_url = models.URLField(
+        blank=True,
+        null=True,
+        help_text="Full repository URL (empty until linked by a developer)",
+    )
     repo_owner = models.CharField(max_length=100, help_text="Owner/organization name")
     repo_name = models.CharField(max_length=100, help_text="Repository name")
     default_branch = models.CharField(max_length=100, default='main')
@@ -86,6 +90,36 @@ class Project(models.Model):
         self.webhook_secret = generate_webhook_secret()
         self.save(update_fields=['webhook_secret'])
         return self.webhook_secret
+
+    def apply_repo_url_from_clone_url(self, repo_url: str) -> None:
+        """Set repo_url, provider, repo_owner, repo_name from a git clone URL (e.g. batch link)."""
+        from urllib.parse import urlparse
+
+        repo_url = (repo_url or '').strip()
+        if not repo_url:
+            return
+
+        low = repo_url.lower()
+        provider = self.Provider.GITHUB
+        if 'gitlab' in low:
+            provider = self.Provider.GITLAB
+        elif 'bitbucket' in low:
+            provider = self.Provider.BITBUCKET
+
+        try:
+            path = urlparse(repo_url).path.strip('/').rstrip('.git')
+            parts = path.split('/')
+            repo_owner = parts[-2] if len(parts) >= 2 else self.repo_owner
+            repo_name = parts[-1] if len(parts) >= 1 else self.repo_name
+        except Exception:
+            repo_owner = self.repo_owner
+            repo_name = self.repo_name
+
+        self.repo_url = repo_url
+        self.provider = provider
+        self.repo_owner = repo_owner
+        self.repo_name = repo_name
+        self.save(update_fields=['repo_url', 'provider', 'repo_owner', 'repo_name', 'updated_at'])
 
 
 class ProjectMember(models.Model):

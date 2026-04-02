@@ -5,6 +5,7 @@ from rest_framework import generics, permissions, status
 from rest_framework.response import Response
 from rest_framework.views import APIView
 from django.db.models import Q
+from django.utils import timezone as tz
 
 from .models import SkillCategory, Skill, SkillMetric
 from .serializers import (
@@ -55,8 +56,12 @@ class UpdateSkillMetricsView(APIView):
     Update skill metrics (internal API from FastAPI).
     """
     
-    permission_classes = [permissions.AllowAny]  # TODO: Add API key auth
-    
+    permission_classes = []
+
+    def get_permissions(self):
+        from reviewhub.permissions import IsInternalAPIKey
+        return [IsInternalAPIKey()]
+
     def post(self, request):
         user_id = request.data.get('user_id')
         project_id = request.data.get('project_id')
@@ -90,42 +95,323 @@ class UpdateSkillMetricsView(APIView):
 
 
 class SkillTrendsView(APIView):
-    """
-    Get skill score trends over time.
-    """
-    
+    """Get skill score trends over time, with weekly historical data points."""
+
     permission_classes = [permissions.IsAuthenticated]
-    
+
     def get(self, request):
+        from evaluations.models import Evaluation, FindingSkill
+        from django.db.models import Count
+        from datetime import datetime, timedelta
+
         project_id = request.query_params.get('project')
         skill_slug = request.query_params.get('skill')
-        
-        # Get user's metrics
+        weeks = int(request.query_params.get('weeks', 8))
+
         metrics = SkillMetric.objects.filter(
             user=request.user
         ).select_related('skill')
-        
+
         if project_id:
             metrics = metrics.filter(project_id=project_id)
-        
         if skill_slug:
             metrics = metrics.filter(skill__slug=skill_slug)
-        
-        # Build trend data
+
+        end_date = tz.now()
+        start_date = end_date - timedelta(weeks=weeks)
+
+        # Fetch finding history grouped by week + skill
+        from evaluations.models import Evaluation
+
+        user_evals = Evaluation.objects.for_user(request.user).filter(created_at__gte=start_date)
+        if project_id:
+            user_evals = user_evals.filter(project_id=project_id)
+        finding_qs = FindingSkill.objects.filter(
+            finding__evaluation__in=user_evals,
+        ).select_related('skill', 'finding__evaluation')
+
+        # Build weekly buckets per skill
+        from collections import defaultdict
+        weekly: dict = defaultdict(lambda: defaultdict(int))
+        for fs in finding_qs:
+            week_start = (fs.finding.evaluation.created_at - timedelta(
+                days=fs.finding.evaluation.created_at.weekday()
+            )).strftime('%Y-%m-%d')
+            weekly[fs.skill.slug][week_start] += 1
+
         trends = []
         for metric in metrics:
+            slug = metric.skill.slug
+            week_buckets = weekly.get(slug, {})
+            # Build ordered data_points for the last N weeks
+            data_points = []
+            cur = start_date
+            while cur < end_date:
+                ws = cur.strftime('%Y-%m-%d')
+                data_points.append({'week': ws, 'issues': week_buckets.get(ws, 0)})
+                cur += timedelta(weeks=1)
+
             trends.append({
-                'skill_slug': metric.skill.slug,
+                'skill_slug': slug,
                 'skill_name': metric.skill.name,
                 'current_score': metric.score,
                 'trend': metric.trend,
                 'issue_count': metric.issue_count,
                 'fix_rate': metric.fix_rate,
-                # TODO: Add historical data points from evaluation history
-                'data_points': []
+                'data_points': data_points,
             })
-        
+
         return Response(trends)
+
+
+# ─── Performance Insights ──────────────────────────────────────────────────
+
+class PerformanceStatsView(APIView):
+    """
+    Real performance summary for a given user + project.
+    Used by the Insights page (replaces mocked api.performance.get).
+    """
+
+    permission_classes = [permissions.IsAuthenticated]
+
+    def get(self, request, user_id):
+        from evaluations.models import Evaluation, Finding
+        from django.db.models import Avg
+
+        # Admins may query any user; developers can only query themselves.
+        if not (request.user.id == user_id or request.user.role == 'admin' or request.user.is_staff):
+            return Response({'error': 'Forbidden'}, status=403)
+
+        from users.models import User
+
+        try:
+            subject = User.objects.get(pk=user_id)
+        except User.DoesNotExist:
+            return Response({'error': 'User not found'}, status=status.HTTP_404_NOT_FOUND)
+
+        project_id = request.query_params.get('project')
+
+        evals = Evaluation.objects.for_user(subject)
+        if project_id:
+            evals = evals.filter(project_id=project_id)
+
+        commit_count = evals.count()
+        findings = Finding.objects.filter(evaluation__in=evals)
+        finding_count = findings.count()
+        fixed_count = findings.filter(is_fixed=True).count()
+        fix_rate = round((fixed_count / finding_count * 100) if finding_count else 0, 1)
+        avg_score = round(evals.aggregate(avg=Avg('overall_score'))['avg'] or 0, 1)
+        critical_issues = findings.filter(severity='critical').count()
+
+        # Review velocity: average days between evaluations
+        review_velocity = None
+        dates = list(evals.order_by('created_at').values_list('created_at', flat=True))
+        if len(dates) >= 2:
+            gaps = [(dates[i + 1] - dates[i]).days for i in range(len(dates) - 1)]
+            review_velocity = round(sum(gaps) / len(gaps), 1)
+
+        # Strengths / Growth from skill metrics
+        metrics_qs = SkillMetric.objects.filter(user_id=subject.id).select_related('skill__category')
+        if project_id:
+            metrics_qs = metrics_qs.filter(project_id=project_id)
+
+        from collections import defaultdict
+        cat_scores: dict = defaultdict(list)
+        for m in metrics_qs:
+            cat_scores[m.skill.category.name].append(m.score)
+
+        strengths = [c for c, scores in cat_scores.items() if scores and sum(scores) / len(scores) >= 75]
+        growth_areas = [c for c, scores in cat_scores.items() if scores and sum(scores) / len(scores) < 50]
+
+        return Response({
+            'commitCount': commit_count,
+            'findingCount': finding_count,
+            'fixRate': fix_rate,
+            'reviewVelocity': review_velocity,
+            'averageScore': avg_score,
+            'totalReviews': commit_count,
+            'criticalIssues': critical_issues,
+            'strengths': strengths,
+            'growthAreas': growth_areas,
+            'recommendations': [],
+        })
+
+
+class PerformanceTrendsView(APIView):
+    """
+    Weekly finding counts grouped by skill category.
+    Used by the TrendChart on the Insights page.
+    """
+
+    permission_classes = [permissions.IsAuthenticated]
+
+    def get(self, request, user_id):
+        from evaluations.models import Evaluation, FindingSkill
+        from datetime import datetime, timedelta
+        from collections import defaultdict
+
+        if not (request.user.id == user_id or request.user.role == 'admin' or request.user.is_staff):
+            return Response({'error': 'Forbidden'}, status=403)
+
+        from users.models import User
+
+        try:
+            subject = User.objects.get(pk=user_id)
+        except User.DoesNotExist:
+            return Response({'error': 'User not found'}, status=status.HTTP_404_NOT_FOUND)
+
+        project_id = request.query_params.get('project')
+        weeks = int(request.query_params.get('weeks', 8))
+
+        end_date = tz.now()
+        start_date = end_date - timedelta(weeks=weeks)
+
+        evals = Evaluation.objects.for_user(subject).filter(created_at__gte=start_date)
+        if project_id:
+            evals = evals.filter(project_id=project_id)
+
+        finding_qs = FindingSkill.objects.filter(
+            finding__evaluation__in=evals,
+        ).select_related('skill__category', 'finding__evaluation')
+
+        weekly: dict = defaultdict(lambda: defaultdict(int))
+        for fs in finding_qs:
+            eval_date = fs.finding.evaluation.created_at
+            week_start = (eval_date - timedelta(days=eval_date.weekday())).strftime('%Y-%m-%d')
+            cat = fs.skill.category.name.upper().replace(' ', '_')
+            weekly[week_start][cat] += 1
+
+        result = []
+        cur = start_date
+        while cur < end_date:
+            ws = cur.strftime('%Y-%m-%d')
+            result.append({'weekStart': ws, 'categories': dict(weekly.get(ws, {}))})
+            cur += timedelta(weeks=1)
+
+        return Response(result)
+
+
+class SkillBreakdownView(APIView):
+    """
+    Detailed breakdown for a single skill: score, finding history, deductions, trend.
+    Replaces the client-side mock in api.skills.breakdown.
+    """
+
+    permission_classes = [permissions.IsAuthenticated]
+
+    def get(self, request, user_id, skill_id):
+        from evaluations.models import FindingSkill
+        from django.db.models import Avg
+        from datetime import datetime, timedelta
+
+        if not (request.user.id == user_id or request.user.role == 'admin' or request.user.is_staff):
+            return Response({'error': 'Forbidden'}, status=403)
+
+        from users.models import User
+        from evaluations.models import Evaluation
+
+        try:
+            subject = User.objects.get(pk=user_id)
+        except User.DoesNotExist:
+            return Response({'error': 'User not found'}, status=status.HTTP_404_NOT_FOUND)
+
+        project_id = request.query_params.get('project')
+
+        try:
+            skill = Skill.objects.select_related('category').get(id=skill_id)
+        except Skill.DoesNotExist:
+            return Response({'error': 'Skill not found'}, status=404)
+
+        user_evals = Evaluation.objects.for_user(subject)
+        if project_id:
+            user_evals = user_evals.filter(project_id=project_id)
+
+        # Current metric
+        metric_qs = SkillMetric.objects.filter(user_id=subject.id, skill=skill)
+        if project_id:
+            metric_qs = metric_qs.filter(project_id=project_id)
+        metric = metric_qs.first()
+
+        score = metric.score if metric else 100.0
+        level = metric.level if metric else 0
+
+        # Findings for this skill
+        fs_qs = FindingSkill.objects.filter(
+            skill=skill,
+            finding__evaluation__in=user_evals,
+        ).select_related('finding', 'finding__evaluation')
+        if project_id:
+            fs_qs = fs_qs.filter(finding__evaluation__project_id=project_id)
+
+        findings_data = []
+        deductions = []
+        for fs in fs_qs.order_by('-finding__created_at')[:20]:
+            f = fs.finding
+            findings_data.append({
+                'id': f.id,
+                'title': f.title,
+                'severity': f.severity,
+                'file_path': f.file_path,
+                'line_start': f.line_start,
+                'is_fixed': f.is_fixed,
+                'created_at': f.created_at.isoformat(),
+            })
+            if not f.is_fixed:
+                deductions.append({
+                    'reason': f.title,
+                    'impact': round(fs.impact_score, 1),
+                    'severity': f.severity,
+                })
+
+        # Weekly trend (last 8 weeks)
+        weeks = 8
+        end_date = tz.now()
+        start_date = end_date - timedelta(weeks=weeks)
+        from collections import defaultdict
+        weekly_issues: dict = defaultdict(int)
+        for fs in fs_qs.filter(finding__evaluation__created_at__gte=start_date):
+            d = fs.finding.evaluation.created_at
+            ws = (d - timedelta(days=d.weekday())).strftime('%Y-%m-%d')
+            weekly_issues[ws] += 1
+
+        trend_points = []
+        cur = start_date
+        from datetime import timedelta as td
+        while cur < end_date:
+            ws = cur.strftime('%Y-%m-%d')
+            trend_points.append({'week': ws, 'issues': weekly_issues.get(ws, 0)})
+            cur += td(weeks=1)
+
+        # Tips: use low fix-rate patterns
+        tips = []
+        if score < 50:
+            tips.append(f"Your {skill.name} score is below 50. Focus on reviewing recent findings.")
+        if metric and metric.fix_rate < 30:
+            tips.append("Low fix rate — try resolving existing issues before the next push.")
+        if not tips:
+            tips.append("Keep pushing code and reviewing findings to improve this skill.")
+
+        return Response({
+            'skill': {
+                'id': skill.id,
+                'name': skill.name,
+                'displayName': skill.name,
+                'description': skill.description,
+                'category': {
+                    'id': skill.category.id,
+                    'name': skill.category.name,
+                    'displayName': skill.category.name,
+                    'icon': skill.category.icon or 'school',
+                },
+            },
+            'score': round(score, 1),
+            'level': level,
+            'baseScore': 100,
+            'deductions': deductions[:10],
+            'tips': tips,
+            'findings': findings_data,
+            'trend': trend_points,
+        })
 
 
 class DashboardOverviewView(APIView):
@@ -138,19 +424,17 @@ class DashboardOverviewView(APIView):
     
     def get(self, request):
         from evaluations.models import Evaluation, Finding
-        from django.db.models import Avg, Count
+        from django.db.models import Avg
         
         project_id = request.query_params.get('project')
         
-        # Get user's evaluations
-        evaluations = Evaluation.objects.filter(author=request.user)
+        # Get user's evaluations (includes unmatched commits with same email)
+        evaluations = Evaluation.objects.for_user(request.user)
         if project_id:
             evaluations = evaluations.filter(project_id=project_id)
         
         # Get user's findings
-        findings = Finding.objects.filter(evaluation__author=request.user)
-        if project_id:
-            findings = findings.filter(evaluation__project_id=project_id)
+        findings = Finding.objects.filter(evaluation__in=evaluations)
         
         # Calculate stats
         total_evaluations = evaluations.count()
@@ -220,6 +504,24 @@ class DashboardSkillsView(APIView):
                 'score': round(avg_score, 1),
                 'color': data['color']
             })
+
+        if not result:
+            # No SkillMetric rows (e.g. author was null at ingest); approximate from FindingSkill
+            from evaluations.models import Evaluation, FindingSkill
+
+            evals = Evaluation.objects.for_user(request.user)
+            if project_id:
+                evals = evals.filter(project_id=project_id)
+            cat_map: dict = {}
+            for row in FindingSkill.objects.filter(finding__evaluation__in=evals).select_related('skill__category'):
+                c = row.skill.category
+                name = c.name
+                if name not in cat_map:
+                    cat_map[name] = {'issues': 0, 'color': c.color}
+                cat_map[name]['issues'] += 1
+            for cat_name, data in cat_map.items():
+                pseudo = max(5.0, 100.0 - min(data['issues'] * 6.0, 85.0))
+                result.append({'category': cat_name, 'score': round(pseudo, 1), 'color': data['color']})
         
         return Response(result)
 
@@ -241,12 +543,11 @@ class DashboardProgressView(APIView):
         weeks = int(request.query_params.get('weeks', 8))
         
         # Get evaluations for the last N weeks
-        end_date = datetime.now()
+        end_date = tz.now()
         start_date = end_date - timedelta(weeks=weeks)
         
-        evaluations = Evaluation.objects.filter(
-            author=request.user,
-            created_at__gte=start_date
+        evaluations = Evaluation.objects.for_user(request.user).filter(
+            created_at__gte=start_date,
         ).order_by('created_at')
         
         if project_id:
@@ -294,17 +595,17 @@ class DashboardRecentView(APIView):
         project_id = request.query_params.get('project')
         limit = int(request.query_params.get('limit', 10))
         
-        # Build query - filter BEFORE slicing
-        queryset = Finding.objects.filter(
-            evaluation__author=request.user
-        ).select_related(
+        from evaluations.models import Evaluation
+
+        user_evals = Evaluation.objects.for_user(request.user)
+        if project_id:
+            user_evals = user_evals.filter(project_id=project_id)
+
+        queryset = Finding.objects.filter(evaluation__in=user_evals).select_related(
             'evaluation'
         ).prefetch_related(
             'skills'
         )
-        
-        if project_id:
-            queryset = queryset.filter(evaluation__project_id=project_id)
         
         # Apply ordering and limit AFTER all filters
         findings = queryset.order_by('-created_at')[:limit]
@@ -386,11 +687,14 @@ class UserSkillsView(APIView):
             
             for skill in category.skills.all().order_by('order'):
                 metric = metrics_map.get(skill.id)
+                score = metric.score if metric else 0
+                # Derive a simple 0-5 level from score (no DB field)
+                level = min(5, int(score / 20)) if score else 0
                 cat_data['skills'].append({
                     'id': skill.id,
                     'displayName': skill.name,
-                    'score': metric.score if metric else 0,
-                    'level': metric.level if metric else 0,
+                    'score': score,
+                    'level': level,
                 })
             
             result['categories'].append(cat_data)

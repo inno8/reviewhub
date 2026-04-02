@@ -4,7 +4,9 @@ Learning Recommendations View
 from rest_framework.views import APIView
 from rest_framework.response import Response
 from rest_framework import permissions
-from datetime import datetime, timedelta
+from datetime import timedelta
+
+from django.utils import timezone
 
 from .models import SkillMetric
 
@@ -57,15 +59,17 @@ class LearningRecommendationsView(APIView):
             })
         
         # 2. Find skills with many recent issues (last 30 days)
-        thirty_days_ago = datetime.now() - timedelta(days=30)
-        recent_findings = Finding.objects.filter(
-            evaluation__author=request.user,
-            created_at__gte=thirty_days_ago,
-            is_fixed=False
-        ).prefetch_related('skills')
-        
+        from evaluations.models import Evaluation
+
+        thirty_days_ago = timezone.now() - timedelta(days=30)
+        user_evals = Evaluation.objects.for_user(request.user)
         if project_id:
-            recent_findings = recent_findings.filter(evaluation__project_id=project_id)
+            user_evals = user_evals.filter(project_id=project_id)
+        recent_findings = Finding.objects.filter(
+            evaluation__in=user_evals,
+            created_at__gte=thirty_days_ago,
+            is_fixed=False,
+        ).prefetch_related('skills')
         
         # Count issues by skill
         skill_issue_counts = {}
@@ -75,10 +79,12 @@ class LearningRecommendationsView(APIView):
                     skill_issue_counts[skill.id] = {
                         'skill': skill,
                         'count': 0,
-                        'severity_counts': {'critical': 0, 'warning': 0, 'info': 0}
+                        'severity_counts': {'critical': 0, 'warning': 0, 'info': 0, 'suggestion': 0}
                     }
                 skill_issue_counts[skill.id]['count'] += 1
-                skill_issue_counts[skill.id]['severity_counts'][finding.severity.lower()] += 1
+                sev = finding.severity.lower()
+                if sev in skill_issue_counts[skill.id]['severity_counts']:
+                    skill_issue_counts[skill.id]['severity_counts'][sev] += 1
         
         # Add recommendations for skills with many recent issues
         for skill_id, data in sorted(

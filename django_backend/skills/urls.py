@@ -12,13 +12,18 @@ urlpatterns = [
     path('metrics/update/', views.UpdateSkillMetricsView.as_view(), name='skill-metric-update'),
     path('trends/', views.SkillTrendsView.as_view(), name='skill-trends'),
     path('user/<int:user_id>/', views.UserSkillsView.as_view(), name='user-skills'),
-    
+    path('user/<int:user_id>/breakdown/<int:skill_id>/', views.SkillBreakdownView.as_view(), name='skill-breakdown'),
+
+    # Performance Insights
+    path('performance/<int:user_id>/', views.PerformanceStatsView.as_view(), name='performance-stats'),
+    path('performance/<int:user_id>/trends/', views.PerformanceTrendsView.as_view(), name='performance-trends'),
+
     # Dashboard endpoints
     path('dashboard/overview/', views.DashboardOverviewView.as_view(), name='dashboard-overview'),
     path('dashboard/skills/', views.DashboardSkillsView.as_view(), name='dashboard-skills'),
     path('dashboard/progress/', views.DashboardProgressView.as_view(), name='dashboard-progress'),
     path('dashboard/recent/', views.DashboardRecentView.as_view(), name='dashboard-recent'),
-    
+
     # Recommendations
     path('recommendations/', LearningRecommendationsView.as_view(), name='learning-recommendations'),
 ]
