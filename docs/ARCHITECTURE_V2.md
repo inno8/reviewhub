@@ -1,0 +1,2696 @@
+# ReviewHub v2 — AI Coding Mentor System
+## Complete Architecture Blueprint
+
+---
+
+## 🎯 Vision
+
+Transform ReviewHub from a daily code review tool into a **real-time AI Coding Mentor** that:
+- Monitors every Git push
+- Analyzes code diffs with context awareness
+- Tracks developer skill progression
+- Provides personalized learning recommendations
+- Evolves with semantic code understanding (Cursor-like)
+
+---
+
+## 🏗️ System Architecture
+
+```
+┌─────────────────────────────────────────────────────────────────────────────┐
+│                              REVIEWHUB v2                                    │
+├─────────────────────────────────────────────────────────────────────────────┤
+│                                                                              │
+│  ┌─────────────┐     ┌──────────────────────────────────────────────────┐   │
+│  │   GitHub    │     │                  FRONTEND (Vue.js)               │   │
+│  │   GitLab    │     │  ┌──────────┐ ┌──────────┐ ┌─────────────────┐   │   │
+│  │   Bitbucket │     │  │Dashboard │ │ Skills   │ │ Code Viewer     │   │   │
+│  └──────┬──────┘     │  │ View     │ │ Progress │ │ + Diff Display  │   │   │
+│         │            │  └──────────┘ └──────────┘ └─────────────────┘   │   │
+│         │ Webhook    │  ┌──────────┐ ┌──────────┐ ┌─────────────────┐   │   │
+│         │            │  │ Findings │ │ Patterns │ │ Learning        │   │   │
+│         │            │  │ List     │ │ Analysis │ │ Recommendations │   │   │
+│         ▼            │  └──────────┘ └──────────┘ └─────────────────┘   │   │
+│  ┌──────────────┐    └───────────────────────┬──────────────────────────┘   │
+│  │              │                            │                               │
+│  │   FASTAPI    │◄───────────────────────────┘                               │
+│  │  AI ENGINE   │         REST API                                           │
+│  │              │                                                            │
+│  │ ┌──────────┐ │    ┌─────────────────────────────────────────────────┐    │
+│  │ │ Webhook  │ │    │                  DJANGO API                      │    │
+│  │ │ Handler  │ │    │         (Product & Business Layer)               │    │
+│  │ └────┬─────┘ │    │                                                  │    │
+│  │      │       │    │  ┌────────────┐  ┌────────────┐  ┌───────────┐  │    │
+│  │      ▼       │    │  │   Users    │  │  Projects  │  │  Teams    │  │    │
+│  │ ┌──────────┐ │    │  │   Auth     │  │  Repos     │  │  Invites  │  │    │
+│  │ │   Diff   │ │    │  └────────────┘  └────────────┘  └───────────┘  │    │
+│  │ │ Extractor│ │    │                                                  │    │
+│  │ └────┬─────┘ │    │  ┌────────────┐  ┌────────────┐  ┌───────────┐  │    │
+│  │      │       │    │  │ Evaluations│  │   Skills   │  │ Patterns  │  │    │
+│  │      ▼       │    │  │  Storage   │  │  Tracking  │  │ Detection │  │    │
+│  │ ┌──────────┐ │    │  └────────────┘  └────────────┘  └───────────┘  │    │
+│  │ │ Context  │ │    │                                                  │    │
+│  │ │ Builder  │ │    │  ┌────────────┐  ┌────────────┐  ┌───────────┐  │    │
+│  │ └────┬─────┘ │    │  │ Dashboard  │  │  Analytics │  │  Admin    │  │    │
+│  │      │       │    │  │   APIs     │  │   Engine   │  │  Panel    │  │    │
+│  │      ▼       │    │  └────────────┘  └────────────┘  └───────────┘  │    │
+│  │ ┌──────────┐ │    │                                                  │    │
+│  │ │   LLM    │─┼────┼──────────────────────────────────────────────────┼───┼─► LLM Provider
+│  │ │ Adapter  │ │    │                                                  │    │   (OpenAI/Anthropic/
+│  │ └────┬─────┘ │    └───────────────────────┬──────────────────────────┘    │    OpenClaw)
+│  │      │       │                            │                               │
+│  │      ▼       │                            ▼                               │
+│  │ ┌──────────┐ │    ┌─────────────────────────────────────────────────┐    │
+│  │ │  Skill   │ │    │              DATABASE LAYER                      │    │
+│  │ │ Evaluator│ │    │                                                  │    │
+│  │ └────┬─────┘ │    │   ┌─────────────┐        ┌─────────────────┐    │    │
+│  │      │       │    │   │  SQLite     │   OR   │   PostgreSQL    │    │    │
+│  │      ▼       │    │   │  (dev)      │        │   (production)  │    │    │
+│  │ ┌──────────┐ │    │   └─────────────┘        └─────────────────┘    │    │
+│  │ │ Pattern  │ │    │                                                  │    │
+│  │ │ Detector │ │    │              ┌─────────────────┐                 │    │
+│  │ └────┬─────┘ │    │              │  FAISS (Phase 4)│                 │    │
+│  │      │       │    │              │  Vector Store   │                 │    │
+│  │      ▼       │    │              └─────────────────┘                 │    │
+│  │ ┌──────────┐ │    │                                                  │    │
+│  │ │ Learning │ │    └─────────────────────────────────────────────────┘    │
+│  │ │ Recomm.  │ │                                                            │
+│  │ └──────────┘ │                                                            │
+│  │              │                                                            │
+│  └──────────────┘                                                            │
+│                                                                              │
+└─────────────────────────────────────────────────────────────────────────────┘
+```
+
+---
+
+## 🔄 End-to-End Flow
+
+### Real-Time Code Analysis Flow
+
+```
+┌─────────────────────────────────────────────────────────────────────────────┐
+│                         COMMIT → FEEDBACK FLOW                               │
+└─────────────────────────────────────────────────────────────────────────────┘
+
+Developer                                                              
+    │                                                                  
+    │ git push                                                         
+    ▼                                                                  
+┌─────────┐     ┌─────────────────────────────────────────────────────────────┐
+│ GitHub  │────►│ 1. WEBHOOK RECEIVED (FastAPI)                               │
+└─────────┘     │    POST /api/v1/webhook/github                              │
+                │    Payload: { repo, branch, commits[], sender }              │
+                └────────────────────────┬────────────────────────────────────┘
+                                         │
+                                         ▼
+                ┌─────────────────────────────────────────────────────────────┐
+                │ 2. DIFF EXTRACTION (FastAPI)                                 │
+                │    • Clone/fetch repo (cached)                               │
+                │    • Extract diff for each commit                            │
+                │    • Parse changed files, line numbers                       │
+                │    • Identify file types (Python, JS, etc.)                  │
+                └────────────────────────┬────────────────────────────────────┘
+                                         │
+                                         ▼
+                ┌─────────────────────────────────────────────────────────────┐
+                │ 3. CONTEXT BUILDING (FastAPI) [Phase 3+]                     │
+                │    • Parse imports/dependencies                              │
+                │    • Retrieve related files                                  │
+                │    • [Phase 4] Query FAISS for semantic context              │
+                └────────────────────────┬────────────────────────────────────┘
+                                         │
+                                         ▼
+                ┌─────────────────────────────────────────────────────────────┐
+                │ 4. LLM EVALUATION (FastAPI)                                  │
+                │                                                              │
+                │    Input:                                                    │
+                │    ┌──────────────────────────────────────────────────────┐ │
+                │    │ {                                                     │ │
+                │    │   "diff": "...",                                      │ │
+                │    │   "file_path": "src/views/HomeView.vue",              │ │
+                │    │   "language": "vue",                                  │ │
+                │    │   "context_files": [...],  // Phase 3+                │ │
+                │    │   "developer_history": {...}  // Phase 5              │ │
+                │    │ }                                                     │ │
+                │    └──────────────────────────────────────────────────────┘ │
+                │                                                              │
+                │    LLM Adapter → OpenAI / Anthropic / OpenClaw               │
+                │                                                              │
+                │    Output (Structured JSON):                                 │
+                │    ┌──────────────────────────────────────────────────────┐ │
+                │    │ {                                                     │ │
+                │    │   "overall_score": 7,                                 │ │
+                │    │   "findings": [                                       │ │
+                │    │     {                                                 │ │
+                │    │       "type": "warning",                              │ │
+                │    │       "title": "Missing input validation",            │ │
+                │    │       "file": "src/views/HomeView.vue",               │ │
+                │    │       "line_start": 45,                               │ │
+                │    │       "line_end": 52,                                 │ │
+                │    │       "original_code": "...",                         │ │
+                │    │       "suggested_code": "...",                        │ │
+                │    │       "explanation": "...",                           │ │
+                │    │       "skills_affected": ["input_validation", ...]    │ │
+                │    │     }                                                 │ │
+                │    │   ],                                                  │ │
+                │    │   "skill_scores": {                                   │ │
+                │    │     "clean_code": 8,                                  │ │
+                │    │     "input_validation": 5,                            │ │
+                │    │     ...                                               │ │
+                │    │   }                                                   │ │
+                │    │ }                                                     │ │
+                │    └──────────────────────────────────────────────────────┘ │
+                └────────────────────────┬────────────────────────────────────┘
+                                         │
+                                         ▼
+                ┌─────────────────────────────────────────────────────────────┐
+                │ 5. SKILL EVALUATION (FastAPI)                                │
+                │    • Map findings to skills                                  │
+                │    • Calculate impact scores                                 │
+                │    • Detect patterns (repeated issues)                       │
+                └────────────────────────┬────────────────────────────────────┘
+                                         │
+                                         ▼
+                ┌─────────────────────────────────────────────────────────────┐
+                │ 6. STORE RESULTS (Django API)                                │
+                │    POST /api/evaluations/                                    │
+                │                                                              │
+                │    • Create Evaluation record                                │
+                │    • Create Finding records                                  │
+                │    • Update SkillMetrics                                     │
+                │    • Update Pattern counts                                   │
+                │    • Generate learning recommendations                       │
+                └────────────────────────┬────────────────────────────────────┘
+                                         │
+                                         ▼
+                ┌─────────────────────────────────────────────────────────────┐
+                │ 7. NOTIFY (Optional)                                         │
+                │    • Discord webhook                                         │
+                │    • Email digest                                            │
+                │    • Slack notification                                      │
+                └─────────────────────────────────────────────────────────────┘
+```
+
+---
+
+## 🔗 Webhook User Mapping & Routing
+
+### Design Decisions
+
+- **One webhook endpoint per repo** — NOT per user. GitHub webhooks are repo-level events.
+- **User separation is a backend responsibility** — the system receives ALL push events and internally routes commits to the correct user.
+- **One repo → one webhook** — even with multiple developers pushing to the same repository.
+
+### User Identification Strategy
+
+When a webhook payload arrives, each commit must be attributed to a known user.
+Two identity signals are available from GitHub:
+
+| Signal | Source | Reliability |
+|--------|--------|-------------|
+| `commit.author.email` | Git config of the committer | Primary — most reliable |
+| `payload.sender.login` | GitHub account that pushed | Fallback — covers mismatched emails |
+
+**Lookup order:**
+
+```
+1. Match commit.author.email → User.email
+2. Match commit.author.email → ProjectMember.git_email
+3. Match payload.sender.login → ProjectMember.git_username
+4. No match → log & skip commit (do NOT process for unknown users)
+```
+
+### Multi-User Shared Repo Flow
+
+```
+GitHub webhook fires (push event)
+   ↓
+Receive payload at POST /api/v1/webhook/github/{project_id}
+   ↓
+Verify signature (HMAC SHA-256)
+   ↓
+For each commit in payload.commits:
+   ↓
+   Identify user (email → git_email → git_username)
+   ↓
+   ├── IF user found AND user is project member:
+   │       process_commit(commit, user, project)
+   │
+   └── ELSE:
+           log unmatched commit (author, email, sha)
+           skip processing
+
+Result:
+  Commit A → John (known)    → processed for John
+  Commit B → Alice (known)   → processed for Alice
+  Commit C → Unknown         → logged & ignored
+```
+
+### Data Model Support
+
+The `ProjectMember` model already supports git identity mapping:
+
+```
+ProjectMember {
+  project_id    → Project
+  user_id       → User
+  role          → owner | maintainer | developer | viewer
+  git_email     → Git commit email (if different from user email)
+  git_username  → Git username (if different from user)
+}
+```
+
+This enables:
+- Users whose git email differs from their account email
+- Multiple git identities per user (different machines, configs)
+- Project-scoped access control (only process commits for linked members)
+
+### Security Considerations
+
+- **Verify webhook signature** — HMAC SHA-256 using per-project `webhook_secret`
+- **Ignore unknown users** — do not process commits from unrecognized authors
+- **Project membership check** — only process commits from users linked to the project
+- **Whitelist repos** — webhook URL includes `project_id`, rejecting payloads for unknown projects
+
+### Optional Enhancement: GitHub OAuth
+
+For more reliable user mapping, users can connect their GitHub account via OAuth:
+
+```json
+{
+  "login": "john123",
+  "email": "john@example.com"
+}
+```
+
+This auto-populates `git_username` and `git_email` on `ProjectMember`, eliminating manual configuration.
+
+---
+
+## 📊 Data Models
+
+### Core Entities
+
+```
+┌─────────────────────────────────────────────────────────────────────────────┐
+│                            DATABASE SCHEMA                                   │
+└─────────────────────────────────────────────────────────────────────────────┘
+
+┌──────────────┐       ┌──────────────┐       ┌──────────────┐
+│    User      │       │   Project    │       │    Team      │
+├──────────────┤       ├──────────────┤       ├──────────────┤
+│ id           │       │ id           │       │ id           │
+│ email        │──────►│ name         │◄──────│ name         │
+│ name         │       │ repo_url     │       │ owner_id     │
+│ role         │       │ provider     │       │ created_at   │
+│ api_key (enc)│       │ team_id      │       └──────────────┘
+│ created_at   │       │ default_branch│              │
+└──────────────┘       │ webhook_secret│              │
+       │               │ settings     │              │
+       │               │ created_at   │              │
+       │               └──────────────┘              │
+       │                      │                      │
+       │                      │                      ▼
+       │                      │              ┌──────────────┐
+       │                      │              │  TeamMember  │
+       │                      │              ├──────────────┤
+       │                      │              │ team_id      │
+       │                      │              │ user_id      │
+       │                      │              │ role         │
+       │                      │              │ joined_at    │
+       │                      │              └──────────────┘
+       │                      │
+       ▼                      ▼
+┌──────────────────────────────────────────────────────────────┐
+│                        Evaluation                             │
+├──────────────────────────────────────────────────────────────┤
+│ id                    │ project_id          │ author_id       │
+│ commit_sha            │ branch              │ overall_score   │
+│ files_changed         │ lines_added         │ lines_removed   │
+│ commit_message        │ commit_timestamp    │ evaluated_at    │
+│ llm_model            │ llm_tokens_used     │ processing_ms   │
+└────────────────────────────────┬─────────────────────────────┘
+                                 │
+                                 ▼
+┌──────────────────────────────────────────────────────────────┐
+│                         Finding                               │
+├──────────────────────────────────────────────────────────────┤
+│ id                    │ evaluation_id       │ type            │
+│ title                 │ description         │ file_path       │
+│ line_start            │ line_end            │ original_code   │
+│ suggested_code        │ explanation         │ is_fixed        │
+│ fixed_at              │ fixed_in_commit     │ created_at      │
+└────────────────────────────────┬─────────────────────────────┘
+                                 │
+                                 ▼
+┌──────────────────────────────────────────────────────────────┐
+│                      FindingSkill                             │
+├──────────────────────────────────────────────────────────────┤
+│ finding_id            │ skill_id            │ impact_score    │
+└──────────────────────────────────────────────────────────────┘
+
+┌──────────────────────────────────────────────────────────────┐
+│                     SkillCategory                             │
+├──────────────────────────────────────────────────────────────┤
+│ id          │ name              │ icon        │ order         │
+└────────────────────────────────┬─────────────────────────────┘
+                                 │
+                                 ▼
+┌──────────────────────────────────────────────────────────────┐
+│                         Skill                                 │
+├──────────────────────────────────────────────────────────────┤
+│ id          │ category_id       │ name        │ slug          │
+│ description │ weight            │ order                       │
+└──────────────────────────────────────────────────────────────┘
+
+┌──────────────────────────────────────────────────────────────┐
+│                      SkillMetric                              │
+├──────────────────────────────────────────────────────────────┤
+│ id          │ user_id           │ project_id  │ skill_id      │
+│ score       │ issue_count       │ trend       │ updated_at    │
+└──────────────────────────────────────────────────────────────┘
+
+┌──────────────────────────────────────────────────────────────┐
+│                        Pattern                                │
+├──────────────────────────────────────────────────────────────┤
+│ id          │ user_id           │ project_id  │ pattern_type  │
+│ frequency   │ first_seen        │ last_seen   │ resolved      │
+│ recommendation_id                                             │
+└──────────────────────────────────────────────────────────────┘
+
+┌──────────────────────────────────────────────────────────────┐
+│                   LearningRecommendation                      │
+├──────────────────────────────────────────────────────────────┤
+│ id          │ pattern_type      │ title       │ description   │
+│ resource_url│ resource_type     │ difficulty  │ priority      │
+└──────────────────────────────────────────────────────────────┘
+
+┌──────────────────────────────────────────────────────────────┐
+│                 UserSkillState (Learning)                     │
+│         Tracks skill proficiency per user (0.0-1.0)           │
+├──────────────────────────────────────────────────────────────┤
+│ id              │ user_id           │ project_id (optional)  │
+│ skill_id        │ score (0.0-1.0)   │ previous_score         │
+│ last_delta      │ trend             │ evaluation_count       │
+│ first_evaluated │ last_evaluated    │ updated_at             │
+└──────────────────────────────────────────────────────────────┘
+
+┌──────────────────────────────────────────────────────────────┐
+│                 UserPattern (Learning)                        │
+│         Tracks recurring issues with decay                    │
+├──────────────────────────────────────────────────────────────┤
+│ id              │ user_id           │ project_id (optional)  │
+│ pattern_key     │ pattern_type      │ count                  │
+│ first_seen      │ last_seen         │ decay_applied_at       │
+│ is_resolved     │ resolved_at                                │
+└──────────────────────────────────────────────────────────────┘
+
+┌──────────────────────────────────────────────────────────────┐
+│                 UserProfile (Computed)                        │
+│         Cached profile for prompt enrichment                  │
+├──────────────────────────────────────────────────────────────┤
+│ user_id         │ project_id        │ computed_level         │
+│ strengths[]     │ weaknesses[]      │ frequent_patterns[]    │
+│ evaluation_count│ avg_score         │ last_computed_at       │
+└──────────────────────────────────────────────────────────────┘
+```
+
+---
+
+## 🎯 Skill Categories & Skills (Preserved)
+
+```
+┌─────────────────────────────────────────────────────────────────────────────┐
+│                           SKILL TAXONOMY                                     │
+├─────────────────────────────────────────────────────────────────────────────┤
+│                                                                              │
+│  ┌─────────────────────────────────────────────────────────────────────────┐│
+│  │ 1. CODE QUALITY                                                          ││
+│  │    ├── clean_code         (naming, formatting, simplicity)               ││
+│  │    ├── code_structure     (organization, modularity)                     ││
+│  │    ├── dry_principle      (avoiding repetition)                          ││
+│  │    └── comments_docs      (inline docs, docstrings)                      ││
+│  └─────────────────────────────────────────────────────────────────────────┘│
+│                                                                              │
+│  ┌─────────────────────────────────────────────────────────────────────────┐│
+│  │ 2. DESIGN PATTERNS                                                       ││
+│  │    ├── solid_principles   (S.O.L.I.D. adherence)                         ││
+│  │    ├── mvc_patterns       (separation of concerns)                       ││
+│  │    ├── reusability        (component/function reuse)                     ││
+│  │    └── abstraction        (proper interfaces, layers)                    ││
+│  └─────────────────────────────────────────────────────────────────────────┘│
+│                                                                              │
+│  ┌─────────────────────────────────────────────────────────────────────────┐│
+│  │ 3. LOGIC & ALGORITHMS                                                    ││
+│  │    ├── problem_decomposition  (breaking down problems)                   ││
+│  │    ├── data_structures        (appropriate structure choices)            ││
+│  │    ├── algorithm_efficiency   (time/space complexity)                    ││
+│  │    └── edge_cases             (boundary condition handling)              ││
+│  └─────────────────────────────────────────────────────────────────────────┘│
+│                                                                              │
+│  ┌─────────────────────────────────────────────────────────────────────────┐│
+│  │ 4. SECURITY                                                              ││
+│  │    ├── input_validation       (sanitization, validation)                 ││
+│  │    ├── auth_practices         (authentication, authorization)            ││
+│  │    ├── secrets_management     (API keys, credentials)                    ││
+│  │    └── xss_csrf_prevention    (web security)                             ││
+│  └─────────────────────────────────────────────────────────────────────────┘│
+│                                                                              │
+│  ┌─────────────────────────────────────────────────────────────────────────┐│
+│  │ 5. TESTING                                                               ││
+│  │    ├── unit_testing           (test writing quality)                     ││
+│  │    ├── test_coverage          (code coverage)                            ││
+│  │    ├── test_quality           (meaningful assertions)                    ││
+│  │    └── tdd                    (test-first approach)                      ││
+│  └─────────────────────────────────────────────────────────────────────────┘│
+│                                                                              │
+│  ┌─────────────────────────────────────────────────────────────────────────┐│
+│  │ 6. FRONTEND                                                              ││
+│  │    ├── html_semantics         (semantic markup)                          ││
+│  │    ├── css_organization       (styling best practices)                   ││
+│  │    ├── accessibility          (a11y compliance)                          ││
+│  │    └── responsive_design      (mobile-first, breakpoints)                ││
+│  └─────────────────────────────────────────────────────────────────────────┘│
+│                                                                              │
+│  ┌─────────────────────────────────────────────────────────────────────────┐│
+│  │ 7. BACKEND                                                               ││
+│  │    ├── api_design             (REST/GraphQL best practices)              ││
+│  │    ├── database_queries       (efficient queries, N+1)                   ││
+│  │    ├── error_handling         (graceful errors, logging)                 ││
+│  │    └── performance            (optimization, caching)                    ││
+│  └─────────────────────────────────────────────────────────────────────────┘│
+│                                                                              │
+│  ┌─────────────────────────────────────────────────────────────────────────┐│
+│  │ 8. DEVOPS                                                                ││
+│  │    ├── git_practices          (commits, branching)                       ││
+│  │    ├── build_tools            (bundlers, compilers)                      ││
+│  │    ├── ci_cd                  (pipelines, automation)                    ││
+│  │    └── environment_config     (env vars, configs)                        ││
+│  └─────────────────────────────────────────────────────────────────────────┘│
+│                                                                              │
+└─────────────────────────────────────────────────────────────────────────────┘
+```
+
+---
+
+## 🔌 Service Communication
+
+```
+┌─────────────────────────────────────────────────────────────────────────────┐
+│                         SERVICE ARCHITECTURE                                 │
+└─────────────────────────────────────────────────────────────────────────────┘
+
+                            ┌─────────────────┐
+                            │   Vue Frontend  │
+                            │   (Port 5173)   │
+                            └────────┬────────┘
+                                     │
+                    ┌────────────────┴────────────────┐
+                    │                                 │
+                    ▼                                 ▼
+          ┌─────────────────┐               ┌─────────────────┐
+          │   Django API    │               │   FastAPI AI    │
+          │   (Port 8000)   │◄─────────────►│   (Port 8001)   │
+          └────────┬────────┘   Internal    └────────┬────────┘
+                   │              API                │
+                   │                                 │
+                   ▼                                 ▼
+          ┌─────────────────┐               ┌─────────────────┐
+          │    Database     │               │  LLM Provider   │
+          │ SQLite / Postgres│              │ (Configurable)  │
+          └─────────────────┘               └─────────────────┘
+
+
+┌─────────────────────────────────────────────────────────────────────────────┐
+│                              API ENDPOINTS                                   │
+├─────────────────────────────────────────────────────────────────────────────┤
+│                                                                              │
+│  DJANGO API (Port 8000)                                                      │
+│  ──────────────────────                                                      │
+│  Auth:                                                                       │
+│    POST   /api/auth/login                                                    │
+│    POST   /api/auth/register                                                 │
+│    POST   /api/auth/refresh                                                  │
+│    GET    /api/auth/me                                                       │
+│                                                                              │
+│  Users:                                                                      │
+│    GET    /api/users/                                                        │
+│    GET    /api/users/:id                                                     │
+│    PATCH  /api/users/:id                                                     │
+│    PATCH  /api/users/:id/api-key     (set LLM API key)                       │
+│                                                                              │
+│  Projects:                                                                   │
+│    GET    /api/projects/                                                     │
+│    POST   /api/projects/                                                     │
+│    GET    /api/projects/:id                                                  │
+│    PATCH  /api/projects/:id                                                  │
+│    DELETE /api/projects/:id                                                  │
+│    POST   /api/projects/:id/webhook  (generate webhook URL)                  │
+│                                                                              │
+│  Evaluations:                                                                │
+│    GET    /api/evaluations/                                                  │
+│    GET    /api/evaluations/:id                                               │
+│    POST   /api/evaluations/          (internal: from FastAPI)                │
+│                                                                              │
+│  Findings:                                                                   │
+│    GET    /api/findings/                                                     │
+│    GET    /api/findings/:id                                                  │
+│    PATCH  /api/findings/:id/fix      (mark as fixed)                         │
+│                                                                              │
+│  Skills:                                                                     │
+│    GET    /api/skills/                                                       │
+│    GET    /api/skills/categories                                             │
+│    GET    /api/skills/metrics        (user skill scores)                     │
+│    GET    /api/skills/trends         (historical data)                       │
+│                                                                              │
+│  Patterns:                                                                   │
+│    GET    /api/patterns/                                                     │
+│    GET    /api/patterns/:id                                                  │
+│    GET    /api/patterns/recommendations                                      │
+│                                                                              │
+│  Dashboard:                                                                  │
+│    GET    /api/dashboard/overview                                            │
+│    GET    /api/dashboard/activity                                            │
+│    GET    /api/dashboard/leaderboard                                         │
+│                                                                              │
+│  FASTAPI AI ENGINE (Port 8001)                                               │
+│  ─────────────────────────────                                               │
+│  Webhooks:                                                                   │
+│    POST   /api/v1/webhook/github                                             │
+│    POST   /api/v1/webhook/gitlab                                             │
+│    POST   /api/v1/webhook/bitbucket                                          │
+│                                                                              │
+│  Analysis (Internal):                                                        │
+│    POST   /api/v1/analyze/diff                                               │
+│    POST   /api/v1/analyze/file                                               │
+│    POST   /api/v1/analyze/context    (Phase 3+)                              │
+│                                                                              │
+│  Embeddings (Phase 4+):                                                      │
+│    POST   /api/v1/embeddings/index                                           │
+│    POST   /api/v1/embeddings/search                                          │
+│                                                                              │
+│  Health:                                                                     │
+│    GET    /api/v1/health                                                     │
+│    GET    /api/v1/status                                                     │
+│                                                                              │
+└─────────────────────────────────────────────────────────────────────────────┘
+```
+
+---
+
+## 🔐 LLM Adapter (Configurable)
+
+```
+┌─────────────────────────────────────────────────────────────────────────────┐
+│                           LLM ADAPTER FLOW                                   │
+└─────────────────────────────────────────────────────────────────────────────┘
+
+                         ┌─────────────────────┐
+                         │    LLM Adapter      │
+                         │    (FastAPI)        │
+                         └──────────┬──────────┘
+                                    │
+                    ┌───────────────┼───────────────┐
+                    │               │               │
+                    ▼               ▼               ▼
+           ┌────────────┐  ┌────────────┐  ┌────────────┐
+           │  OpenAI    │  │  Anthropic │  │  OpenClaw  │
+           │  Adapter   │  │  Adapter   │  │  Fallback  │
+           └────────────┘  └────────────┘  └────────────┘
+
+
+┌─────────────────────────────────────────────────────────────────────────────┐
+│                        CONFIGURATION LOGIC                                   │
+├─────────────────────────────────────────────────────────────────────────────┤
+│                                                                              │
+│  class LLMAdapter:                                                           │
+│      def __init__(self, config):                                             │
+│          self.provider = config.get("llm_provider")  # openai/anthropic     │
+│          self.api_key = config.get("llm_api_key")    # user's key           │
+│          self.model = config.get("llm_model")        # gpt-4, claude-3      │
+│          self.use_openclaw = config.get("use_openclaw_fallback", True)      │
+│                                                                              │
+│      def evaluate(self, diff, context):                                      │
+│          if self.api_key:                                                    │
+│              # Use user's own API key                                        │
+│              return self._call_provider(diff, context)                       │
+│          elif self.use_openclaw:                                             │
+│              # Fallback to OpenClaw (yo handles LLM)                         │
+│              return self._call_openclaw(diff, context)                       │
+│          else:                                                               │
+│              raise NoLLMConfiguredError()                                    │
+│                                                                              │
+│      def _call_openclaw(self, diff, context):                                │
+│          # Send to OpenClaw webhook/API                                      │
+│          # yo will process and return structured response                    │
+│          pass                                                                │
+│                                                                              │
+└─────────────────────────────────────────────────────────────────────────────┘
+```
+
+---
+
+## 📁 Project Structure
+
+```
+reviewhub/
+├── docker-compose.yml
+├── docker-compose.dev.yml
+├── .env.example
+├── README.md
+│
+├── frontend/                    # Vue.js (PRESERVED)
+│   ├── src/
+│   │   ├── components/
+│   │   ├── views/
+│   │   ├── stores/
+│   │   ├── composables/
+│   │   └── assets/
+│   ├── package.json
+│   └── vite.config.ts
+│
+├── backend/                     # Django (NEW)
+│   ├── manage.py
+│   ├── requirements.txt
+│   ├── reviewhub/
+│   │   ├── settings/
+│   │   │   ├── base.py
+│   │   │   ├── dev.py          # SQLite
+│   │   │   └── prod.py         # PostgreSQL
+│   │   ├── urls.py
+│   │   └── wsgi.py
+│   ├── apps/
+│   │   ├── users/
+│   │   │   ├── models.py
+│   │   │   ├── views.py
+│   │   │   ├── serializers.py
+│   │   │   └── urls.py
+│   │   ├── projects/
+│   │   ├── evaluations/
+│   │   ├── findings/
+│   │   ├── skills/
+│   │   └── patterns/
+│   └── tests/
+│
+├── ai_engine/                   # FastAPI (NEW)
+│   ├── main.py
+│   ├── requirements.txt
+│   ├── app/
+│   │   ├── api/
+│   │   │   ├── webhooks.py
+│   │   │   ├── analysis.py
+│   │   │   └── embeddings.py
+│   │   ├── services/
+│   │   │   ├── diff_extractor.py
+│   │   │   ├── context_builder.py
+│   │   │   ├── llm_adapter.py
+│   │   │   ├── skill_evaluator.py
+│   │   │   └── pattern_detector.py
+│   │   ├── models/
+│   │   │   └── schemas.py
+│   │   └── core/
+│   │       ├── config.py
+│   │       └── dependencies.py
+│   └── tests/
+│
+└── docs/
+    ├── API.md
+    ├── DEPLOYMENT.md
+    └── DEVELOPMENT.md
+```
+
+---
+
+## 🚀 Phase Implementation Plan
+
+```
+┌─────────────────────────────────────────────────────────────────────────────┐
+│                         IMPLEMENTATION PHASES                                │
+└─────────────────────────────────────────────────────────────────────────────┘
+
+PHASE 1 — MVP (Week 1-2)
+═══════════════════════════════════════════════════════════════════════════════
+□ Create branch: feature/v2-ai-mentor
+□ Setup Django project structure
+□ Setup FastAPI AI engine
+□ Implement GitHub webhook handler
+□ Implement diff extraction
+□ Implement LLM adapter (with OpenClaw fallback)
+□ Basic evaluation endpoint
+□ Store evaluations in database
+□ Connect to existing frontend (minimal changes)
+
+Deliverable: Working webhook → diff → LLM → store → display
+
+
+PHASE 2 — Skill Tracking + Learning Foundation (Week 3)
+═══════════════════════════════════════════════════════════════════════════════
+□ Migrate skill categories/skills to new schema
+□ Implement FindingSkill mapping
+□ Add UserSkillState model (score 0.0-1.0 per skill)
+□ Implement skill score update algorithm (LEARNING_RATE = 0.1)
+□ Build skill trends API
+□ Update frontend skill charts
+□ Add historical skill comparisons
+
+Deliverable: Full skill tracking with learning-based score updates
+
+
+PHASE 3 — Context-Aware Reviewer (Week 4)
+═══════════════════════════════════════════════════════════════════════════════
+□ Implement import/dependency parser
+□ Build context retrieval (related files)
+□ Enhance LLM prompts with context
+□ Add file relationship visualization
+□ Cross-file issue detection
+
+Deliverable: Reviews understand file relationships
+
+
+PHASE 4 — FAISS Integration (Week 5-6)
+═══════════════════════════════════════════════════════════════════════════════
+□ Setup FAISS vector store
+□ Implement code chunking strategy
+□ Build embedding pipeline
+□ Implement semantic search
+□ Add "similar code" suggestions
+□ Codebase understanding features
+
+Deliverable: Cursor-like semantic code understanding
+
+
+PHASE 5 — Full AI Mentor + Adaptive Learning (Week 7-8)
+═══════════════════════════════════════════════════════════════════════════════
+□ Implement pattern detection with decay (PATTERN_DECAY_RATE = 0.9)
+□ Add UserPattern model for tracking recurring issues
+□ Build user profile computation (strengths, weaknesses, level)
+□ Implement adaptive prompt enrichment (inject profile into LLM prompts)
+□ Add personalized feedback generation
+□ Build learning recommendation engine
+□ Developer progress reports with trend visualization
+□ Team analytics
+□ Gamification elements (levels, badges)
+
+Deliverable: Complete AI Coding Mentor with adaptive learning loop
+
+
+FINAL — Production Ready
+═══════════════════════════════════════════════════════════════════════════════
+□ Merge to main
+□ PostgreSQL migration
+□ Docker production setup
+□ CI/CD pipeline
+□ Documentation
+□ Sunset old backend
+
+```
+
+---
+
+## 🧠 Learning Algorithm
+
+The learning system transforms ReviewHub from a stateless code reviewer into an adaptive AI mentor that learns each developer's patterns, tracks skill evolution, and provides personalized feedback.
+
+### Core Concept
+
+```
+┌─────────────────────────────────────────────────────────────────────────────┐
+│                      LEARNING FEEDBACK LOOP                                  │
+└─────────────────────────────────────────────────────────────────────────────┘
+
+                    ┌──────────────────────────────────┐
+                    │         EVALUATE                 │
+                    │   (Analyze code diff via LLM)    │
+                    └───────────────┬──────────────────┘
+                                    │
+                                    ▼
+                    ┌──────────────────────────────────┐
+                    │          STORE                   │
+                    │   (Save evaluation to DB)        │
+                    └───────────────┬──────────────────┘
+                                    │
+                                    ▼
+                    ┌──────────────────────────────────┐
+                    │          UPDATE                  │
+                    │   (Update skill scores &         │
+                    │    pattern counts)               │
+                    └───────────────┬──────────────────┘
+                                    │
+                                    ▼
+                    ┌──────────────────────────────────┐
+                    │          ADAPT                   │
+                    │   (Enrich next prompt with       │
+                    │    user profile context)         │
+                    └───────────────┬──────────────────┘
+                                    │
+                                    └────────────────────► Next Evaluation
+```
+
+**Key Insight:** We're NOT retraining any model. We're changing *what we send* to the model.
+Better context → Better output.
+
+---
+
+### UserDevProfile — Developer Onboarding Questionnaire
+
+Self-reported profile filled once after first login. Seeds initial `SkillMetric` scores and enriches LLM prompts via the adaptive profile endpoint.
+
+```
+┌──────────────────────────────────────────────────────────────────┐
+│                       UserDevProfile                              │
+│    (One-to-one with User, created during onboarding wizard)       │
+├──────────────────────────────────────────────────────────────────┤
+│ id              │ user_id (1-to-1)  │ job_role                   │
+│ experience_years│ primary_language  │ other_languages (JSON)     │
+│ self_scores     │ (JSON 1-5 per skill slug)                       │
+│ focus_first     │ writes_tests      │ edge_case_handling          │
+│ debugging_approach│ can_design_system│ comfortable_with (JSON)   │
+│ worked_on (JSON)│ enjoy_most        │ want_to_improve            │
+│ current_goal    │ learning_style    │ proud_code (text)           │
+│ struggled_code  │ completed_at      │ updated_at                 │
+└──────────────────────────────────────────────────────────────────┘
+```
+
+**Onboarding Flow:**
+
+```
+Login
+  └─► router guard checks user.devProfileCompleted
+        └─► false (non-admin) → redirect to /dev-profile-setup
+              └─► 7-step DevProfileSetupView wizard
+                    └─► POST /api/users/me/dev-profile/
+                          ├─► UserDevProfile saved
+                          ├─► SkillMetric seeded (self_scores 1-5 → 40-100)
+                          └─► router redirects to /
+```
+
+**Skill score seeding map:** 1→40, 2→55, 3→70, 4→85, 5→100
+
+---
+
+### Learning Data Models
+
+```
+┌─────────────────────────────────────────────────────────────────────────────┐
+│                      LEARNING SCHEMA                                         │
+└─────────────────────────────────────────────────────────────────────────────┘
+
+┌──────────────────────────────────────────────────────────────────┐
+│                     UserSkillState                                │
+│         (User's current proficiency per skill)                    │
+├──────────────────────────────────────────────────────────────────┤
+│ id              │ user_id           │ project_id (optional)      │
+│ skill_id        │ score (0.0-1.0)   │ evaluation_count           │
+│ last_delta      │ trend             │ updated_at                 │
+└──────────────────────────────────────────────────────────────────┘
+        │
+        │  Initial score = 0.5 (neutral)
+        │  Range: 0.0 (poor) → 1.0 (excellent)
+        │
+        ▼
+
+┌──────────────────────────────────────────────────────────────────┐
+│                      UserPattern                                  │
+│         (Repeated mistake tracking with decay)                    │
+├──────────────────────────────────────────────────────────────────┤
+│ id              │ user_id           │ project_id (optional)      │
+│ pattern_key     │ pattern_type      │ count                      │
+│ first_seen      │ last_seen         │ decay_applied_at           │
+│ is_resolved     │ resolved_at                                    │
+└──────────────────────────────────────────────────────────────────┘
+        │
+        │  Decay: count *= 0.9 periodically
+        │  (Prevents permanent punishment)
+        │
+        ▼
+
+┌──────────────────────────────────────────────────────────────────┐
+│                      UserProfile                                  │
+│          (Computed view for prompt enrichment)                    │
+├──────────────────────────────────────────────────────────────────┤
+│ user_id         │ computed_level    │ strengths[]                │
+│ weaknesses[]    │ frequent_patterns[] │ recommendations[]        │
+│ evaluation_count│ avg_score         │ last_computed_at           │
+└──────────────────────────────────────────────────────────────────┘
+```
+
+---
+
+### Skill Score Update Algorithm
+
+```python
+# ═══════════════════════════════════════════════════════════════════════════
+# SKILL SCORE UPDATE
+# ═══════════════════════════════════════════════════════════════════════════
+
+LEARNING_RATE = 0.1  # How fast scores change (0.05-0.2 recommended)
+MIN_SCORE = 0.0
+MAX_SCORE = 1.0
+
+def update_skill_score(user_skill: UserSkillState, delta: float) -> float:
+    """
+    Update a user's skill score based on evaluation results.
+    
+    Args:
+        user_skill: Current skill state
+        delta: Change from evaluation (-1.0 to +1.0)
+              Negative = issues found for this skill
+              Positive = good practices observed
+    
+    Returns:
+        New score (clamped to 0.0-1.0)
+    """
+    current = user_skill.score
+    
+    # Apply learning rate for smooth evolution
+    change = LEARNING_RATE * delta
+    new_score = current + change
+    
+    # Clamp to valid range
+    new_score = max(MIN_SCORE, min(MAX_SCORE, new_score))
+    
+    # Update state
+    user_skill.previous_score = current
+    user_skill.score = new_score
+    user_skill.last_delta = delta
+    user_skill.evaluation_count += 1
+    
+    # Calculate trend
+    if new_score > current + 0.02:
+        user_skill.trend = 'improving'
+    elif new_score < current - 0.02:
+        user_skill.trend = 'declining'
+    else:
+        user_skill.trend = 'stable'
+    
+    return new_score
+
+
+# Example:
+# Current error_handling = 0.5
+# Delta = -0.3 (3 issues found)
+# Change = 0.1 * -0.3 = -0.03
+# New score = 0.5 - 0.03 = 0.47
+```
+
+---
+
+### Pattern Detection & Decay
+
+```python
+# ═══════════════════════════════════════════════════════════════════════════
+# PATTERN TRACKING
+# ═══════════════════════════════════════════════════════════════════════════
+
+PATTERN_DECAY_RATE = 0.9  # 10% decay per period
+PATTERN_DECAY_INTERVAL_DAYS = 7  # Apply decay weekly
+PATTERN_THRESHOLD = 3  # Count needed to be "frequent"
+
+def update_pattern(user_id: int, pattern_key: str, pattern_type: str):
+    """
+    Track a repeated issue pattern.
+    """
+    pattern, created = UserPattern.objects.get_or_create(
+        user_id=user_id,
+        pattern_key=pattern_key,
+        defaults={
+            'pattern_type': pattern_type,
+            'count': 0,
+            'first_seen': now()
+        }
+    )
+    
+    pattern.count += 1
+    pattern.last_seen = now()
+    pattern.is_resolved = False
+    pattern.save()
+
+
+def apply_pattern_decay(user_id: int):
+    """
+    Apply decay to all patterns for a user.
+    Prevents permanent punishment for old mistakes.
+    """
+    patterns = UserPattern.objects.filter(
+        user_id=user_id,
+        decay_applied_at__lt=now() - timedelta(days=PATTERN_DECAY_INTERVAL_DAYS)
+    )
+    
+    for pattern in patterns:
+        pattern.count = int(pattern.count * PATTERN_DECAY_RATE)
+        pattern.decay_applied_at = now()
+        
+        # Mark as resolved if count drops below threshold
+        if pattern.count < 1:
+            pattern.is_resolved = True
+            pattern.resolved_at = now()
+        
+        pattern.save()
+
+
+# Common pattern types:
+PATTERN_TYPES = {
+    'missing_edge_cases': 'Edge case handling',
+    'poor_error_handling': 'Error handling',
+    'no_input_validation': 'Input validation',
+    'hardcoded_values': 'Magic numbers/strings',
+    'missing_tests': 'Test coverage',
+    'code_duplication': 'DRY violations',
+    'security_exposure': 'Security vulnerabilities',
+    'performance_issues': 'Performance problems',
+}
+```
+
+---
+
+### User Profile Builder
+
+```python
+# ═══════════════════════════════════════════════════════════════════════════
+# USER PROFILE COMPUTATION
+# ═══════════════════════════════════════════════════════════════════════════
+
+STRENGTH_THRESHOLD = 0.7   # Skill score above this = strength
+WEAKNESS_THRESHOLD = 0.4   # Skill score below this = weakness
+
+def build_user_profile(user_id: int, project_id: int = None) -> dict:
+    """
+    Build a user profile for prompt enrichment.
+    
+    Returns:
+        {
+            'level': 'beginner' | 'intermediate' | 'advanced',
+            'strengths': ['clean_code', 'testing', ...],
+            'weaknesses': ['error_handling', 'security', ...],
+            'frequent_patterns': ['missing_edge_cases', ...],
+            'evaluation_count': 42,
+            'avg_score': 0.65,
+            'recommendations': [...]
+        }
+    """
+    # Get skill scores
+    skills = UserSkillState.objects.filter(user_id=user_id)
+    if project_id:
+        skills = skills.filter(project_id=project_id)
+    
+    strengths = []
+    weaknesses = []
+    total_score = 0
+    
+    for skill in skills:
+        total_score += skill.score
+        if skill.score >= STRENGTH_THRESHOLD:
+            strengths.append(skill.skill.slug)
+        elif skill.score <= WEAKNESS_THRESHOLD:
+            weaknesses.append(skill.skill.slug)
+    
+    avg_score = total_score / len(skills) if skills else 0.5
+    
+    # Get frequent patterns
+    patterns = UserPattern.objects.filter(
+        user_id=user_id,
+        count__gte=PATTERN_THRESHOLD,
+        is_resolved=False
+    ).order_by('-count')[:5]
+    
+    frequent_patterns = [p.pattern_key for p in patterns]
+    
+    # Compute level
+    evaluation_count = Evaluation.objects.filter(author_id=user_id).count()
+    level = compute_level(avg_score, evaluation_count)
+    
+    # Get recommendations
+    recommendations = get_recommendations(weaknesses, frequent_patterns)
+    
+    return {
+        'level': level,
+        'strengths': strengths,
+        'weaknesses': weaknesses,
+        'frequent_patterns': frequent_patterns,
+        'evaluation_count': evaluation_count,
+        'avg_score': round(avg_score, 2),
+        'recommendations': recommendations
+    }
+
+
+def compute_level(avg_score: float, evaluation_count: int) -> str:
+    """Determine developer level based on score and experience."""
+    if evaluation_count < 10:
+        return 'beginner'
+    elif avg_score >= 0.75 and evaluation_count >= 50:
+        return 'advanced'
+    elif avg_score >= 0.5:
+        return 'intermediate'
+    else:
+        return 'beginner'
+```
+
+---
+
+### Adaptive Prompt Enrichment
+
+```python
+# ═══════════════════════════════════════════════════════════════════════════
+# PROMPT ENRICHMENT
+# ═══════════════════════════════════════════════════════════════════════════
+
+def build_enriched_prompt(diff: str, file_path: str, profile: dict) -> str:
+    """
+    Build an LLM prompt enriched with user profile context.
+    
+    BEFORE (stateless):
+        Analyze this diff: [DIFF]
+    
+    AFTER (personalized):
+        Developer Profile:
+        - Level: intermediate
+        - Weaknesses: error_handling, security
+        - Frequent issues: missing_edge_cases (5x), hardcoded_values (3x)
+        
+        Focus your review on these areas.
+        
+        Analyze this diff: [DIFF]
+    """
+    
+    # Build context section
+    context_parts = []
+    
+    # Add level
+    context_parts.append(f"Developer level: {profile['level']}")
+    
+    # Add weaknesses (focus areas)
+    if profile['weaknesses']:
+        weaknesses_str = ', '.join(profile['weaknesses'][:5])
+        context_parts.append(f"Areas needing attention: {weaknesses_str}")
+    
+    # Add frequent patterns
+    if profile['frequent_patterns']:
+        patterns_str = ', '.join(profile['frequent_patterns'][:3])
+        context_parts.append(f"Recurring issues to check: {patterns_str}")
+    
+    # Add strengths (for positive reinforcement)
+    if profile['strengths']:
+        strengths_str = ', '.join(profile['strengths'][:3])
+        context_parts.append(f"Strengths: {strengths_str}")
+    
+    context_section = '\n'.join(context_parts)
+    
+    # Build full prompt
+    prompt = f"""
+DEVELOPER PROFILE:
+{context_section}
+
+Based on this developer's profile, pay special attention to their weak areas
+and recurring issues. Provide constructive feedback that helps them improve.
+
+FILE: {file_path}
+
+DIFF:
+```
+{diff}
+```
+
+Analyze this code change and provide feedback. Focus especially on:
+1. The developer's known weak areas
+2. Any instances of their recurring issues
+3. Positive reinforcement for improvements in their weak areas
+"""
+    
+    return prompt
+```
+
+---
+
+### Adaptive Feedback Generation
+
+```python
+# ═══════════════════════════════════════════════════════════════════════════
+# PERSONALIZED FEEDBACK
+# ═══════════════════════════════════════════════════════════════════════════
+
+def generate_personalized_feedback(evaluation: dict, profile: dict) -> list[str]:
+    """
+    Generate additional personalized feedback based on patterns.
+    """
+    feedback = []
+    
+    # Check for recurring issues
+    for pattern in profile['frequent_patterns']:
+        if pattern in evaluation.get('detected_patterns', []):
+            feedback.append(
+                f"⚠️ Recurring issue: {PATTERN_TYPES.get(pattern, pattern)}. "
+                f"This has appeared {get_pattern_count(pattern)} times. "
+                f"Consider reviewing: {get_recommendation_for_pattern(pattern)}"
+            )
+    
+    # Check for improvement in weak areas
+    for weakness in profile['weaknesses']:
+        if weakness in evaluation.get('good_practices', []):
+            feedback.append(
+                f"✅ Great improvement in {weakness}! "
+                f"Keep applying these practices."
+            )
+    
+    # Add level-appropriate suggestions
+    if profile['level'] == 'beginner':
+        feedback.append(
+            "💡 Tip: Focus on one improvement area at a time. "
+            "Your current focus could be: " + 
+            (profile['weaknesses'][0] if profile['weaknesses'] else "code structure")
+        )
+    
+    return feedback
+
+
+PATTERN_RECOMMENDATIONS = {
+    'missing_edge_cases': 'Study defensive programming and boundary testing',
+    'poor_error_handling': 'Read about error handling best practices in your language',
+    'no_input_validation': 'Review OWASP input validation guidelines',
+    'hardcoded_values': 'Learn about configuration management and constants',
+    'missing_tests': 'Practice TDD with simple functions first',
+    'code_duplication': 'Study the DRY principle and refactoring patterns',
+    'security_exposure': 'Take a secure coding course for your stack',
+    'performance_issues': 'Learn profiling tools for your language',
+}
+```
+
+---
+
+### Complete Learning Flow
+
+```python
+# ═══════════════════════════════════════════════════════════════════════════
+# INTEGRATED LEARNING PIPELINE
+# ═══════════════════════════════════════════════════════════════════════════
+
+async def process_commit_with_learning(
+    project_id: int,
+    commit: dict,
+    user_id: int
+) -> dict:
+    """
+    Full commit processing pipeline with learning.
+    
+    Flow:
+    1. Extract diff
+    2. Build user profile
+    3. Enrich prompt with profile
+    4. Get LLM evaluation
+    5. Store evaluation
+    6. Update skill scores
+    7. Update patterns
+    8. Generate personalized feedback
+    """
+    
+    # Step 1: Extract diff
+    diff_data = await diff_extractor.extract_commit_diff(
+        repo_url=project.repo_url,
+        commit_sha=commit['id']
+    )
+    
+    # Step 2: Build user profile (from stored data)
+    profile = build_user_profile(user_id, project_id)
+    
+    # Step 3: For each file, run enriched evaluation
+    all_findings = []
+    skill_deltas = {}
+    detected_patterns = []
+    
+    for file_diff in diff_data['files']:
+        # Build enriched prompt
+        prompt = build_enriched_prompt(
+            diff=file_diff['diff'],
+            file_path=file_diff['path'],
+            profile=profile
+        )
+        
+        # Step 4: Get LLM evaluation
+        evaluation = await llm_adapter.evaluate(prompt)
+        
+        all_findings.extend(evaluation.findings)
+        
+        # Collect skill deltas
+        for skill, delta in evaluation.skill_scores.items():
+            skill_deltas[skill] = skill_deltas.get(skill, 0) + delta
+        
+        # Collect patterns
+        detected_patterns.extend(evaluation.detected_patterns)
+    
+    # Step 5: Store evaluation
+    stored_eval = await store_evaluation(
+        project_id=project_id,
+        commit=commit,
+        findings=all_findings,
+        user_id=user_id
+    )
+    
+    # Step 6: Update skill scores
+    for skill_slug, delta in skill_deltas.items():
+        user_skill = get_or_create_user_skill(user_id, skill_slug, project_id)
+        update_skill_score(user_skill, delta)
+    
+    # Step 7: Update patterns
+    for pattern in detected_patterns:
+        update_pattern(user_id, pattern['key'], pattern['type'])
+    
+    # Apply periodic decay
+    apply_pattern_decay(user_id)
+    
+    # Step 8: Generate personalized feedback
+    personalized_feedback = generate_personalized_feedback(
+        evaluation={'detected_patterns': detected_patterns},
+        profile=profile
+    )
+    
+    return {
+        'evaluation_id': stored_eval.id,
+        'findings': all_findings,
+        'personalized_feedback': personalized_feedback,
+        'profile_updated': True
+    }
+```
+
+---
+
+### Learning Constants & Configuration
+
+```python
+# ═══════════════════════════════════════════════════════════════════════════
+# LEARNING CONFIGURATION
+# ═══════════════════════════════════════════════════════════════════════════
+
+# Skill scoring
+SKILL_INITIAL_SCORE = 0.5       # Starting score for new skills
+SKILL_LEARNING_RATE = 0.1       # How fast scores change
+SKILL_MIN_SCORE = 0.0
+SKILL_MAX_SCORE = 1.0
+STRENGTH_THRESHOLD = 0.7        # Score above = strength
+WEAKNESS_THRESHOLD = 0.4        # Score below = weakness
+
+# Pattern tracking
+PATTERN_DECAY_RATE = 0.9        # 10% decay per period
+PATTERN_DECAY_INTERVAL_DAYS = 7 # Apply decay weekly
+PATTERN_THRESHOLD = 3           # Count to be "frequent"
+PATTERN_MAX_HISTORY = 10        # Max patterns to track per user
+
+# User levels
+LEVEL_THRESHOLDS = {
+    'beginner': {'max_score': 0.5, 'min_evals': 0},
+    'intermediate': {'max_score': 0.75, 'min_evals': 10},
+    'advanced': {'max_score': 1.0, 'min_evals': 50},
+}
+
+# Prompt enrichment
+MAX_WEAKNESSES_IN_PROMPT = 5
+MAX_PATTERNS_IN_PROMPT = 3
+MAX_STRENGTHS_IN_PROMPT = 3
+```
+
+---
+
+## 🔧 Configuration
+
+```yaml
+# .env.example
+
+# ═══════════════════════════════════════════════════════════════════════════
+# DATABASE
+# ═══════════════════════════════════════════════════════════════════════════
+DATABASE_URL=sqlite:///./reviewhub.db        # Dev
+# DATABASE_URL=postgresql://user:pass@localhost:5432/reviewhub  # Prod
+
+# ═══════════════════════════════════════════════════════════════════════════
+# LLM CONFIGURATION
+# ═══════════════════════════════════════════════════════════════════════════
+# Option 1: User's own API key (set per-user in settings)
+LLM_PROVIDER=openai                          # openai / anthropic
+LLM_API_KEY=sk-...                           # User's API key
+LLM_MODEL=gpt-4-turbo                        # Model to use
+
+# Option 2: OpenClaw fallback (when no API key configured)
+OPENCLAW_ENABLED=true
+OPENCLAW_WEBHOOK_URL=http://localhost:18789/webhook
+OPENCLAW_API_KEY=...                         # If required
+
+# ═══════════════════════════════════════════════════════════════════════════
+# SERVICES
+# ═══════════════════════════════════════════════════════════════════════════
+DJANGO_PORT=8000
+FASTAPI_PORT=8001
+FRONTEND_PORT=5173
+
+# ═══════════════════════════════════════════════════════════════════════════
+# GITHUB / GIT PROVIDERS
+# ═══════════════════════════════════════════════════════════════════════════
+GITHUB_WEBHOOK_SECRET=your-webhook-secret
+GITHUB_APP_ID=...                            # Optional: GitHub App
+GITHUB_PRIVATE_KEY=...                       # Optional: GitHub App
+
+# ═══════════════════════════════════════════════════════════════════════════
+# NOTIFICATIONS
+# ═══════════════════════════════════════════════════════════════════════════
+DISCORD_WEBHOOK_URL=...
+SLACK_WEBHOOK_URL=...
+
+# ═══════════════════════════════════════════════════════════════════════════
+# PHASE 4: VECTOR STORE
+# ═══════════════════════════════════════════════════════════════════════════
+FAISS_INDEX_PATH=./data/faiss_index
+EMBEDDING_MODEL=text-embedding-3-small
+```
+
+---
+
+## 🚢 Deployment Architecture
+
+### Development Environment
+
+```
+┌─────────────────────────────────────────────────────────────────────────────┐
+│                         LOCAL DEVELOPMENT                                    │
+└─────────────────────────────────────────────────────────────────────────────┘
+
+   Developer Machine
+   ┌──────────────────────────────────────────────────────────────────────────┐
+   │                                                                          │
+   │   ┌────────────────┐  ┌────────────────┐  ┌────────────────┐            │
+   │   │  Vue Frontend  │  │   Django API   │  │  FastAPI AI    │            │
+   │   │   (npm run dev)│  │ (python manage)│  │  (uvicorn)     │            │
+   │   │   Port 5173    │  │   Port 8000    │  │   Port 8001    │            │
+   │   └───────┬────────┘  └───────┬────────┘  └───────┬────────┘            │
+   │           │                   │                   │                      │
+   │           └───────────────────┼───────────────────┘                      │
+   │                               │                                          │
+   │                     ┌─────────▼─────────┐                                │
+   │                     │     SQLite        │                                │
+   │                     │  reviewhub.db     │                                │
+   │                     └───────────────────┘                                │
+   │                                                                          │
+   │   GitHub Webhooks → ngrok/smee.io → localhost:8001                       │
+   │                                                                          │
+   └──────────────────────────────────────────────────────────────────────────┘
+
+Commands:
+  # Terminal 1 - Frontend
+  cd frontend && npm run dev
+
+  # Terminal 2 - Django
+  cd backend && python manage.py runserver 8000
+
+  # Terminal 3 - FastAPI
+  cd ai_engine && uvicorn main:app --reload --port 8001
+
+  # Terminal 4 - Webhook tunnel (for GitHub webhooks)
+  ngrok http 8001
+```
+
+### Docker Development (docker-compose.dev.yml)
+
+```yaml
+# docker-compose.dev.yml
+version: '3.8'
+
+services:
+  frontend:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile.dev
+    ports:
+      - "5173:5173"
+    volumes:
+      - ./frontend:/app
+      - /app/node_modules
+    environment:
+      - VITE_API_URL=http://localhost:8000
+      - VITE_AI_API_URL=http://localhost:8001
+
+  django:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile.dev
+    ports:
+      - "8000:8000"
+    volumes:
+      - ./backend:/app
+      - sqlite_data:/app/data
+    environment:
+      - DEBUG=true
+      - DATABASE_URL=sqlite:///./data/reviewhub.db
+      - FASTAPI_URL=http://fastapi:8001
+    depends_on:
+      - fastapi
+
+  fastapi:
+    build:
+      context: ./ai_engine
+      dockerfile: Dockerfile.dev
+    ports:
+      - "8001:8001"
+    volumes:
+      - ./ai_engine:/app
+      - git_cache:/app/repos
+    environment:
+      - DEBUG=true
+      - DJANGO_API_URL=http://django:8000
+      - OPENCLAW_ENABLED=true
+
+volumes:
+  sqlite_data:
+  git_cache:
+```
+
+---
+
+### Production Environment (DigitalOcean)
+
+```
+┌─────────────────────────────────────────────────────────────────────────────┐
+│                      PRODUCTION ARCHITECTURE                                 │
+│                        (DigitalOcean Droplet)                                │
+└─────────────────────────────────────────────────────────────────────────────┘
+
+                              Internet
+                                 │
+                                 ▼
+                    ┌────────────────────────┐
+                    │   Cloudflare (CDN)     │
+                    │   - SSL termination    │
+                    │   - DDoS protection    │
+                    │   - Caching            │
+                    └───────────┬────────────┘
+                                │
+                                ▼
+┌─────────────────────────────────────────────────────────────────────────────┐
+│                     DigitalOcean Droplet                                     │
+│                   (Ubuntu 22.04 / 4GB RAM)                                   │
+├─────────────────────────────────────────────────────────────────────────────┤
+│                                                                              │
+│   ┌─────────────────────────────────────────────────────────────────────┐   │
+│   │                          NGINX                                       │   │
+│   │                    (Reverse Proxy)                                   │   │
+│   │                                                                      │   │
+│   │   reviewhub.app           → Frontend (static)                        │   │
+│   │   reviewhub.app/api/*     → Django (gunicorn)                        │   │
+│   │   reviewhub.app/ai/*      → FastAPI (uvicorn)                        │   │
+│   │   reviewhub.app/webhook/* → FastAPI (uvicorn)                        │   │
+│   │                                                                      │   │
+│   └────────────────────────────────┬────────────────────────────────────┘   │
+│                                    │                                         │
+│      ┌─────────────────────────────┼─────────────────────────────┐          │
+│      │                             │                             │          │
+│      ▼                             ▼                             ▼          │
+│   ┌──────────────┐         ┌──────────────┐           ┌──────────────┐      │
+│   │              │         │              │           │              │      │
+│   │   FRONTEND   │         │    DJANGO    │           │   FASTAPI    │      │
+│   │   (static)   │         │  (gunicorn)  │           │  (uvicorn)   │      │
+│   │              │         │              │           │              │      │
+│   │  /var/www/   │         │  Container   │           │  Container   │      │
+│   │  reviewhub/  │         │  Port 8000   │           │  Port 8001   │      │
+│   │              │         │              │           │              │      │
+│   └──────────────┘         └──────┬───────┘           └──────┬───────┘      │
+│                                   │                          │              │
+│                                   │    ┌─────────────────────┘              │
+│                                   │    │                                    │
+│                                   ▼    ▼                                    │
+│                          ┌────────────────────┐                             │
+│                          │                    │                             │
+│                          │    PostgreSQL      │                             │
+│                          │    (Container)     │                             │
+│                          │    Port 5432       │                             │
+│                          │                    │                             │
+│                          └────────────────────┘                             │
+│                                                                              │
+│   ┌─────────────────────────────────────────────────────────────────────┐   │
+│   │                         DOCKER VOLUMES                               │   │
+│   │                                                                      │   │
+│   │   postgres_data     → /var/lib/postgresql/data                       │   │
+│   │   static_files      → /var/www/reviewhub/static                      │   │
+│   │   media_files       → /var/www/reviewhub/media                       │   │
+│   │   git_cache         → /var/cache/reviewhub/repos                     │   │
+│   │   faiss_index       → /var/lib/reviewhub/faiss  (Phase 4)            │   │
+│   │   ssl_certs         → /etc/letsencrypt                               │   │
+│   │                                                                      │   │
+│   └─────────────────────────────────────────────────────────────────────┘   │
+│                                                                              │
+└─────────────────────────────────────────────────────────────────────────────┘
+```
+
+---
+
+### Docker Production Stack (docker-compose.yml)
+
+```yaml
+# docker-compose.yml (Production)
+version: '3.8'
+
+services:
+  # ═══════════════════════════════════════════════════════════════════════════
+  # NGINX - Reverse Proxy
+  # ═══════════════════════════════════════════════════════════════════════════
+  nginx:
+    image: nginx:alpine
+    container_name: reviewhub_nginx
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - ./nginx/nginx.conf:/etc/nginx/nginx.conf:ro
+      - ./nginx/conf.d:/etc/nginx/conf.d:ro
+      - static_files:/var/www/reviewhub/static:ro
+      - media_files:/var/www/reviewhub/media:ro
+      - ssl_certs:/etc/letsencrypt:ro
+      - certbot_www:/var/www/certbot:ro
+    depends_on:
+      - django
+      - fastapi
+    restart: unless-stopped
+    networks:
+      - reviewhub_network
+
+  # ═══════════════════════════════════════════════════════════════════════════
+  # DJANGO - Product API
+  # ═══════════════════════════════════════════════════════════════════════════
+  django:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    container_name: reviewhub_django
+    expose:
+      - "8000"
+    volumes:
+      - static_files:/app/staticfiles
+      - media_files:/app/media
+    environment:
+      - DEBUG=false
+      - DJANGO_SETTINGS_MODULE=reviewhub.settings.prod
+      - DATABASE_URL=postgresql://${POSTGRES_USER}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB}
+      - SECRET_KEY=${DJANGO_SECRET_KEY}
+      - ALLOWED_HOSTS=${ALLOWED_HOSTS}
+      - FASTAPI_URL=http://fastapi:8001
+      - CORS_ALLOWED_ORIGINS=${CORS_ALLOWED_ORIGINS}
+    depends_on:
+      postgres:
+        condition: service_healthy
+    restart: unless-stopped
+    networks:
+      - reviewhub_network
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8000/api/health/"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+
+  # ═══════════════════════════════════════════════════════════════════════════
+  # FASTAPI - AI Engine
+  # ═══════════════════════════════════════════════════════════════════════════
+  fastapi:
+    build:
+      context: ./ai_engine
+      dockerfile: Dockerfile
+    container_name: reviewhub_fastapi
+    expose:
+      - "8001"
+    volumes:
+      - git_cache:/app/repos
+      - faiss_index:/app/faiss
+    environment:
+      - DEBUG=false
+      - DJANGO_API_URL=http://django:8000
+      - OPENCLAW_ENABLED=${OPENCLAW_ENABLED:-true}
+      - OPENCLAW_WEBHOOK_URL=${OPENCLAW_WEBHOOK_URL}
+      - GITHUB_WEBHOOK_SECRET=${GITHUB_WEBHOOK_SECRET}
+      - LLM_PROVIDER=${LLM_PROVIDER:-openclaw}
+      - LLM_API_KEY=${LLM_API_KEY}
+    restart: unless-stopped
+    networks:
+      - reviewhub_network
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8001/api/v1/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+
+  # ═══════════════════════════════════════════════════════════════════════════
+  # POSTGRESQL - Database
+  # ═══════════════════════════════════════════════════════════════════════════
+  postgres:
+    image: postgres:15-alpine
+    container_name: reviewhub_postgres
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+      - ./scripts/init-db.sql:/docker-entrypoint-initdb.d/init.sql:ro
+    environment:
+      - POSTGRES_USER=${POSTGRES_USER}
+      - POSTGRES_PASSWORD=${POSTGRES_PASSWORD}
+      - POSTGRES_DB=${POSTGRES_DB}
+    restart: unless-stopped
+    networks:
+      - reviewhub_network
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER} -d ${POSTGRES_DB}"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  # ═══════════════════════════════════════════════════════════════════════════
+  # REDIS - Cache & Queue (Optional, for background tasks)
+  # ═══════════════════════════════════════════════════════════════════════════
+  redis:
+    image: redis:7-alpine
+    container_name: reviewhub_redis
+    volumes:
+      - redis_data:/data
+    restart: unless-stopped
+    networks:
+      - reviewhub_network
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  # ═══════════════════════════════════════════════════════════════════════════
+  # CELERY WORKER - Background Tasks (Optional)
+  # ═══════════════════════════════════════════════════════════════════════════
+  celery:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    container_name: reviewhub_celery
+    command: celery -A reviewhub worker -l info
+    volumes:
+      - media_files:/app/media
+    environment:
+      - DEBUG=false
+      - DJANGO_SETTINGS_MODULE=reviewhub.settings.prod
+      - DATABASE_URL=postgresql://${POSTGRES_USER}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB}
+      - CELERY_BROKER_URL=redis://redis:6379/0
+    depends_on:
+      - postgres
+      - redis
+    restart: unless-stopped
+    networks:
+      - reviewhub_network
+
+  # ═══════════════════════════════════════════════════════════════════════════
+  # CERTBOT - SSL Certificates
+  # ═══════════════════════════════════════════════════════════════════════════
+  certbot:
+    image: certbot/certbot
+    container_name: reviewhub_certbot
+    volumes:
+      - ssl_certs:/etc/letsencrypt
+      - certbot_www:/var/www/certbot
+    entrypoint: "/bin/sh -c 'trap exit TERM; while :; do certbot renew; sleep 12h & wait $${!}; done;'"
+    restart: unless-stopped
+
+networks:
+  reviewhub_network:
+    driver: bridge
+
+volumes:
+  postgres_data:
+  static_files:
+  media_files:
+  git_cache:
+  faiss_index:
+  redis_data:
+  ssl_certs:
+  certbot_www:
+```
+
+---
+
+### NGINX Configuration
+
+```nginx
+# nginx/conf.d/reviewhub.conf
+
+upstream django {
+    server django:8000;
+}
+
+upstream fastapi {
+    server fastapi:8001;
+}
+
+server {
+    listen 80;
+    server_name reviewhub.app www.reviewhub.app;
+    
+    location /.well-known/acme-challenge/ {
+        root /var/www/certbot;
+    }
+    
+    location / {
+        return 301 https://$host$request_uri;
+    }
+}
+
+server {
+    listen 443 ssl http2;
+    server_name reviewhub.app www.reviewhub.app;
+
+    ssl_certificate /etc/letsencrypt/live/reviewhub.app/fullchain.pem;
+    ssl_certificate_key /etc/letsencrypt/live/reviewhub.app/privkey.pem;
+    ssl_protocols TLSv1.2 TLSv1.3;
+    ssl_ciphers ECDHE-ECDSA-AES128-GCM-SHA256:ECDHE-RSA-AES128-GCM-SHA256;
+    ssl_prefer_server_ciphers off;
+
+    client_max_body_size 50M;
+
+    # ═══════════════════════════════════════════════════════════════════════
+    # STATIC FILES (Vue Frontend)
+    # ═══════════════════════════════════════════════════════════════════════
+    location / {
+        root /var/www/reviewhub/static;
+        try_files $uri $uri/ /index.html;
+        
+        # Cache static assets
+        location ~* \.(js|css|png|jpg|jpeg|gif|ico|svg|woff|woff2)$ {
+            expires 1y;
+            add_header Cache-Control "public, immutable";
+        }
+    }
+
+    # ═══════════════════════════════════════════════════════════════════════
+    # DJANGO API
+    # ═══════════════════════════════════════════════════════════════════════
+    location /api/ {
+        proxy_pass http://django;
+        proxy_http_version 1.1;
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
+        
+        # Timeouts
+        proxy_connect_timeout 60s;
+        proxy_send_timeout 60s;
+        proxy_read_timeout 60s;
+    }
+
+    # ═══════════════════════════════════════════════════════════════════════
+    # FASTAPI - Webhooks (GitHub, GitLab, Bitbucket)
+    # ═══════════════════════════════════════════════════════════════════════
+    location /webhook/ {
+        proxy_pass http://fastapi/api/v1/webhook/;
+        proxy_http_version 1.1;
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
+        proxy_set_header X-Hub-Signature-256 $http_x_hub_signature_256;
+        
+        # Longer timeout for webhook processing
+        proxy_connect_timeout 120s;
+        proxy_send_timeout 120s;
+        proxy_read_timeout 120s;
+    }
+
+    # ═══════════════════════════════════════════════════════════════════════
+    # FASTAPI - AI Engine (Internal API)
+    # ═══════════════════════════════════════════════════════════════════════
+    location /ai/ {
+        proxy_pass http://fastapi/api/v1/;
+        proxy_http_version 1.1;
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
+        
+        # AI processing can take time
+        proxy_connect_timeout 300s;
+        proxy_send_timeout 300s;
+        proxy_read_timeout 300s;
+    }
+
+    # ═══════════════════════════════════════════════════════════════════════
+    # DJANGO STATIC & MEDIA
+    # ═══════════════════════════════════════════════════════════════════════
+    location /static/ {
+        alias /var/www/reviewhub/static/django/;
+    }
+
+    location /media/ {
+        alias /var/www/reviewhub/media/;
+    }
+}
+```
+
+---
+
+### CI/CD Pipeline (GitHub Actions)
+
+```yaml
+# .github/workflows/deploy.yml
+name: Deploy ReviewHub
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+env:
+  REGISTRY: ghcr.io
+  DOCKER_BUILDKIT: 1
+
+jobs:
+  # ═══════════════════════════════════════════════════════════════════════════
+  # TEST
+  # ═══════════════════════════════════════════════════════════════════════════
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: Install Django dependencies
+        run: |
+          cd backend
+          pip install -r requirements.txt
+          pip install pytest pytest-django
+
+      - name: Run Django tests
+        run: |
+          cd backend
+          pytest
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      - name: Install Frontend dependencies
+        run: |
+          cd frontend
+          npm ci
+
+      - name: Run Frontend tests
+        run: |
+          cd frontend
+          npm run test
+
+  # ═══════════════════════════════════════════════════════════════════════════
+  # BUILD
+  # ═══════════════════════════════════════════════════════════════════════════
+  build:
+    needs: test
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write
+    
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Log in to Container Registry
+        uses: docker/login-action@v3
+        with:
+          registry: ${{ env.REGISTRY }}
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Build and push Django image
+        uses: docker/build-push-action@v5
+        with:
+          context: ./backend
+          push: true
+          tags: ${{ env.REGISTRY }}/${{ github.repository }}/django:${{ github.sha }}
+
+      - name: Build and push FastAPI image
+        uses: docker/build-push-action@v5
+        with:
+          context: ./ai_engine
+          push: true
+          tags: ${{ env.REGISTRY }}/${{ github.repository }}/fastapi:${{ github.sha }}
+
+      - name: Build Frontend
+        run: |
+          cd frontend
+          npm ci
+          npm run build
+
+      - name: Upload Frontend artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: frontend-dist
+          path: frontend/dist
+
+  # ═══════════════════════════════════════════════════════════════════════════
+  # DEPLOY
+  # ═══════════════════════════════════════════════════════════════════════════
+  deploy:
+    needs: build
+    runs-on: ubuntu-latest
+    environment: production
+    
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Download Frontend artifacts
+        uses: actions/download-artifact@v4
+        with:
+          name: frontend-dist
+          path: frontend/dist
+
+      - name: Deploy to DigitalOcean
+        uses: appleboy/ssh-action@v1.0.3
+        with:
+          host: ${{ secrets.DO_HOST }}
+          username: ${{ secrets.DO_USER }}
+          key: ${{ secrets.DO_SSH_KEY }}
+          script: |
+            cd /opt/reviewhub
+            
+            # Pull latest images
+            docker compose pull
+            
+            # Run migrations
+            docker compose exec -T django python manage.py migrate
+            
+            # Collect static files
+            docker compose exec -T django python manage.py collectstatic --noinput
+            
+            # Restart services
+            docker compose up -d --remove-orphans
+            
+            # Cleanup old images
+            docker image prune -f
+
+      - name: Copy Frontend to server
+        uses: appleboy/scp-action@v0.1.7
+        with:
+          host: ${{ secrets.DO_HOST }}
+          username: ${{ secrets.DO_USER }}
+          key: ${{ secrets.DO_SSH_KEY }}
+          source: "frontend/dist/*"
+          target: "/var/www/reviewhub/static/"
+          strip_components: 2
+
+      - name: Notify Discord
+        if: success()
+        run: |
+          curl -X POST ${{ secrets.DISCORD_WEBHOOK_URL }} \
+            -H "Content-Type: application/json" \
+            -d '{"content": "✅ ReviewHub deployed successfully!\nCommit: ${{ github.sha }}"}'
+```
+
+---
+
+### Deployment Scripts
+
+```bash
+#!/bin/bash
+# scripts/deploy.sh
+
+set -e
+
+echo "🚀 Deploying ReviewHub..."
+
+# Pull latest code
+git pull origin main
+
+# Build and start containers
+docker compose -f docker-compose.yml pull
+docker compose -f docker-compose.yml up -d --build
+
+# Run migrations
+docker compose exec django python manage.py migrate
+
+# Collect static files
+docker compose exec django python manage.py collectstatic --noinput
+
+# Restart nginx to pick up changes
+docker compose restart nginx
+
+echo "✅ Deployment complete!"
+```
+
+```bash
+#!/bin/bash
+# scripts/backup.sh
+
+set -e
+
+BACKUP_DIR="/var/backups/reviewhub"
+DATE=$(date +%Y%m%d_%H%M%S)
+
+echo "📦 Creating backup..."
+
+# Database backup
+docker compose exec -T postgres pg_dump -U $POSTGRES_USER $POSTGRES_DB > "$BACKUP_DIR/db_$DATE.sql"
+
+# Compress
+gzip "$BACKUP_DIR/db_$DATE.sql"
+
+# Keep only last 7 days
+find $BACKUP_DIR -name "db_*.sql.gz" -mtime +7 -delete
+
+echo "✅ Backup complete: db_$DATE.sql.gz"
+```
+
+---
+
+### Infrastructure Requirements
+
+```
+┌─────────────────────────────────────────────────────────────────────────────┐
+│                      MINIMUM PRODUCTION SPECS                                │
+├─────────────────────────────────────────────────────────────────────────────┤
+│                                                                              │
+│  DigitalOcean Droplet                                                        │
+│  ─────────────────────                                                       │
+│  • Size: s-2vcpu-4gb ($24/month)                                             │
+│  • Region: AMS3 (Amsterdam)                                                  │
+│  • OS: Ubuntu 22.04 LTS                                                      │
+│  • Storage: 80GB SSD                                                         │
+│                                                                              │
+│  For Phase 4+ (FAISS):                                                       │
+│  • Upgrade to s-4vcpu-8gb ($48/month)                                        │
+│  • Additional block storage: 50GB                                            │
+│                                                                              │
+├─────────────────────────────────────────────────────────────────────────────┤
+│                                                                              │
+│  Resource Allocation                                                         │
+│  ───────────────────                                                         │
+│                                                                              │
+│  Service       Memory    CPU    Notes                                        │
+│  ─────────────────────────────────────────────────────                       │
+│  PostgreSQL    512MB     0.5    With connection pooling                      │
+│  Django        1GB       0.5    2 gunicorn workers                           │
+│  FastAPI       1GB       0.5    AI processing                                │
+│  Redis         256MB     0.25   Cache & queues                               │
+│  NGINX         128MB     0.25   Static + reverse proxy                       │
+│  FAISS         2GB       1.0    Phase 4+ only                                │
+│                                                                              │
+└─────────────────────────────────────────────────────────────────────────────┘
+```
+
+---
+
+### Monitoring & Logging
+
+```
+┌─────────────────────────────────────────────────────────────────────────────┐
+│                         OBSERVABILITY STACK                                  │
+└─────────────────────────────────────────────────────────────────────────────┘
+
+   ┌───────────────────────────────────────────────────────────────────────┐
+   │                           LOGGING                                      │
+   │                                                                        │
+   │   Django   ─────┐                                                      │
+   │   FastAPI  ─────┼───► Docker Logs ───► Papertrail / Loki              │
+   │   NGINX    ─────┘                                                      │
+   │                                                                        │
+   │   # View logs                                                          │
+   │   docker compose logs -f django fastapi                                │
+   │                                                                        │
+   └───────────────────────────────────────────────────────────────────────┘
+
+   ┌───────────────────────────────────────────────────────────────────────┐
+   │                          MONITORING                                    │
+   │                                                                        │
+   │   Health Endpoints:                                                    │
+   │   • GET /api/health/         (Django)                                  │
+   │   • GET /api/v1/health       (FastAPI)                                 │
+   │                                                                        │
+   │   Uptime Monitoring:                                                   │
+   │   • UptimeRobot (free tier)                                            │
+   │   • Ping every 5 minutes                                               │
+   │   • Alert on 3 consecutive failures                                    │
+   │                                                                        │
+   │   Resource Monitoring:                                                 │
+   │   • DigitalOcean Metrics (built-in)                                    │
+   │   • CPU, Memory, Disk, Network                                         │
+   │                                                                        │
+   └───────────────────────────────────────────────────────────────────────┘
+
+   ┌───────────────────────────────────────────────────────────────────────┐
+   │                           ALERTS                                       │
+   │                                                                        │
+   │   Discord Webhooks:                                                    │
+   │   • Deployment success/failure                                         │
+   │   • Health check failures                                              │
+   │   • Error rate spikes                                                  │
+   │   • Disk space warnings                                                │
+   │                                                                        │
+   └───────────────────────────────────────────────────────────────────────┘
+```
+
+---
+
+## 🆕 PHASE 6: Batch Commit Review (Historical Analysis)
+
+### Overview
+
+A batch processing system that:
+1. Takes a repository URL
+2. Fetches commit history
+3. Replays commits through the learning engine
+4. Builds a comprehensive developer profile
+5. Stores it for future personalization
+
+**Why This Matters:**
+- ✅ Solves cold start problem
+- ✅ Deep developer understanding from day 1
+- ✅ Historical intelligence for personalization
+- ✅ Makes the system proactively personalized, not just reactive
+
+### Architecture
+
+```
+User submits repo
+       ↓
+FastAPI creates job
+       ↓
+Redis Queue stores job
+       ↓
+Worker processes:
+   → fetch commits
+   → replay commits
+   → update learning
+       ↓
+Build developer profile
+       ↓
+Store profile
+       ↓
+Future commits become personalized
+```
+
+### Data Flow
+
+```
+Current System:
+  Webhook → process_commit → learning
+
+New Addition (Batch Pipeline):
+  Repo URL → Batch Processor → process_commit (loop) → learning → profile
+
+👉 Same engine, different entry point
+```
+
+### New Models
+
+#### BatchJob
+```python
+class BatchJob(models.Model):
+    user = models.ForeignKey(User, on_delete=models.CASCADE)
+    repo_url = models.URLField()
+    status = models.CharField(choices=[
+        ('pending', 'Pending'),
+        ('running', 'Running'),
+        ('done', 'Done'),
+        ('failed', 'Failed'),
+    ])
+    progress = models.IntegerField(default=0)  # 0-100
+    total_commits = models.IntegerField(default=0)
+    processed_commits = models.IntegerField(default=0)
+    created_at = models.DateTimeField(auto_now_add=True)
+    completed_at = models.DateTimeField(null=True)
+    error_message = models.TextField(blank=True)
+```
+
+#### BatchCommitResult
+```python
+class BatchCommitResult(models.Model):
+    job = models.ForeignKey(BatchJob, on_delete=models.CASCADE)
+    commit_sha = models.CharField(max_length=40)
+    commit_date = models.DateTimeField()
+    score = models.FloatField()
+    skills_snapshot = models.JSONField()  # Skills at this point
+    patterns_snapshot = models.JSONField()  # Patterns identified
+    created_at = models.DateTimeField(auto_now_add=True)
+```
+
+Enables:
+- Timeline visualization
+- Progress graphs
+- Historical insights
+
+#### UserProfile
+```python
+class UserProfile(models.Model):
+    user = models.OneToOneField(User, on_delete=models.CASCADE)
+    level = models.CharField(max_length=20)  # beginner, intermediate, advanced
+    strengths = models.JSONField(default=list)  # ["readability", "naming"]
+    weaknesses = models.JSONField(default=list)  # ["testing", "error_handling"]
+    top_patterns = models.JSONField(default=list)  # Most common issues
+    trend = models.CharField(max_length=20)  # improving, stable, declining
+    last_updated = models.DateTimeField(auto_now=True)
+```
+
+Used in ALL future analysis for personalization.
+
+### API Endpoints (FastAPI)
+
+```python
+@app.post("/analyze-repo")
+def analyze_repo(repo_url: str, user_id: int):
+    """
+    Trigger batch analysis of a repository.
+    Returns immediately with job_id.
+    Processing happens in background.
+    """
+    job = create_job(repo_url, user_id)
+    queue.enqueue("process_repo_job", job.id)
+    return {"job_id": job.id}
+
+@app.get("/jobs/{job_id}")
+def get_job_status(job_id: int):
+    """Get job progress and status."""
+    return {
+        "status": job.status,
+        "progress": job.progress,
+        "total_commits": job.total_commits,
+        "processed_commits": job.processed_commits
+    }
+
+@app.get("/jobs/{job_id}/results")
+def get_job_results(job_id: int):
+    """Get batch processing results and timeline."""
+    return {
+        "commits": [...],
+        "profile": {...},
+        "insights": {...}
+    }
+```
+
+### Worker Implementation
+
+```python
+def process_repo_job(job_id):
+    job = get_job(job_id)
+    update_status(job, "running")
+    
+    try:
+        # Fetch commits (oldest → newest)
+        commits = fetch_commits(job.repo_url)
+        commits = sorted(commits, key=lambda x: x["date"])
+        
+        # Limit for performance
+        commits = commits[-100:]  # Last 100 commits
+        
+        job.total_commits = len(commits)
+        job.save()
+        
+        # Process each commit
+        for i, commit in enumerate(commits):
+            process_commit(commit, job.user_id, mode="batch")
+            
+            # Store intermediate result
+            BatchCommitResult.objects.create(
+                job=job,
+                commit_sha=commit["sha"],
+                commit_date=commit["date"],
+                score=...,
+                skills_snapshot=...,
+                patterns_snapshot=...
+            )
+            
+            # Update progress
+            job.processed_commits = i + 1
+            job.progress = int((i + 1) / len(commits) * 100)
+            job.save()
+        
+        # Build final profile
+        build_final_profile(job.user)
+        
+        update_status(job, "done")
+        
+    except Exception as e:
+        job.error_message = str(e)
+        update_status(job, "failed")
+```
+
+### Profile Builder
+
+```python
+def build_final_profile(user):
+    """Aggregate all batch results into a developer profile."""
+    results = BatchCommitResult.objects.filter(
+        job__user=user
+    ).order_by('commit_date')
+    
+    # Analyze patterns
+    all_patterns = []
+    skill_scores = defaultdict(list)
+    
+    for result in results:
+        all_patterns.extend(result.patterns_snapshot)
+        for skill, score in result.skills_snapshot.items():
+            skill_scores[skill].append(score)
+    
+    # Calculate strengths/weaknesses
+    strengths = [s for s, scores in skill_scores.items() 
+                 if statistics.mean(scores) >= 75]
+    weaknesses = [s for s, scores in skill_scores.items() 
+                  if statistics.mean(scores) < 50]
+    
+    # Detect trend
+    if len(results) >= 10:
+        early_avg = statistics.mean([r.score for r in results[:5]])
+        late_avg = statistics.mean([r.score for r in results[-5:]])
+        if late_avg > early_avg + 5:
+            trend = "improving"
+        elif late_avg < early_avg - 5:
+            trend = "declining"
+        else:
+            trend = "stable"
+    else:
+        trend = "unknown"
+    
+    # Save profile
+    UserProfile.objects.update_or_create(
+        user=user,
+        defaults={
+            "level": calculate_level(skill_scores),
+            "strengths": strengths,
+            "weaknesses": weaknesses,
+            "top_patterns": Counter(all_patterns).most_common(5),
+            "trend": trend,
+        }
+    )
+```
+
+### Using Profile in Real-time Analysis
+
+```python
+# When user pushes new code:
+# Webhook → process_commit()
+
+def process_commit(commit, user, mode="realtime"):
+    # Load profile
+    profile = UserProfile.objects.filter(user=user).first()
+    
+    if profile:
+        # Adapt LLM prompt based on profile
+        context = f"""
+        Developer Profile:
+        - Level: {profile.level}
+        - Known weaknesses: {profile.weaknesses}
+        - Common patterns: {profile.top_patterns}
+        
+        Pay special attention to: {profile.weaknesses}
+        """
+        
+        # Now your system says:
+        # "You often miss edge cases based on past projects."
+```
+
+### Queue System
+
+**Start Simple:**
+- Redis + RQ (Python RQ)
+
+**Later Scale:**
+- Celery + Redis
+- or Kafka (advanced)
+
+### Implementation Steps
+
+| Step | Description | Priority |
+|------|-------------|----------|
+| 1 | Add BatchJob model | High |
+| 2 | Create FastAPI `/analyze-repo` endpoint | High |
+| 3 | Setup Redis + RQ worker | High |
+| 4 | Implement commit fetcher | High |
+| 5 | Add `mode` parameter to process_commit | High |
+| 6 | Add BatchCommitResult model | Medium |
+| 7 | Implement Profile Builder | High |
+| 8 | Add UserProfile model | High |
+| 9 | Create frontend analysis page | Medium |
+| 10 | Integrate profile into real-time analysis | High |
+
+---
+
+## ✅ Summary
+
+| Aspect | Decision |
+|--------|----------|
+| **Branch Strategy** | `feature/v2-ai-mentor` → merge when ready |
+| **Backend** | Django (product) + FastAPI (AI) |
+| **Frontend** | Keep Vue.js, same design |
+| **Database** | SQLite (dev) / PostgreSQL (prod) |
+| **LLM** | Configurable: own API key OR OpenClaw fallback |
+| **Skills** | Preserve 8 categories, 32 skills |
+| **Phases** | Follow 6-phase evolution |
+| **Deployment** | Docker Compose on DigitalOcean |
+| **CI/CD** | GitHub Actions → auto-deploy to production |
+| **Proxy** | NGINX reverse proxy with SSL |
+| **Monitoring** | Docker logs + UptimeRobot + Discord alerts |
+
+---
+
+## Commit Complexity Router
+
+### Overview
+
+The Commit Complexity Router is a zero-latency, deterministic layer that sits between Diff Extraction and the LLM call. It classifies every commit into one of three tiers — **simple**, **medium**, or **complex** — and uses that tier to automatically select the cheapest adequate model, cap context and tokens, and weight how much the result influences the developer's learning profile.
+
+No extra env vars or admin configuration are required. Model tiers are auto-derived per provider.
+
+### 6-Layer Scoring
+
+| Layer | Signal | Rule |
+|-------|--------|------|
+| 1 | Lines changed | `score += total_lines / 50` |
+| 2 | Files changed | `score += file_count × 2` |
+| 3 | Commit message | refactor+5, feat/feature+4, fix+2, typo/docs−2 |
+| 4 | File type | +1 per source-code file (.py .js .ts .vue …) |
+| 5 | Security-sensitive path | +3 if path contains auth / payment / crypto … |
+| 6 | User pattern history | +3 if profile has recurring complex struggles |
+
+Thresholds: `score < 5` → simple · `5–14` → medium · `≥ 15` → complex
+
+### Per-Provider Model Tier Map
+
+| Provider | simple | medium | complex |
+|----------|--------|--------|---------|
+| OpenAI | `gpt-4o-mini` | `gpt-4o-mini` | org default (e.g. `gpt-4o`) |
+| Anthropic | `claude-3-haiku-20240307` | `claude-3-5-haiku-20241022` | org default (e.g. `claude-sonnet-4`) |
+| Google | `gemini-2.0-flash-lite` | `gemini-1.5-flash` | org default (e.g. `gemini-2.0-flash`) |
+
+### Routing Parameters
+
+| Tier | Model | Context files | max_tokens | Learning weight |
+|------|-------|--------------|------------|----------------|
+| simple | cheapest (auto) | 0 | 1 024 | 0.3 |
+| medium | lighter (auto) | 3 | 2 048 | 0.7 |
+| complex | org default | 5 | 4 096 | 1.0 |
+
+**Batch-only optimisation:** commits with `score < 3` (trivially simple) skip the LLM entirely and are stored with `llm_model = "skipped:simple"` to save cost on large repo histories.
+
+### Architecture Diagram
+
+```mermaid
+flowchart TD
+    webhook["Webhook / Batch trigger"]
+    diffExt["Diff Extraction"]
+    classifier["CommitClassifier\n(pure heuristics, no I/O)"]
+
+    subgraph scoring ["6-Layer Scoring"]
+        L1["Layer 1: Lines changed / 50"]
+        L2["Layer 2: Files changed x2"]
+        L3["Layer 3: Commit message keywords"]
+        L4["Layer 4: File type weights"]
+        L5["Layer 5: Security-sensitive paths +3"]
+        L6["Layer 6: User pattern history +3"]
+    end
+
+    decision{"Complexity score?"}
+
+    simple["Simple tier\nAuto cheapest model\n0 ctx files / 1024 tokens\nlearning weight 0.3"]
+    medium["Medium tier\nAuto lighter model\n3 ctx files / 2048 tokens\nlearning weight 0.7"]
+    complex["Complex tier\nOrg default model\n5 ctx files / 4096 tokens\nlearning weight 1.0"]
+
+    batchSkip["Batch only: score < 3\nskip LLM entirely"]
+
+    store["Store Evaluation\ncommit_complexity + complexity_score"]
+    profile["Update Developer Profile\nweighted by complexity tier"]
+
+    webhook --> diffExt
+    diffExt --> classifier
+    classifier --> scoring
+    scoring --> decision
+
+    decision -->|"score < 5"| simple
+    decision -->|"5 to 14"| medium
+    decision -->|">= 15"| complex
+    decision -->|"score < 3 batch only"| batchSkip
+
+    simple --> store
+    medium --> store
+    complex --> store
+    batchSkip --> store
+    store --> profile
+```
+
+### Implementation Files
+
+| File | Role |
+|------|------|
+| `ai_engine/app/services/classifier.py` | `CommitClassifier` + `CommitComplexity` dataclass |
+| `ai_engine/app/services/llm_adapter.py` | `PROVIDER_MODEL_TIERS` + `model_for_complexity()` + complexity-aware `evaluate_diff` |
+| `ai_engine/app/api/webhooks.py` | Classifier wired into `process_commit` |
+| `ai_engine/app/api/batch.py` | Classifier wired into `process_batch_job` + batch skip logic |
+| `django_backend/evaluations/models.py` | `commit_complexity` + `complexity_score` fields |
+| `django_backend/evaluations/migrations/0003_evaluation_complexity.py` | DB migration |
+| `django_backend/evaluations/serializers.py` | Fields exposed on `Evaluation` and `InternalEvaluationCreate` |
+
+---
+
+## 🆕 DevProfile Onboarding + Tracker Features (v2.1)
+
+### New Endpoints
+
+| Method | URL | Description |
+|--------|-----|-------------|
+| `GET` | `/api/users/me/dev-profile/` | Retrieve current user's developer profile |
+| `POST` | `/api/users/me/dev-profile/` | Create/update developer profile + seed SkillMetric |
+| `GET` | `/api/evaluations/patterns/` | List recurring issue patterns for current user |
+| `POST` | `/api/evaluations/patterns/<id>/resolve/` | Mark pattern as resolved |
+
+### New Frontend Routes
+
+| Route | View | Description |
+|-------|------|-------------|
+| `/dev-profile-setup` | `DevProfileSetupView.vue` | 7-step onboarding wizard (shown once after first login) |
+| `/timeline` | `CommitTimelineView.vue` | Chronological commit list with scores, complexity, findings |
+
+### New Files
+
+| File | Role |
+|------|------|
+| `django_backend/users/models.py` | `UserDevProfile` model + `dev_profile_completed` property on `User` |
+| `django_backend/users/migrations/0009_userdevprofile.py` | DB migration |
+| `django_backend/users/serializers.py` | `UserDevProfileSerializer` + `dev_profile_completed` in `UserSerializer` |
+| `django_backend/users/views.py` | `DevProfileView` (GET/POST) + `AdaptiveProfileView` enriched with dev profile |
+| `django_backend/evaluations/serializers.py` | `PatternSerializer` |
+| `django_backend/evaluations/views.py` | `PatternListView` + `PatternResolveView` |
+| `django_backend/evaluations/urls.py` | `/patterns/` routes |
+| `frontend/src/views/DevProfileSetupView.vue` | Wizard UI — 7 steps with progress bar |
+| `frontend/src/views/CommitTimelineView.vue` | Commit timeline with score badges |
+| `frontend/src/stores/auth.ts` | `devProfileCompleted` flag + `markDevProfileCompleted()` |
+| `frontend/src/router/index.ts` | `/dev-profile-setup` route + guard redirect |
+| `ai_engine/app/services/adaptive_profile.py` | `LEARNING_STYLE_INSTRUCTIONS`, `GOAL_CONTEXT`, enriched history section |
+
+### Adaptive LLM Prompt Enrichment
+
+When `UserDevProfile` exists, the following fields are included in the developer history section prepended to every LLM prompt:
+
+- **job_role** — tailors terminology (frontend vs backend vs fullstack)
+- **primary_language** — language-specific advice
+- **experience_years** — bootstraps `compute_level` when eval history is short
+- **current_goal** — frames findings in context of the developer's ambition
+- **learning_style** — controls explanation style (`short_tips`, `detailed`, `examples`, `challenges`)
+- **want_to_improve** — highlights self-reported weak area alongside detected weak areas
+
+---
+
+Ready to discuss and refine! 🚀

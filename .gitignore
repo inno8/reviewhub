@@ -53,3 +53,4 @@ build/
 # Misc
 *.bak
 *.tmp
+/doc

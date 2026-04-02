@@ -1,0 +1,69 @@
+version: "3.9"
+
+services:
+  db:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_DB: reviewhub
+      POSTGRES_USER: reviewhub
+      POSTGRES_PASSWORD: ${DB_PASSWORD:-reviewhub_dev}
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    ports:
+      - "5432:5432"
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U reviewhub"]
+      interval: 5s
+      timeout: 3s
+      retries: 5
+
+  django:
+    build: ./django_backend
+    environment:
+      DATABASE_URL: postgres://reviewhub:${DB_PASSWORD:-reviewhub_dev}@db:5432/reviewhub
+      SECRET_KEY: ${SECRET_KEY:-change-me-in-production}
+      DEBUG: ${DEBUG:-false}
+      ALLOWED_HOSTS: "*"
+      INTERNAL_API_KEY: ${INTERNAL_API_KEY:-dev-internal-key}
+      CORS_ALLOWED_ORIGINS: http://localhost,http://localhost:80,http://frontend
+    ports:
+      - "8000:8000"
+    depends_on:
+      db:
+        condition: service_healthy
+    command: >
+      sh -c "python manage.py migrate --noinput &&
+             gunicorn reviewhub.wsgi:application --bind 0.0.0.0:8000 --workers 3"
+
+  ai_engine:
+    build: ./ai_engine
+    environment:
+      BACKEND_API_URL: http://django:8000
+      BACKEND_API_KEY: ${INTERNAL_API_KEY:-dev-internal-key}
+      LLM_PROVIDER: ${LLM_PROVIDER:-}
+      LLM_API_KEY: ${LLM_API_KEY:-}
+      LLM_MODEL: ${LLM_MODEL:-gpt-4-turbo}
+      GITHUB_WEBHOOK_SECRET: ${GITHUB_WEBHOOK_SECRET:-}
+      GIT_CACHE_DIR: /repos
+      OPENCLAW_ENABLED: "true"
+    volumes:
+      - git_cache:/repos
+    ports:
+      - "8001:8001"
+    depends_on:
+      - django
+
+  frontend:
+    build:
+      context: ./frontend
+      args:
+        VITE_API_URL: /api
+    ports:
+      - "80:80"
+    depends_on:
+      - django
+      - ai_engine
+
+volumes:
+  pgdata:
+  git_cache:
