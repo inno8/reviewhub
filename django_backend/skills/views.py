@@ -416,7 +416,12 @@ class SkillBreakdownView(APIView):
         metric = metric_qs.first()
 
         score = metric.score if metric else 100.0
-        level = metric.level if metric else 0
+        # Compute level from score
+        if score >= 90: level = 4
+        elif score >= 75: level = 3
+        elif score >= 50: level = 2
+        elif score >= 25: level = 1
+        else: level = 0
 
         # Findings for this skill
         fs_qs = FindingSkill.objects.filter(
