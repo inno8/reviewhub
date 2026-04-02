@@ -5,6 +5,7 @@ Handles repository analysis for building developer profiles.
 import os
 import asyncio
 import subprocess
+import time
 from datetime import datetime
 from typing import Optional
 from pathlib import Path
@@ -14,6 +15,9 @@ from pydantic import BaseModel
 import httpx
 
 from app.core.config import settings
+from app.services.diff_extractor import DiffExtractor
+from app.services.llm_adapter import LLMAdapter
+from app.services.django_client import DjangoClient
 
 router = APIRouter()
 
@@ -28,6 +32,7 @@ class BatchStartRequest(BaseModel):
     target_email: Optional[str] = None
     max_commits: int = 500
     since_date: Optional[str] = None
+    project_id: Optional[int] = None
 
 
 class BatchCancelRequest(BaseModel):
@@ -143,62 +148,114 @@ async def process_batch_job(job_id: int, request: BatchStartRequest):
         total_commits = len(commits)
         await update_job_status(job_id, "analyzing", total_commits=total_commits)
         
-        # Step 3: Analyze each commit
+        # Step 3: Analyze each commit with LLM
         processed = 0
+        skipped = 0
         findings_count = 0
         skills_detected = set()
         patterns_detected = set()
-        
+
+        diff_extractor = DiffExtractor()
+        llm_adapter = LLMAdapter()
+        django_client = DjangoClient()
+
         for commit in commits:
             # Check if cancelled
             if active_jobs.get(job_id, {}).get("cancelled"):
                 await update_job_status(job_id, "cancelled")
                 return
-            
-            # Get diff for this commit
-            diff_result = subprocess.run(
-                ["git", "show", "--stat", "--format=", commit["sha"]],
-                cwd=repo_path,
-                capture_output=True,
-                text=True
-            )
-            
-            # Parse diff stats
-            lines_added = 0
-            lines_removed = 0
-            files_changed = 0
-            
-            for line in diff_result.stdout.strip().split('\n'):
-                if '|' in line:
-                    files_changed += 1
-                    if '+' in line:
-                        # Extract additions/deletions
-                        pass
-            
-            # TODO: Actual LLM analysis here
-            # For now, just track commits
-            
+
+            start_time = time.time()
+
+            try:
+                # Extract diff using DiffExtractor (reuses cached bare repo)
+                diff_data = await diff_extractor.extract_commit_diff(
+                    repo_url=request.repo_url,
+                    commit_sha=commit["sha"]
+                )
+
+                if not diff_data or not diff_data.get("files"):
+                    skipped += 1
+                    processed += 1
+                    continue
+
+                # Analyze each changed file with LLM
+                all_findings = []
+                total_score = 0
+                file_count = 0
+                total_tokens = 0
+
+                for file_diff in diff_data["files"]:
+                    result = await llm_adapter.evaluate_diff(
+                        diff=file_diff["diff"],
+                        file_path=file_diff["path"],
+                        language=file_diff.get("language", "unknown")
+                    )
+
+                    if result:
+                        all_findings.extend(result.findings)
+                        total_score += result.overall_score
+                        total_tokens += result.tokens_used
+                        file_count += 1
+
+                overall_score = total_score / file_count if file_count > 0 else 100
+                processing_ms = int((time.time() - start_time) * 1000)
+
+                # Create evaluation in Django (triggers SkillMetric updates)
+                if request.project_id:
+                    eval_result = await django_client.create_evaluation({
+                        "project_id": request.project_id,
+                        "commit_sha": commit["sha"],
+                        "commit_message": commit["message"],
+                        "commit_timestamp": commit["date"],
+                        "branch": request.branch,
+                        "author_name": commit["author_name"],
+                        "author_email": commit["author_email"],
+                        "files_changed": len(diff_data["files"]),
+                        "lines_added": diff_data.get("lines_added", 0),
+                        "lines_removed": diff_data.get("lines_removed", 0),
+                        "overall_score": overall_score,
+                        "llm_model": llm_adapter.model_name,
+                        "llm_tokens_used": total_tokens,
+                        "processing_ms": processing_ms,
+                        "findings": [f.model_dump() for f in all_findings],
+                        "batch_job_id": job_id,
+                    })
+
+                    if eval_result:
+                        findings_count += len(all_findings)
+                        for f in all_findings:
+                            for skill in f.skills_affected:
+                                skills_detected.add(skill)
+
+                print(f"[BATCH {job_id}] Commit {commit['sha'][:7]}: {len(all_findings)} findings, score {overall_score:.1f}")
+
+            except Exception as e:
+                print(f"[BATCH {job_id}] Error on commit {commit['sha'][:7]}: {e}")
+                skipped += 1
+
             processed += 1
-            
-            # Report progress every 10 commits
-            if processed % 10 == 0:
+
+            # Report progress every 5 commits
+            if processed % 5 == 0 or processed == total_commits:
                 await update_job_status(
                     job_id, "analyzing",
-                    processed_commits=processed
+                    processed_commits=processed,
+                    skipped_commits=skipped,
+                    findings_count=findings_count,
                 )
-            
+
             # Yield control to event loop
             await asyncio.sleep(0.01)
-        
+
         # Step 4: Build developer profile
         await update_job_status(job_id, "building_profile", processed_commits=processed)
-        
-        # TODO: Aggregate results into profile
-        
-        # Mark complete
+
+        # Mark complete — Django will build the profile on status change
         await update_job_status(
             job_id, "completed",
             processed_commits=processed,
+            skipped_commits=skipped,
             findings_count=findings_count,
             skills_detected=list(skills_detected),
             patterns_detected=list(patterns_detected)

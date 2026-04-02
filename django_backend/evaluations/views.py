@@ -15,7 +15,7 @@ from .serializers import (
     InternalEvaluationCreateSerializer,
     DashboardSerializer
 )
-from projects.models import Project
+from projects.models import Project, ProjectMember
 from skills.models import Skill, SkillMetric
 from users.models import User
 
@@ -59,7 +59,59 @@ class InternalEvaluationCreateView(APIView):
     """
     
     permission_classes = [permissions.AllowAny]  # TODO: Add API key auth
-    
+
+    def _resolve_author(self, author_email, project, batch_job_id=None):
+        """Match git author email to a system User via multiple strategies."""
+        # Strategy 1: Direct email match
+        try:
+            return User.objects.get(email=author_email)
+        except User.DoesNotExist:
+            pass
+
+        # Strategy 2: ProjectMember.git_email match for this project
+        member = ProjectMember.objects.filter(
+            project=project,
+            git_email=author_email
+        ).select_related('user').first()
+        if member:
+            return member.user
+
+        # Strategy 3: ProjectMember.git_email match across all projects
+        member = ProjectMember.objects.filter(
+            git_email=author_email
+        ).select_related('user').first()
+        if member:
+            return member.user
+
+        # Strategy 4: Fall back to batch job owner
+        if batch_job_id:
+            from batch.models import BatchJob
+            try:
+                batch_job = BatchJob.objects.get(id=batch_job_id)
+                return batch_job.user
+            except BatchJob.DoesNotExist:
+                pass
+
+        return None
+
+    def _detect_patterns(self, user, project, findings):
+        """Detect and track recurring patterns from findings."""
+        from .models import Pattern
+
+        for finding in findings:
+            for skill in finding.skills.select_related('category').all():
+                pattern_key = f"{skill.category.slug}_{finding.severity}"
+                pattern, created = Pattern.objects.get_or_create(
+                    user=user,
+                    project=project,
+                    pattern_key=pattern_key,
+                    defaults={
+                        "pattern_type": skill.category.name,
+                        "frequency": 0,
+                    }
+                )
+                pattern.increment(finding)
+
     def post(self, request):
         serializer = InternalEvaluationCreateSerializer(data=request.data)
         if not serializer.is_valid():
@@ -76,13 +128,12 @@ class InternalEvaluationCreateView(APIView):
                 status=status.HTTP_404_NOT_FOUND
             )
         
-        # Try to match author to user
-        author = None
-        try:
-            author = User.objects.get(email=data['author_email'])
-        except User.DoesNotExist:
-            pass
-        
+        # Match author to user (multi-strategy)
+        author = self._resolve_author(data['author_email'], project, data.get('batch_job_id'))
+
+        # Determine if this is a batch evaluation
+        is_batch = data.get('batch_job_id') is not None
+
         # Create evaluation
         evaluation = Evaluation.objects.create(
             project=project,
@@ -104,7 +155,12 @@ class InternalEvaluationCreateView(APIView):
             evaluated_at=timezone.now()
         )
         
+        # Skip individual notifications for batch evaluations
+        if is_batch:
+            evaluation._batch_skip_notifications = True
+
         # Create findings
+        created_findings = []
         for finding_data in data['findings']:
             finding = Finding.objects.create(
                 evaluation=evaluation,
@@ -118,7 +174,8 @@ class InternalEvaluationCreateView(APIView):
                 suggested_code=finding_data.get('suggested_code', ''),
                 explanation=finding_data.get('explanation', '')
             )
-            
+            created_findings.append(finding)
+
             # Link skills
             for skill_slug in finding_data.get('skills_affected', []):
                 try:
@@ -128,7 +185,7 @@ class InternalEvaluationCreateView(APIView):
                         skill=skill,
                         impact_score=5.0  # Default impact
                     )
-                    
+
                     # Update skill metrics if author is known
                     if author:
                         metric, _ = SkillMetric.objects.get_or_create(
@@ -137,10 +194,14 @@ class InternalEvaluationCreateView(APIView):
                             skill=skill
                         )
                         metric.update_score(new_issues=1)
-                        
+
                 except Skill.DoesNotExist:
                     pass
-        
+
+        # Detect patterns (recurring issues by category + severity)
+        if author and created_findings:
+            self._detect_patterns(author, project, created_findings)
+
         return Response(
             EvaluationSerializer(evaluation).data,
             status=status.HTTP_201_CREATED

@@ -49,6 +49,7 @@ class BatchJobListCreateView(generics.ListCreateAPIView):
                     'target_email': job.target_email,
                     'max_commits': job.max_commits,
                     'since_date': str(job.since_date) if job.since_date else None,
+                    'project_id': job.project_id,
                 },
                 timeout=5
             )
@@ -185,9 +186,17 @@ class BatchJobInternalUpdateView(APIView):
             job.started_at = timezone.now()
         if data.get('status') in ['completed', 'failed', 'cancelled']:
             job.completed_at = timezone.now()
-        
+
         job.save()
-        
+
+        # Build developer profile when batch completes
+        if data.get('status') == 'completed' and job.user and job.project:
+            from .services import build_profile_from_batch
+            try:
+                build_profile_from_batch(job.user, job)
+            except Exception as e:
+                print(f"Failed to build profile for job {job.id}: {e}")
+
         serializer = BatchJobSerializer(job)
         return Response(serializer.data)
 

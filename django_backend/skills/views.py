@@ -114,6 +114,28 @@ class SkillTrendsView(APIView):
         # Build trend data
         trends = []
         for metric in metrics:
+            # Get historical data points from evaluations
+            from evaluations.models import FindingSkill
+            from django.db.models import Count
+            from django.db.models.functions import TruncWeek
+
+            weekly_issues = (
+                FindingSkill.objects.filter(
+                    skill=metric.skill,
+                    finding__evaluation__author=request.user,
+                )
+                .annotate(week=TruncWeek('finding__evaluation__created_at'))
+                .values('week')
+                .annotate(count=Count('id'))
+                .order_by('week')
+            )[:12]
+
+            data_points = [
+                {"date": dp["week"].strftime("%Y-%m-%d"), "issues": dp["count"]}
+                for dp in weekly_issues
+                if dp["week"]
+            ]
+
             trends.append({
                 'skill_slug': metric.skill.slug,
                 'skill_name': metric.skill.name,
@@ -121,8 +143,7 @@ class SkillTrendsView(APIView):
                 'trend': metric.trend,
                 'issue_count': metric.issue_count,
                 'fix_rate': metric.fix_rate,
-                # TODO: Add historical data points from evaluation history
-                'data_points': []
+                'data_points': data_points,
             })
         
         return Response(trends)
@@ -165,7 +186,67 @@ class DashboardOverviewView(APIView):
         # Fixed count
         fixed_count = findings.filter(is_fixed=True).count()
         fix_rate = (fixed_count / total_findings * 100) if total_findings > 0 else 0
-        
+
+        # Score trend (last 10 evaluations)
+        recent_evals = evaluations.order_by('-created_at')[:10]
+        score_trend = [
+            {
+                "date": e.created_at.strftime("%Y-%m-%d"),
+                "score": float(e.overall_score),
+            }
+            for e in reversed(recent_evals)
+            if e.overall_score is not None
+        ]
+
+        # Top 3 priority skills to improve (lowest scores)
+        priority_metrics = SkillMetric.objects.filter(
+            user=request.user
+        ).select_related('skill')
+        if project_id:
+            priority_metrics = priority_metrics.filter(project_id=project_id)
+        priority_metrics = priority_metrics.order_by('score')[:3]
+        priorities = [
+            {
+                "skill": m.skill.name,
+                "skill_slug": m.skill.slug,
+                "score": float(m.score),
+                "issues": m.issue_count,
+                "trend": m.trend,
+            }
+            for m in priority_metrics
+        ]
+
+        # Developer profile (if exists)
+        profile_data = None
+        try:
+            from batch.models import DeveloperProfile
+            profile = DeveloperProfile.objects.get(user=request.user)
+            profile_data = {
+                "level": profile.level,
+                "trend": profile.trend,
+                "overall_score": float(profile.overall_score),
+                "strengths_count": len(profile.strengths) if profile.strengths else 0,
+                "weaknesses_count": len(profile.weaknesses) if profile.weaknesses else 0,
+            }
+        except Exception:
+            pass
+
+        # Pattern insights (top recurring patterns)
+        from evaluations.models import Pattern
+        pattern_qs = Pattern.objects.filter(user=request.user, is_resolved=False)
+        if project_id:
+            pattern_qs = pattern_qs.filter(project_id=project_id)
+        top_patterns = pattern_qs.order_by('-frequency')[:5]
+        pattern_insights = [
+            {
+                "type": p.pattern_type,
+                "key": p.pattern_key,
+                "frequency": p.frequency,
+                "message": f"You have {p.frequency} recurring {p.pattern_type} issues",
+            }
+            for p in top_patterns
+        ]
+
         return Response({
             'total_evaluations': total_evaluations,
             'total_findings': total_findings,
@@ -174,7 +255,11 @@ class DashboardOverviewView(APIView):
             'warning_count': warning_count,
             'info_count': info_count,
             'fixed_count': fixed_count,
-            'fix_rate': round(fix_rate, 1)
+            'fix_rate': round(fix_rate, 1),
+            'score_trend': score_trend,
+            'priorities': priorities,
+            'profile': profile_data,
+            'pattern_insights': pattern_insights,
         })
 
 

@@ -90,6 +90,7 @@ class InternalEvaluationCreateSerializer(serializers.Serializer):
     llm_tokens_used = serializers.IntegerField()
     processing_ms = serializers.IntegerField()
     findings = serializers.ListField(child=serializers.DictField())
+    batch_job_id = serializers.IntegerField(required=False, allow_null=True)
 
 
 class DashboardSerializer(serializers.Serializer):
