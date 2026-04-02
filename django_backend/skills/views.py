@@ -267,6 +267,36 @@ class PerformanceStatsView(APIView):
             else:
                 level = 'beginner'
 
+        # Progression data — per-commit scores chronologically
+        all_evals_ordered = evals.order_by('created_at').values_list(
+            'commit_sha', 'commit_message', 'overall_score', 'created_at'
+        )
+        progression = []
+        running_avg = 0
+        for i, (sha, msg, score, created) in enumerate(all_evals_ordered):
+            if score is None:
+                continue
+            running_avg = ((running_avg * i) + score) / (i + 1)
+            # Count findings for this eval
+            eval_findings = findings.filter(evaluation__commit_sha=sha).count()
+            progression.append({
+                'commit': sha[:7],
+                'message': (msg or '')[:50],
+                'score': float(score),
+                'runningAvg': round(running_avg, 1),
+                'findings': eval_findings,
+                'date': created.strftime('%Y-%m-%d'),
+            })
+
+        # Improvement metrics
+        improving = False
+        improvement_pct = 0
+        if len(progression) >= 3:
+            first_3_avg = sum(p['score'] for p in progression[:3]) / 3
+            last_3_avg = sum(p['score'] for p in progression[-3:]) / 3
+            improvement_pct = round(last_3_avg - first_3_avg, 1)
+            improving = improvement_pct > 0
+
         return Response({
             'commitCount': commit_count,
             'findingCount': finding_count,
@@ -282,6 +312,9 @@ class PerformanceStatsView(APIView):
             'categoryBreakdown': category_breakdown,
             'scoreTrend': score_trend,
             'level': level,
+            'progression': progression,
+            'improving': improving,
+            'improvementPct': improvement_pct,
         })
 
 

@@ -345,11 +345,74 @@ function openSkillBreakdown(id: number) { breakdownSkillId.value = id; breakdown
           </div>
         </section>
 
-        <!-- Score Trend -->
-        <section v-if="performance?.scoreTrend?.length" class="mb-12">
+        <!-- Progression Tracker -->
+        <section v-if="performance?.progression?.length >= 2" class="mb-12">
           <div class="bg-surface-container-low rounded-3xl p-8 border border-outline-variant/10">
-            <h4 class="text-xl font-bold mb-4">Score Trend Across Commits</h4>
-            <TrendChart title="" :points="performance.scoreTrend.map((s: any) => ({ label: s.date, value: s.score }))" :width="800" :height="250" />
+            <div class="flex justify-between items-start mb-6">
+              <div>
+                <h4 class="text-xl font-bold">Your Coding Progression</h4>
+                <p class="text-sm text-outline mt-1">Each point is a commit — the line shows your running average improving over time</p>
+              </div>
+              <div v-if="performance.progression.length >= 3"
+                class="flex items-center gap-2 px-4 py-2 rounded-lg"
+                :class="performance.improving ? 'bg-green-500/10 text-green-400' : 'bg-orange-500/10 text-orange-400'">
+                <span class="material-symbols-outlined text-sm">{{ performance.improving ? 'trending_up' : 'trending_down' }}</span>
+                <span class="text-sm font-bold">
+                  {{ performance.improving ? '+' : '' }}{{ performance.improvementPct }}%
+                  {{ performance.improving ? 'improvement' : 'decline' }}
+                </span>
+                <span class="text-xs text-outline ml-1">(first 3 vs last 3 commits)</span>
+              </div>
+            </div>
+
+            <!-- Legend -->
+            <div class="flex gap-6 mb-4 text-xs">
+              <span class="flex items-center gap-2"><span class="w-3 h-3 rounded-full bg-primary"></span> Commit Score (0-100)</span>
+              <span class="flex items-center gap-2"><span class="w-8 h-0.5 bg-green-400"></span> Running Average</span>
+              <span class="flex items-center gap-2"><span class="w-3 h-3 rounded-full" style="background:#F78166"></span> Findings Count</span>
+            </div>
+
+            <!-- Chart -->
+            <TrendChart
+              title=""
+              :points="performance.progression.map((p: any) => ({ label: p.commit, value: p.score }))"
+              :secondary-points="performance.progression.map((p: any) => ({ label: p.commit, value: p.findings }))"
+              :width="800" :height="280"
+            />
+
+            <!-- Score zones reference -->
+            <div class="flex justify-between mt-4 text-[10px] text-outline px-4">
+              <span class="text-red-400">0-39: Needs Work</span>
+              <span class="text-orange-400">40-59: Developing</span>
+              <span class="text-yellow-400">60-74: Good</span>
+              <span class="text-green-400">75-89: Strong</span>
+              <span class="text-primary">90-100: Expert</span>
+            </div>
+
+            <!-- Per-commit details (collapsible) -->
+            <details class="mt-6">
+              <summary class="text-sm font-bold text-outline cursor-pointer hover:text-on-surface">
+                View commit-by-commit breakdown ({{ performance.progression.length }} commits)
+              </summary>
+              <div class="mt-3 space-y-1 max-h-64 overflow-y-auto">
+                <div v-for="(p, i) in performance.progression" :key="i"
+                  class="flex items-center gap-3 py-2 px-3 rounded-lg text-sm"
+                  :class="i % 2 === 0 ? 'bg-surface-container-lowest' : ''">
+                  <span class="w-8 h-8 rounded-full flex items-center justify-center text-xs font-bold"
+                    :class="{
+                      'bg-red-500/20 text-red-400': p.score < 40,
+                      'bg-orange-500/20 text-orange-400': p.score >= 40 && p.score < 60,
+                      'bg-yellow-500/20 text-yellow-400': p.score >= 60 && p.score < 75,
+                      'bg-green-500/20 text-green-400': p.score >= 75 && p.score < 90,
+                      'bg-primary/20 text-primary': p.score >= 90,
+                    }">{{ Math.round(p.score) }}</span>
+                  <code class="text-xs text-outline w-16">{{ p.commit }}</code>
+                  <span class="flex-1 truncate">{{ p.message }}</span>
+                  <span class="text-xs text-outline">{{ p.findings }} issues</span>
+                  <span class="text-xs text-outline">avg: {{ p.runningAvg }}</span>
+                </div>
+              </div>
+            </details>
           </div>
         </section>
 
