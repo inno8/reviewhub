@@ -87,15 +87,24 @@ async function fetchUsers() {
   loading.value = true;
   try {
     const { data } = await api.users.list();
-    users.value = data.users;
+    // Support both DRF format and legacy format
+    users.value = data.results || data.users || data || [];
+  } catch (error) {
+    console.error('Failed to fetch users:', error);
+    users.value = [];
   } finally {
     loading.value = false;
   }
 }
 
 async function fetchProjects() {
-  const { data } = await api.projects.list();
-  projects.value = data.projects;
+  try {
+    const { data } = await api.projects.list();
+    projects.value = data.results || data.projects || data || [];
+  } catch (error) {
+    console.error('Failed to fetch projects:', error);
+    projects.value = [];
+  }
 }
 
 async function saveUser() {

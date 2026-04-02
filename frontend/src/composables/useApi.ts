@@ -47,12 +47,21 @@ client.interceptors.request.use((config) => {
   return config;
 });
 
+// Track if we're currently on a public page to prevent redirect loops
+let skipAuthRedirect = false;
+export function setSkipAuthRedirect(skip: boolean) {
+  skipAuthRedirect = skip;
+}
+
 client.interceptors.response.use(
   (response) => response,
   (error) => {
     if (error?.response?.status === 401) {
-      localStorage.removeItem('reviewhub_token');
-      if (window.location.pathname !== '/login') {
+      // Don't redirect if we're on a public page or during bootstrap
+      const publicPaths = ['/login', '/onboard'];
+      const isPublicPage = publicPaths.some(p => window.location.pathname.startsWith(p));
+      if (!isPublicPage && !skipAuthRedirect) {
+        localStorage.removeItem('reviewhub_token');
         window.location.href = '/login';
       }
     }
@@ -61,70 +70,165 @@ client.interceptors.response.use(
 );
 
 export const api = {
+  onboard: {
+    checkEmail: (email: string) => client.post('/onboard/check-email/', { email }),
+    verifyCode: (email: string, code: string) => client.post('/onboard/verify-code/', { email, code }),
+    setPassword: (token: string, password: string) => client.post('/onboard/set-password/', { token, password }),
+  },
   auth: {
-    login: (email: string, password: string) => client.post('/auth/login', { email, password }),
-    me: () => client.get('/auth/me'),
-    logout: () => client.post('/auth/logout'),
+    // Django JWT authentication
+    login: (email: string, password: string) => client.post('/auth/token/', { email, password }),
+    register: (data: CreateUser) => client.post('/users/register/', data),
+    me: () => client.get('/users/me/'),
+    logout: () => {
+      localStorage.removeItem('reviewhub_token');
+      return Promise.resolve({ data: { message: 'Logged out' } });
+    },
   },
   projects: {
-    list: () => client.get('/projects'),
-    get: (id: number) => client.get(`/projects/${id}`),
-    getBranches: (id: number) => client.get(`/projects/${id}/branches`),
-    createFromUrl: (url: string) => client.post('/projects/from-url', { url }),
+    list: () => client.get('/projects/'),
+    get: (id: number) => client.get(`/projects/${id}/`),
+    getBranches: (id: number) => client.get(`/projects/${id}/branches/`),
+    createFromUrl: (url: string) => client.post('/projects/', { url }),
   },
+  evaluations: {
+    list: (params: ReviewFilters = {}) => client.get('/evaluations/', { params }),
+    get: (id: number) => client.get(`/evaluations/${id}/`),
+    dashboard: (projectId?: number) => client.get('/evaluations/dashboard/', { params: { project: projectId } }),
+    // Legacy reviews API (for backward compatibility during migration)
+    calendar: (projectId: number, month: string) => {
+      console.warn('Calendar API not yet implemented in Django backend');
+      return Promise.resolve({ data: { dates: [] as string[] } });
+    },
+    trigger: (projectId: number, branches?: string[]) => {
+      console.warn('Manual trigger not needed - use webhook flow');
+      return Promise.resolve({ data: { message: 'Use webhooks instead' } });
+    },
+  },
+  // Keep reviews as alias during migration
   reviews: {
-    list: (params: ReviewFilters = {}) => client.get('/reviews', { params }),
-    calendar: (projectId: number, month: string) =>
-      client.get('/reviews/calendar', { params: { projectId, month } }),
-    trigger: (projectId: number, branches?: string[]) =>
-      client.post('/reviews/trigger', { projectId, branches }),
-    importMarkdown: (projectId: number, date: string) =>
-      client.post(`/reviews/import/${date}`, { projectId }),
-    syncMarkdown: (projectId: number) =>
-      client.post('/reviews/sync-markdown', { projectId }),
+    list: (params: ReviewFilters = {}) => client.get('/evaluations/', { params }),
+    calendar: (projectId: number, month: string) => Promise.resolve({ data: { dates: [] as string[] } }),
+    trigger: (projectId: number, branches?: string[]) => Promise.resolve({ data: { message: 'Use webhooks instead', totalFindings: 0 } }),
+    importMarkdown: (projectId: number, date: string) => Promise.resolve({ data: { message: 'Not implemented' } }),
+    syncMarkdown: (projectId: number) => Promise.resolve({ data: { message: 'Not implemented' } }),
   },
   findings: {
-    list: (params: FindingFilters = {}) => client.get('/findings', { params }),
-    get: (id: number) => client.get(`/findings/${id}`),
-    getFileContent: (id: number) => client.get(`/findings/${id}/file-content`),
-    markUnderstood: (id: number) => client.patch(`/findings/${id}/understood`),
-    requestExplanation: (id: number) => client.post(`/findings/${id}/request-explanation`),
-    applyFix: (id: number) => client.post(`/findings/${id}/apply-fix`),
-    markFixed: (id: number) => client.patch(`/findings/${id}/fixed`),
+    list: (params: FindingFilters = {}) => client.get('/evaluations/findings/', { params }),
+    get: (id: number) => client.get(`/evaluations/findings/${id}/`),
+    markFixed: (id: number, commitSha?: string) => client.post(`/evaluations/findings/${id}/fix/`, { commit_sha: commitSha }),
+    // Not yet implemented in Django
+    getFileContent: (id: number) => {
+      console.warn('File content API not yet implemented');
+      return Promise.resolve({ data: { content: '' } });
+    },
+    markUnderstood: (id: number) => Promise.resolve({ data: { markedUnderstood: true } }),
+    requestExplanation: (id: number) => Promise.resolve({ data: { message: 'Not implemented' } }),
+    applyFix: (id: number) => Promise.resolve({ data: { prUrl: '', message: 'Not implemented' } }),
   },
   files: {
     getContent: (projectId: number, branch: string, filePath: string) =>
       client.get(`/files/${projectId}/${encodeURIComponent(branch)}/${encodeURIComponent(filePath)}`),
   },
   users: {
-    list: () => client.get('/users'),
-    me: () => client.get('/users/me'),
-    updateMe: (data: Omit<UpdateUser, 'role' | 'projectIds'>) => client.patch('/users/me', data),
-    create: (data: CreateUser) => client.post('/users', data),
-    update: (id: number, data: UpdateUser) => client.patch(`/users/${id}`, data),
-    delete: (id: number) => client.delete(`/users/${id}`),
-    getProjects: (id: number) => client.get(`/users/${id}/projects`),
-    assignProjects: (id: number, projectIds: number[]) => client.post(`/users/${id}/projects`, { projectIds }),
+    list: () => client.get('/users/'),
+    me: () => client.get('/users/me/'),
+    updateMe: (data: Omit<UpdateUser, 'role' | 'projectIds'>) => client.patch('/users/me/', data),
+    create: (data: CreateUser) => client.post('/users/', data),
+    update: (id: number, data: UpdateUser) => client.patch(`/users/${id}/`, data),
+    delete: (id: number) => client.delete(`/users/${id}/`),
+    getProjects: (id: number) => client.get(`/users/${id}/projects/`),
+    assignProjects: (id: number, projectIds: number[]) => client.post(`/users/${id}/projects/`, { projectIds }),
   },
   performance: {
-    get: (userId: number, params: PerformanceParams) => client.get(`/performance/${userId}`, { params }),
+    // Performance endpoints not yet implemented in Django v2 - return mock data
+    get: (userId: number, params: PerformanceParams) => 
+      Promise.resolve({ data: { 
+        totalReviews: 0, 
+        averageScore: 0, 
+        criticalIssues: 0, 
+        recommendations: [],
+        commitCount: 0,
+        findingCount: 0,
+        fixRate: 0,
+        reviewVelocity: null,
+        strengths: [],
+        growthAreas: []
+      } }),
     trends: (userId: number, params: { projectId: number; weeks?: number }) =>
-      client.get(`/performance/${userId}/trends`, { params }),
+      Promise.resolve({ data: [] }),
     recommendations: (userId: number, params: { projectId: number }) =>
-      client.get(`/performance/${userId}/recommendations`, { params }),
+      Promise.resolve({ data: [] }),
     leaderboard: (params: { projectId: number; periodType: 'DAILY' | 'WEEKLY' | 'MONTHLY' }) =>
-      client.get('/performance/leaderboard', { params }),
+      Promise.resolve({ data: [] }),
   },
   skills: {
-    categories: () => client.get('/skills/categories'),
-    user: (userId: number) => client.get(`/skills/user/${userId}`),
+    categories: () => client.get('/skills/categories/'),
+    user: (userId: number) => client.get(`/skills/user/${userId}/`),
+    // Breakdown not implemented yet - return empty placeholder data
     breakdown: (userId: number, skillId: number, projectId: number) =>
-      client.get(`/skills/user/${userId}/breakdown/${skillId}`, { params: { projectId } }),
+      Promise.resolve({ data: { 
+        skill: { 
+          id: skillId, 
+          name: 'Skill', 
+          displayName: 'Skill', 
+          description: 'Skill details not available yet.',
+          category: { id: 1, name: 'General', displayName: 'General', icon: 'school' }
+        }, 
+        score: 0,
+        level: 0,
+        baseScore: 100,
+        deductions: [],
+        tips: ['Complete more code reviews to build your skill profile.'],
+        findings: [], 
+        trend: [] 
+      } }),
     recalculate: (userId: number, projectId: number) =>
-      client.post(`/skills/recalculate/${userId}`, null, { params: { projectId } }),
+      Promise.resolve({ data: { success: true } }),
+    recommendations: (projectId?: number) => client.get('/skills/recommendations/', { params: { project: projectId } }),
+  },
+  dashboard: {
+    overview: (projectId?: number) => client.get('/skills/dashboard/overview/', { params: { project: projectId } }),
+    skills: (projectId?: number) => client.get('/skills/dashboard/skills/', { params: { project: projectId } }),
+    progress: (projectId?: number, weeks?: number) => client.get('/skills/dashboard/progress/', { params: { project: projectId, weeks } }),
+    recent: (projectId?: number, limit?: number) => client.get('/skills/dashboard/recent/', { params: { project: projectId, limit } }),
+  },
+  notifications: {
+    list: (limit?: number) => client.get('/notifications/', { params: { limit } }),
+    markAsRead: (id: number) => client.patch(`/notifications/${id}/read/`),
+    markAllRead: () => client.post('/notifications/mark-all-read/'),
+    unreadCount: () => client.get('/notifications/unread-count/'),
+  },
+  batch: {
+    listJobs: () => client.get('/batch/jobs/'),
+    getJob: (id: number) => client.get(`/batch/jobs/${id}/`),
+    createJob: (data: { repo_url: string; branch?: string; target_email?: string; max_commits?: number }) => 
+      client.post('/batch/jobs/', data),
+    cancelJob: (id: number) => client.delete(`/batch/jobs/${id}/`),
+    getJobResults: (id: number) => client.get(`/batch/jobs/${id}/results/`),
+    getProfile: () => client.get('/batch/profile/'),
+    getStats: () => client.get('/batch/stats/'),
   },
 };
 
 export function useApi() {
-  return client;
+  return {
+    ...api,
+    // Project member management
+    getProjectMembers: async (projectId: number) => {
+      const response = await client.get(`/projects/${projectId}/members/`);
+      return response.data;
+    },
+    inviteProjectMember: async (projectId: number, email: string, role: string) => {
+      const response = await client.post(`/projects/${projectId}/members/`, { email, role });
+      return response.data;
+    },
+    updateProjectMemberRole: async (projectId: number, userId: number, role: string) => {
+      const response = await client.patch(`/projects/${projectId}/members/${userId}/`, { role });
+      return response.data;
+    },
+    removeProjectMember: async (projectId: number, userId: number) => {
+      await client.delete(`/projects/${projectId}/members/${userId}/`);
+    },
+  };
 }

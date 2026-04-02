@@ -19,13 +19,35 @@ export const useProjectsStore = defineStore('projects', () => {
     loading.value = true;
     try {
       const { data } = await api.projects.list();
-      projects.value = data.projects;
+      
+      // Map Django DRF response to expected structure
+      if (data.results) {
+        projects.value = data.results.map((project: any) => ({
+          id: project.id,
+          name: project.name,
+          displayName: project.name, // Use same name for display
+        }));
+      } else if (data.projects) {
+        // Legacy V1 response
+        projects.value = data.projects;
+      } else if (Array.isArray(data)) {
+        // Direct array response
+        projects.value = data.map((project: any) => ({
+          id: project.id,
+          name: project.name,
+          displayName: project.name,
+        }));
+      } else {
+        projects.value = [];
+      }
+      
       if (!selectedProjectId.value && projects.value.length > 0) {
         selectedProjectId.value = projects.value[0].id;
         localStorage.setItem('reviewhub_project_id', String(selectedProjectId.value));
       }
       if (
         selectedProjectId.value &&
+        projects.value.length > 0 &&
         !projects.value.some((project) => project.id === selectedProjectId.value)
       ) {
         selectedProjectId.value = projects.value[0]?.id ?? null;
@@ -35,6 +57,9 @@ export const useProjectsStore = defineStore('projects', () => {
           localStorage.removeItem('reviewhub_project_id');
         }
       }
+    } catch (error) {
+      console.error('Failed to fetch projects:', error);
+      projects.value = [];
     } finally {
       loading.value = false;
     }

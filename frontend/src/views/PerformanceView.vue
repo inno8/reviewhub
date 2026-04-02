@@ -87,13 +87,16 @@ async function fetchProjectUsers() {
   if (!projectsStore.selectedProjectId) return;
   try {
     const { data } = await api.users.list();
-    users.value = data.users.filter((u: any) => u.role === 'INTERN');
+    const allUsers = data.results || data.users || data || [];
+    // Filter non-admin users (INTERN role maps to developer/viewer)
+    users.value = allUsers.filter((u: any) => u.role !== 'admin' && u.role !== 'ADMIN');
     if (users.value.length > 0 && !selectedUserId.value) {
       selectedUserId.value = users.value[0].id;
     }
     await Promise.all([loadPerformance(), loadTrends(), loadSkills()]);
   } catch (e) {
     console.error('Failed to fetch users', e);
+    users.value = [];
   }
 }
 

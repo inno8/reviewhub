@@ -6,17 +6,25 @@ import FileReviewView from '@/views/FileReviewView.vue';
 import PerformanceView from '@/views/PerformanceView.vue';
 import UserManagementView from '@/views/UserManagementView.vue';
 import SettingsView from '@/views/SettingsView.vue';
+import OnboardView from '@/views/OnboardView.vue';
+import SkillsDashboardView from '@/views/SkillsDashboardView.vue';
+import NotificationsView from '@/views/NotificationsView.vue';
+import BatchAnalysisView from '@/views/BatchAnalysisView.vue';
 import { useAuthStore } from '@/stores/auth';
 
 const router = createRouter({
   history: createWebHistory(),
   routes: [
     { path: '/login', name: 'login', component: LoginView, meta: { public: true } },
+    { path: '/onboard', name: 'onboard', component: OnboardView, meta: { public: true } },
     { path: '/', name: 'dashboard', component: DashboardView },
     { path: '/findings/:id', name: 'finding-detail', component: FindingDetailView, props: true },
     { path: '/file-review', name: 'file-review', component: FileReviewView },
+    { path: '/skills', name: 'skills', component: SkillsDashboardView },
     { path: '/insights', name: 'insights', component: PerformanceView },
+    { path: '/notifications', name: 'notifications', component: NotificationsView },
     { path: '/team', name: 'team', component: UserManagementView, meta: { admin: true } },
+    { path: '/batch', name: 'batch', component: BatchAnalysisView },
     { path: '/settings', name: 'settings', component: SettingsView },
   ],
 });

@@ -1,6 +1,6 @@
 import { computed, ref } from 'vue';
 import { defineStore } from 'pinia';
-import { api } from '@/composables/useApi';
+import { api, setSkipAuthRedirect } from '@/composables/useApi';
 
 export interface AuthUser {
   id: number;
@@ -22,9 +22,23 @@ export const useAuthStore = defineStore('auth', () => {
     loading.value = true;
     try {
       const { data } = await api.auth.login(email, password);
-      token.value = data.token;
-      user.value = data.user;
-      localStorage.setItem('reviewhub_token', data.token);
+      // Django JWT returns { access, refresh }
+      const newToken = data.access || data.token; // Support both formats
+      if (newToken) {
+        token.value = newToken;
+        localStorage.setItem('reviewhub_token', newToken);
+      }
+      
+      // Fetch user profile separately
+      const meResponse = await api.auth.me();
+      // Express returns { user: {...} }
+      const userData = meResponse.data.user || meResponse.data;
+      user.value = {
+        id: userData.id,
+        username: userData.username,
+        email: userData.email,
+        role: mapRoleToFrontend(userData.role),
+      };
     } finally {
       loading.value = false;
     }
@@ -48,15 +62,53 @@ export const useAuthStore = defineStore('auth', () => {
       initialized.value = true;
       return;
     }
+    // Skip auth redirect during bootstrap to prevent redirect loops
+    setSkipAuthRedirect(true);
     try {
       const { data } = await api.auth.me();
-      user.value = data.user;
+      // Express returns { user: {...} }
+      const userData = data.user || data;
+      user.value = {
+        id: userData.id,
+        username: userData.username,
+        email: userData.email,
+        role: mapRoleToFrontend(userData.role),
+      };
     } catch {
-      await logout();
+      // Token is invalid, clear it silently
+      token.value = null;
+      user.value = null;
+      localStorage.removeItem('reviewhub_token');
     } finally {
+      setSkipAuthRedirect(false);
       initialized.value = true;
     }
   }
+  
+  function mapRoleToFrontend(role: string): 'ADMIN' | 'INTERN' {
+    // Map roles to frontend format (Express uses ADMIN/INTERN directly)
+    if (role === 'ADMIN' || role === 'admin') {
+      return 'ADMIN';
+    }
+    return 'INTERN';
+  }
 
-  return { token, user, loading, initialized, isAuthenticated, isAdmin, login, logout, bootstrap };
+  function setTokens(accessToken: string, refreshToken?: string) {
+    token.value = accessToken;
+    localStorage.setItem('reviewhub_token', accessToken);
+    if (refreshToken) {
+      localStorage.setItem('reviewhub_refresh_token', refreshToken);
+    }
+  }
+
+  function setUser(userData: any) {
+    user.value = {
+      id: userData.id,
+      username: userData.username,
+      email: userData.email,
+      role: mapRoleToFrontend(userData.role || 'INTERN'),
+    };
+  }
+
+  return { token, user, loading, initialized, isAuthenticated, isAdmin, login, logout, bootstrap, setTokens, setUser };
 });

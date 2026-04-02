@@ -110,8 +110,8 @@ async function handleSubmit() {
           <!-- Footer Links -->
           <div class="mt-8 pt-6 border-t border-outline-variant/10 text-center">
             <p class="text-sm text-on-surface-variant">
-              New to the hub?
-              <a href="#" class="text-primary-container font-semibold hover:underline ml-1">Request Access</a>
+              First time here?
+              <router-link to="/onboard" class="text-primary-container font-semibold hover:underline ml-1">Set up your account</router-link>
             </p>
           </div>
         </div>
@@ -133,7 +133,7 @@ async function handleSubmit() {
     <!-- Footer -->
     <footer class="mt-auto py-8 w-full max-w-4xl flex flex-col md:flex-row justify-between items-center px-6 gap-4">
       <div class="text-[10px] uppercase tracking-[0.2em] text-outline font-medium">
-        © 2024 ReviewHub
+        © 2026 ReviewHub
       </div>
       <div class="flex gap-6">
         <a href="#" class="text-[10px] uppercase tracking-[0.2em] text-outline hover:text-primary transition-colors">Documentation</a>
