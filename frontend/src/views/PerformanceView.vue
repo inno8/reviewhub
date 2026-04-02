@@ -331,7 +331,9 @@ function openSkillBreakdown(id: number) { breakdownSkillId.value = id; breakdown
           <div class="bg-surface-container-low p-6 rounded-xl">
             <p class="text-outline text-xs font-bold uppercase tracking-wider mb-4">Top Issue Areas</p>
             <div v-if="performance.categoryBreakdown?.length" class="space-y-2">
-              <div v-for="cat in performance.categoryBreakdown.slice(0, 6)" :key="cat.name" class="flex items-center gap-3">
+              <div v-for="cat in performance.categoryBreakdown.slice(0, 6)" :key="cat.name"
+                class="flex items-center gap-3 cursor-pointer hover:bg-surface-container-lowest rounded-lg p-1 -m-1 transition-colors"
+                @click="cat.id && openSkillBreakdown(cat.id)">
                 <span class="text-xs font-medium w-28 truncate">{{ cat.name }}</span>
                 <div class="flex-1 bg-surface-container-lowest rounded-full h-3 overflow-hidden">
                   <div class="h-full bg-tertiary rounded-full transition-all"
@@ -339,6 +341,7 @@ function openSkillBreakdown(id: number) { breakdownSkillId.value = id; breakdown
                   </div>
                 </div>
                 <span class="text-xs font-bold w-6 text-right">{{ cat.count }}</span>
+                <span class="material-symbols-outlined text-xs text-outline">chevron_right</span>
               </div>
             </div>
             <p v-else class="text-sm text-outline text-center py-4">No data yet</p>

@@ -670,8 +670,8 @@ function goBack() {
               >
                 <div class="flex items-center gap-2 mb-2">
                   <span class="text-xs font-bold text-outline">#{{ idx + 1 }}</span>
-                  <span :class="['px-1.5 py-0.5 rounded text-[9px] font-bold uppercase border', getCategoryClass(finding.category)]">
-                    {{ finding.category.replace('_', ' ') }}
+                  <span :class="['px-1.5 py-0.5 rounded text-[9px] font-bold uppercase border', getCategoryClass(finding.category || finding.severity || '')]">
+                    {{ (finding.category || finding.severity || 'unknown').replace('_', ' ') }}
                   </span>
                 </div>
                 <p class="text-xs text-on-surface-variant line-clamp-2">

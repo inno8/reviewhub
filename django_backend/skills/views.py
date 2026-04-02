@@ -235,12 +235,12 @@ class PerformanceStatsView(APIView):
         from evaluations.models import FindingSkill
         skill_counts = (
             FindingSkill.objects.filter(finding__evaluation__in=evals)
-            .values('skill__name')
+            .values('skill__id', 'skill__name', 'skill__slug')
             .annotate(count=Count('id'))
             .order_by('-count')[:10]
         )
         category_breakdown = [
-            {'name': s['skill__name'], 'count': s['count']}
+            {'id': s['skill__id'], 'name': s['skill__name'], 'slug': s['skill__slug'], 'count': s['count']}
             for s in skill_counts
         ]
 

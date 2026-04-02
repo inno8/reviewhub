@@ -7,9 +7,18 @@ import ProgressChart from '@/components/charts/ProgressChart.vue';
 import RecentFindings from '@/components/dashboard/RecentFindings.vue';
 import SkillCard from '@/components/dashboard/SkillCard.vue';
 import RecommendationsWidget from '@/components/skills/RecommendationsWidget.vue';
+import SkillBreakdownDialog from '@/components/skills/SkillBreakdownDialog.vue';
 import { api } from '@/composables/useApi';
 import { useProjectsStore } from '@/stores/projects';
 import { useAuthStore } from '@/stores/auth';
+
+// Skill breakdown dialog state
+const breakdownOpen = ref(false);
+const breakdownSkillId = ref<number | null>(null);
+function openSkillBreakdown(id: number) {
+  breakdownSkillId.value = id;
+  breakdownOpen.value = true;
+}
 
 interface UserStat {
   id: number; username: string; email: string; display_name: string;
@@ -288,7 +297,7 @@ const selectedUserObj = computed(() => adminUsers.value.find(u => u.id === selec
           </section>
 
           <section class="grid grid-cols-1 lg:grid-cols-3 gap-8 mb-12">
-            <div class="lg:col-span-2"><RecentFindings :findings="recentFindings" /></div>
+            <div class="lg:col-span-2 max-h-[500px] overflow-y-auto"><RecentFindings :findings="recentFindings" /></div>
             <div class="bg-surface-container-low rounded-2xl p-6 border border-outline-variant/10">
               <h4 class="text-xl font-bold mb-6">Quick Stats</h4>
               <div class="space-y-4">
@@ -311,7 +320,7 @@ const selectedUserObj = computed(() => adminUsers.value.find(u => u.id === selec
           <section v-if="skillCategories.length" class="mb-12">
             <h4 class="text-2xl font-black tracking-tight mb-6">Skill Breakdown by Category</h4>
             <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
-              <SkillCard v-for="cat in skillCategories" :key="cat.id" :category="cat" />
+              <SkillCard v-for="cat in skillCategories" :key="cat.id" :category="cat" @click-skill="openSkillBreakdown" />
             </div>
           </section>
 
@@ -411,4 +420,12 @@ const selectedUserObj = computed(() => adminUsers.value.find(u => u.id === selec
       </template>
     </div>
   </AppShell>
+
+  <SkillBreakdownDialog
+    :open="breakdownOpen"
+    :user-id="authStore.user?.id ?? 0"
+    :skill-id="breakdownSkillId"
+    :project-id="projectsStore.selectedProjectId ?? 0"
+    @close="breakdownOpen = false"
+  />
 </template>
