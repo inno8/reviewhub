@@ -111,6 +111,13 @@ class InternalEvaluationCreateView(APIView):
             sender_login=data.get('sender_login', ''),
         )
         
+        # Fallback: use batch job owner as author if this is a batch evaluation
+        if not author and data.get('batch_job_id'):
+            from batch.models import BatchJob
+            bj = BatchJob.objects.filter(pk=data['batch_job_id']).select_related('user').first()
+            if bj:
+                author = bj.user
+
         if not author:
             # Unknown user -- log and still create the evaluation
             import logging
