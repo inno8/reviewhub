@@ -52,11 +52,16 @@ class DjangoClient:
                 if response.status_code == 201:
                     return response.json()
                 else:
-                    print(f"Django error: {response.status_code} - {response.text}")
+                    commit_sha = (data.get("commit_sha") or "")[:7]
+                    print(
+                        f"[DJANGO] create_evaluation FAILED {response.status_code} "
+                        f"commit={commit_sha}: {response.text[:600]}",
+                        flush=True,
+                    )
                     return None
-                    
+
         except Exception as e:
-            print(f"Django client error: {e}")
+            print(f"[DJANGO] create_evaluation error: {e}", flush=True)
             return None
     
     async def get_project(self, project_id: int) -> Optional[dict]:
@@ -98,6 +103,68 @@ class DjangoClient:
             print(f"Django client error: {e}")
             return None
     
+    async def get_project_member_by_email(self, project_id: int, email: str) -> Optional[dict]:
+        """Find project member by git email for user resolution."""
+        try:
+            async with httpx.AsyncClient() as client:
+                response = await client.get(
+                    f"{self.base_url}/api/projects/{project_id}/members/",
+                    headers=self._get_headers(),
+                    timeout=10.0
+                )
+                if response.status_code == 200:
+                    members = response.json()
+                    for m in members:
+                        if m.get('git_email', '').lower() == email.lower() or m.get('user_email', '').lower() == email.lower():
+                            return m
+                return None
+        except Exception as e:
+            print(f"Django client error: {e}")
+            return None
+
+    async def get_user_skill_profile(self, user_id: int) -> Optional[dict]:
+        """Get user's skill metrics for adaptive prompt enrichment."""
+        try:
+            async with httpx.AsyncClient() as client:
+                response = await client.get(
+                    f"{self.base_url}/api/skills/user/{user_id}/",
+                    headers=self._get_headers(),
+                    timeout=10.0
+                )
+                if response.status_code == 200:
+                    return response.json()
+                return None
+        except Exception as e:
+            print(f"Django client error: {e}")
+            return None
+
+    async def get_adaptive_profile(
+        self, user_id: int, project_id: Optional[int] = None
+    ) -> Optional[dict]:
+        """
+        Fetch the full adaptive developer profile used for prompt enrichment.
+        Returns a dict with level, strengths, weaknesses, frequent_patterns, etc.
+        Falls back to get_user_skill_profile if the richer endpoint is missing.
+        """
+        try:
+            params: dict = {}
+            if project_id:
+                params["project"] = project_id
+            async with httpx.AsyncClient() as client:
+                response = await client.get(
+                    f"{self.base_url}/api/users/{user_id}/adaptive-profile/",
+                    params=params,
+                    headers=self._get_headers(),
+                    timeout=10.0,
+                )
+                if response.status_code == 200:
+                    return response.json()
+                # Fallback to skill profile
+                return await self.get_user_skill_profile(user_id)
+        except Exception as e:
+            print(f"Django client error (adaptive profile): {e}")
+            return None
+
     async def update_skill_metrics(
         self,
         user_id: int,

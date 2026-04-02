@@ -4,15 +4,60 @@ LLM Adapter - Abstraction layer for multiple LLM providers.
 Supports:
 - OpenAI (GPT-4, etc.)
 - Anthropic (Claude)
+- Google (Gemini via API key)
 - OpenClaw fallback (when no API key configured)
+
+Complexity-aware routing
+------------------------
+When evaluate_diff is called with a CommitComplexity object, the adapter
+automatically selects the appropriate model tier for the org's provider:
+
+  simple  → cheapest model (haiku / 4o-mini / flash-lite)
+  medium  → lighter model  (3.5-haiku / 4o-mini / 1.5-flash)
+  complex → org default    (whatever LLM_MODEL is set to)
+
+The tier map is code-driven — no extra env vars or admin config needed.
 """
 import json
 import time
-from typing import Optional
+from typing import Optional, TYPE_CHECKING
+from urllib.parse import urlencode
+
 import httpx
 
 from app.core.config import settings
 from app.models.schemas import EvaluationResult, FindingSchema, Severity
+
+if TYPE_CHECKING:
+    from app.services.classifier import CommitComplexity
+
+# ---------------------------------------------------------------------------
+# Per-provider model tier map
+# complex always uses the org default (self.model_name); only simple/medium
+# are overridden here.
+# ---------------------------------------------------------------------------
+PROVIDER_MODEL_TIERS: dict[str, dict[str, str]] = {
+    "openai": {
+        "simple": "gpt-4o-mini",
+        "medium": "gpt-4o-mini",
+    },
+    # Claude 3.x Haiku IDs were retired; use Haiku 4.5 for simple/medium tiers.
+    "anthropic": {
+        "simple": "claude-haiku-4-5",
+        "medium": "claude-haiku-4-5",
+    },
+    "google": {
+        "simple": "gemini-2.0-flash-lite",
+        "medium": "gemini-1.5-flash",
+    },
+}
+
+# Routing parameters per complexity level
+_COMPLEXITY_PARAMS: dict[str, dict] = {
+    "simple":  {"max_tokens": 1024, "context_file_limit": 0},
+    "medium":  {"max_tokens": 2048, "context_file_limit": 3},
+    "complex": {"max_tokens": 4096, "context_file_limit": 5},
+}
 
 # Skill slugs for validation
 VALID_SKILLS = [
@@ -35,9 +80,9 @@ VALID_SKILLS = [
 ]
 
 
-EVALUATION_PROMPT = '''You are an expert code reviewer. Analyze the following code diff and provide detailed feedback.
+EVALUATION_PROMPT = '''You are an expert code reviewer and adaptive mentor. Analyze the following code diff and provide detailed feedback.
 
-FILE: {file_path}
+{developer_section}FILE: {file_path}
 LANGUAGE: {language}
 
 DIFF:
@@ -81,13 +126,42 @@ VALID SKILL SLUGS (only use these):
 - Backend: api_design, database_queries, error_handling, performance
 - DevOps: git_practices, build_tools, ci_cd, environment_config
 
-Focus on:
-1. Code quality and best practices
-2. Potential bugs or security issues
-3. Performance improvements
-4. Maintainability and readability
+Focus on the following (check all that apply to the file type):
+1. Code quality, naming, and best practices
+2. Potential bugs, edge-cases, or security issues
+3. Performance and readability
+4. Maintainability, DRY, and component structure
+5. For HTML/CSS/Vue/React — accessibility (missing alt, aria), semantic HTML, responsive design, CSS organisation, inline styles
+6. For JS/TS — missing null-checks, async/await issues, unused variables, magic numbers
+7. For Python — error handling, logging, typing hints, test coverage
+
+RULES YOU MUST FOLLOW:
+- If the diff adds or changes ANY logic, markup, styles, or structure → you MUST include at least 1 finding.
+- Only return an empty findings array when the diff is purely whitespace, empty lines, or a single-word comment fix with zero structural or logic impact.
+- An overall_score of 100 means the change is absolutely exemplary with zero possible improvements — this should be very rare. Most real changes score 65–90.
+- Use severity "suggestion" or "info" when the code works but could be cleaner or more idiomatic. These still count as findings.
+- Do NOT invent non-existent code, but DO proactively spot things a senior developer would mention in a real code review (even positive observations phrased as "consider also…").
 
 Return ONLY the JSON object, no markdown formatting.'''
+
+
+def normalize_llm_provider(raw: Optional[str]) -> str:
+    """
+    Map env/UI provider strings to internal provider keys used by LLMAdapter.
+
+    Accepts common aliases (e.g. LLM_PROVIDER=claude) and normalizes case.
+    """
+    if raw is None or not str(raw).strip():
+        return "openai"
+    s = str(raw).strip().lower()
+    aliases = {
+        "claude": "anthropic",
+        "anthropic": "anthropic",
+        "openai": "openai",
+        "google": "google",
+        "gemini": "google",
+    }
+    return aliases.get(s, s)
 
 
 class LLMAdapter:
@@ -100,59 +174,129 @@ class LLMAdapter:
     3. OpenClaw fallback
     """
     
-    def __init__(self, api_key: Optional[str] = None):
-        # Determine provider and key
+    def __init__(
+        self,
+        api_key: Optional[str] = None,
+        provider_override: Optional[str] = None,
+        model_override: Optional[str] = None,
+    ):
+        # Determine provider and key — priority:
+        # 1. Caller-supplied (e.g. org admin credentials passed by Django for batch)
+        # 2. AI-engine env vars (LLM_API_KEY / LLM_PROVIDER)
+        # 3. OpenClaw fallback
         if api_key:
-            # User provided their own key
-            self.provider = settings.LLM_PROVIDER or "openai"
+            self.provider = normalize_llm_provider(provider_override or settings.LLM_PROVIDER)
             self.api_key = api_key
         elif settings.LLM_API_KEY:
-            # System-configured key
-            self.provider = settings.LLM_PROVIDER or "openai"
+            self.provider = normalize_llm_provider(provider_override or settings.LLM_PROVIDER)
             self.api_key = settings.LLM_API_KEY
         elif settings.OPENCLAW_ENABLED:
-            # Fallback to OpenClaw
             self.provider = "openclaw"
             self.api_key = settings.OPENCLAW_API_KEY
         else:
             raise ValueError("No LLM provider configured")
-        
-        self.model_name = settings.LLM_MODEL
-    
+
+        # model_name: caller override > env var default
+        self.model_name = model_override or settings.LLM_MODEL
+
+    # ── Public: complexity-aware model selection ──────────────────────────
+
+    def model_for_complexity(self, complexity_level: str) -> str:
+        """
+        Return the appropriate model identifier for a given complexity level.
+
+        - complex → org default (self.model_name)
+        - medium / simple → auto-derived from PROVIDER_MODEL_TIERS for self.provider,
+          falls back to self.model_name if provider is not in the tier map or if the
+          derived model would be the same as (or heavier than) the org default.
+        """
+        if complexity_level == "complex":
+            return self.model_name
+
+        tier_models = PROVIDER_MODEL_TIERS.get(self.provider, {})
+        derived = tier_models.get(complexity_level)
+        if not derived:
+            return self.model_name
+
+        # Guard: don't "upgrade" if org default is already a cheaper model
+        # (e.g. org chose gpt-4o-mini as default → all tiers use gpt-4o-mini)
+        return derived
+
     async def evaluate_diff(
         self,
         diff: str,
         file_path: str,
         language: str = "unknown",
-        context_files: list = None
+        context_files: list = None,
+        complexity: "Optional[CommitComplexity]" = None,
     ) -> Optional[EvaluationResult]:
         """
         Evaluate a code diff using the configured LLM.
-        
+
+        complexity (optional CommitComplexity):
+          When provided, the adapter automatically:
+            - selects the appropriate model tier
+            - caps max_tokens per the tier (1024 / 2048 / 4096)
+            - limits the number of related context files (0 / 3 / 5)
+
+        context_files may contain:
+          - {"path": "__developer_profile__", "content": "<adaptive profile text>"}
+            → injected as DEVELOPER PROFILE section at the top of the prompt.
+          - {"path": "<file>", "content": "<code>"}
+            → injected as RELATED FILES section.
+
         Returns structured evaluation result.
         """
-        # Build context section if available
+        # Resolve complexity-driven parameters
+        level = complexity.level if complexity else "complex"
+        params = _COMPLEXITY_PARAMS.get(level, _COMPLEXITY_PARAMS["complex"])
+        active_model = self.model_for_complexity(level)
+        max_tokens: int = params["max_tokens"]
+        ctx_limit: int = params["context_file_limit"]
+
+        developer_section = ""
+        regular_context: list[dict] = []
+
+        for cf in (context_files or []):
+            if cf.get("path") == "__developer_profile__":
+                developer_section = cf["content"] + "\n\n"
+            else:
+                regular_context.append(cf)
+
+        # Apply context file limit (simple → 0, medium → 3, complex → 5)
+        regular_context = regular_context[:ctx_limit]
+
+        # Build related-files context block
         context_section = ""
-        if context_files:
+        if regular_context:
             context_section = "RELATED FILES (for context):\n"
-            for cf in context_files[:3]:  # Limit context
-                context_section += f"\n--- {cf['path']} ---\n{cf['content'][:1000]}\n"
-        
+            for cf in regular_context:
+                context_section += f"\n--- {cf['path']} ---\n{cf['content'][:1500]}\n"
+
         # Build prompt
         prompt = EVALUATION_PROMPT.format(
+            developer_section=developer_section,
             file_path=file_path,
             language=language,
             diff=diff,
-            context_section=context_section
+            context_section=context_section,
         )
+
+        if complexity:
+            print(
+                f"[LLM] {file_path} | complexity={level} score={complexity.score} "
+                f"model={active_model} max_tokens={max_tokens} ctx_files={len(regular_context)}"
+            )
         
-        # Call appropriate provider
+        # Call appropriate provider, passing active_model and max_tokens
         start_time = time.time()
         
         if self.provider == "openai":
-            result = await self._call_openai(prompt)
+            result = await self._call_openai(prompt, model=active_model, max_tokens=max_tokens)
         elif self.provider == "anthropic":
-            result = await self._call_anthropic(prompt)
+            result = await self._call_anthropic(prompt, model=active_model, max_tokens=max_tokens)
+        elif self.provider == "google":
+            result = await self._call_google(prompt, model=active_model, max_tokens=max_tokens)
         elif self.provider == "openclaw":
             result = await self._call_openclaw(prompt, diff, file_path)
         else:
@@ -160,12 +304,18 @@ class LLMAdapter:
         
         if result:
             result.processing_ms = int((time.time() - start_time) * 1000)
-            result.llm_model = self.model_name
+            result.llm_model = active_model
         
         return result
     
-    async def _call_openai(self, prompt: str) -> Optional[EvaluationResult]:
+    async def _call_openai(
+        self,
+        prompt: str,
+        model: Optional[str] = None,
+        max_tokens: int = 4096,
+    ) -> Optional[EvaluationResult]:
         """Call OpenAI API."""
+        active_model = model or self.model_name
         try:
             async with httpx.AsyncClient() as client:
                 response = await client.post(
@@ -175,12 +325,13 @@ class LLMAdapter:
                         "Content-Type": "application/json"
                     },
                     json={
-                        "model": self.model_name,
+                        "model": active_model,
                         "messages": [
                             {"role": "system", "content": "You are an expert code reviewer. Return only valid JSON."},
                             {"role": "user", "content": prompt}
                         ],
                         "temperature": 0.3,
+                        "max_tokens": max_tokens,
                         "response_format": {"type": "json_object"}
                     },
                     timeout=120.0
@@ -198,8 +349,14 @@ class LLMAdapter:
             print(f"OpenAI error: {e}")
             return None
     
-    async def _call_anthropic(self, prompt: str) -> Optional[EvaluationResult]:
+    async def _call_anthropic(
+        self,
+        prompt: str,
+        model: Optional[str] = None,
+        max_tokens: int = 4096,
+    ) -> Optional[EvaluationResult]:
         """Call Anthropic API."""
+        active_model = model or self.model_name
         try:
             async with httpx.AsyncClient() as client:
                 response = await client.post(
@@ -210,8 +367,8 @@ class LLMAdapter:
                         "Content-Type": "application/json"
                     },
                     json={
-                        "model": self.model_name,
-                        "max_tokens": 4096,
+                        "model": active_model,
+                        "max_tokens": max_tokens,
                         "messages": [
                             {"role": "user", "content": prompt}
                         ]
@@ -231,6 +388,86 @@ class LLMAdapter:
         except Exception as e:
             print(f"Anthropic error: {e}")
             return None
+
+    async def _call_google(
+        self,
+        prompt: str,
+        model: Optional[str] = None,
+        max_tokens: int = 4096,
+    ) -> Optional[EvaluationResult]:
+        """Call Google Gemini generateContent API (API key in query string)."""
+        active_model = (model or self.model_name).replace("models/", "").strip()
+        base = (
+            f"https://generativelanguage.googleapis.com/v1beta/models/"
+            f"{active_model}:generateContent"
+        )
+        url = f"{base}?{urlencode({'key': self.api_key})}"
+        base_body = {
+            "systemInstruction": {
+                "parts": [
+                    {
+                        "text": (
+                            "You are an expert code reviewer. "
+                            "Return only valid JSON as requested in the user message."
+                        )
+                    }
+                ]
+            },
+            "contents": [
+                {
+                    "role": "user",
+                    "parts": [{"text": prompt}],
+                }
+            ],
+            "generationConfig": {
+                "temperature": 0.3,
+                "maxOutputTokens": max_tokens,
+                "responseMimeType": "application/json",
+            },
+        }
+        try:
+            async with httpx.AsyncClient() as client:
+                response = await client.post(
+                    url,
+                    headers={"Content-Type": "application/json"},
+                    json=base_body,
+                    timeout=120.0,
+                )
+                # Some models reject JSON MIME type; retry without it.
+                if response.status_code == 400 and "responseMimeType" in base_body.get(
+                    "generationConfig", {}
+                ):
+                    retry_cfg = dict(base_body["generationConfig"])
+                    retry_cfg.pop("responseMimeType", None)
+                    retry_body = {**base_body, "generationConfig": retry_cfg}
+                    response = await client.post(
+                        url,
+                        headers={"Content-Type": "application/json"},
+                        json=retry_body,
+                        timeout=120.0,
+                    )
+                response.raise_for_status()
+                data = response.json()
+        except httpx.HTTPStatusError as e:
+            print(f"Google Gemini HTTP error: {e.response.status_code} {e.response.text[:500]}")
+            return None
+        except Exception as e:
+            print(f"Google error: {e}")
+            return None
+
+        try:
+            parts = data["candidates"][0]["content"]["parts"]
+            content = parts[0].get("text", "")
+        except (KeyError, IndexError, TypeError) as e:
+            print(f"Google unexpected response shape: {e}")
+            return None
+
+        meta = data.get("usageMetadata") or {}
+        tokens = int(meta.get("totalTokenCount", 0)) or (
+            int(meta.get("promptTokenCount", 0))
+            + int(meta.get("candidatesTokenCount", 0))
+        )
+        return self._parse_response(content, tokens)
     
     async def _call_openclaw(
         self,
@@ -356,6 +593,36 @@ class LLMAdapter:
             tokens_used=0
         )
     
+    # ------------------------------------------------------------------
+    # Severity normaliser: maps LLM free-form words to valid enum values
+    # so a single unexpected word doesn't silently kill all findings.
+    # ------------------------------------------------------------------
+    _SEVERITY_MAP: dict[str, "Severity"] = {
+        "critical": Severity.CRITICAL,
+        "error": Severity.CRITICAL,
+        "high": Severity.CRITICAL,
+        "warning": Severity.WARNING,
+        "warn": Severity.WARNING,
+        "medium": Severity.WARNING,
+        "moderate": Severity.WARNING,
+        "info": Severity.INFO,
+        "information": Severity.INFO,
+        "informational": Severity.INFO,
+        "low": Severity.INFO,
+        "suggestion": Severity.SUGGESTION,
+        "suggest": Severity.SUGGESTION,
+        "note": Severity.SUGGESTION,
+        "improvement": Severity.SUGGESTION,
+        "hint": Severity.SUGGESTION,
+        "minor": Severity.SUGGESTION,
+        "optional": Severity.SUGGESTION,
+    }
+
+    @classmethod
+    def _parse_severity(cls, raw: Optional[str]) -> "Severity":
+        """Convert a raw LLM severity string to a Severity enum value, with fallback."""
+        return cls._SEVERITY_MAP.get((raw or "warning").lower().strip(), Severity.WARNING)
+
     def _parse_response(self, content: str, tokens: int) -> Optional[EvaluationResult]:
         """Parse LLM response into EvaluationResult."""
         try:
@@ -365,34 +632,45 @@ class LLMAdapter:
                 content = content.split("```")[1]
                 if content.startswith("json"):
                     content = content[4:]
-            
+
             data = json.loads(content)
-            
-            # Parse findings
+
+            raw_findings = data.get("findings", [])
+            print(
+                f"[LLM PARSE] overall_score={data.get('overall_score')} "
+                f"findings_in_response={len(raw_findings)}"
+            )
+
+            # Parse findings — errors on individual items are caught and skipped
+            # so one bad finding never discards the rest.
             findings = []
-            for f in data.get("findings", []):
-                # Validate skills
-                valid_skills = [s for s in f.get("skills_affected", []) if s in VALID_SKILLS]
-                
-                findings.append(FindingSchema(
-                    title=f.get("title", "Unknown Issue"),
-                    description=f.get("description", ""),
-                    severity=Severity(f.get("severity", "warning")),
-                    file_path=f.get("file_path", "unknown"),
-                    line_start=f.get("line_start", 1),
-                    line_end=f.get("line_end", 1),
-                    original_code=f.get("original_code", ""),
-                    suggested_code=f.get("suggested_code", ""),
-                    explanation=f.get("explanation", ""),
-                    skills_affected=valid_skills
-                ))
-            
+            for idx, f in enumerate(raw_findings):
+                try:
+                    valid_skills = [s for s in f.get("skills_affected", []) if s in VALID_SKILLS]
+                    findings.append(FindingSchema(
+                        title=f.get("title", "Unknown Issue"),
+                        description=f.get("description", ""),
+                        severity=self._parse_severity(f.get("severity")),
+                        file_path=f.get("file_path", "unknown"),
+                        line_start=int(f.get("line_start") or 1),
+                        line_end=int(f.get("line_end") or 1),
+                        original_code=f.get("original_code", ""),
+                        suggested_code=f.get("suggested_code", ""),
+                        explanation=f.get("explanation", ""),
+                        skills_affected=valid_skills
+                    ))
+                except Exception as finding_err:
+                    print(f"[LLM PARSE] Skipped finding #{idx} due to error: {finding_err}")
+
             # Validate skill scores
             skill_scores = {}
             for skill, score in data.get("skill_scores", {}).items():
                 if skill in VALID_SKILLS:
-                    skill_scores[skill] = float(score)
-            
+                    try:
+                        skill_scores[skill] = float(score)
+                    except (TypeError, ValueError):
+                        pass
+
             return EvaluationResult(
                 overall_score=float(data.get("overall_score", 50)),
                 findings=findings,
@@ -400,8 +678,8 @@ class LLMAdapter:
                 summary=data.get("summary", ""),
                 tokens_used=tokens
             )
-            
+
         except Exception as e:
-            print(f"Parse error: {e}")
-            print(f"Content: {content[:500]}")
+            print(f"[LLM PARSE] Parse error: {e}")
+            print(f"[LLM PARSE] Raw content (first 800): {content[:800]}")
             return None
