@@ -223,6 +223,50 @@ class PerformanceStatsView(APIView):
         strengths = [c for c, scores in cat_scores.items() if scores and sum(scores) / len(scores) >= 75]
         growth_areas = [c for c, scores in cat_scores.items() if scores and sum(scores) / len(scores) < 50]
 
+        # Severity distribution
+        severity_distribution = {
+            'critical': findings.filter(severity='critical').count(),
+            'warning': findings.filter(severity='warning').count(),
+            'info': findings.filter(severity='info').count(),
+            'suggestion': findings.filter(severity='suggestion').count(),
+        }
+
+        # Category breakdown (top skill issues)
+        from evaluations.models import FindingSkill
+        skill_counts = (
+            FindingSkill.objects.filter(finding__evaluation__in=evals)
+            .values('skill__name')
+            .annotate(count=Count('id'))
+            .order_by('-count')[:10]
+        )
+        category_breakdown = [
+            {'name': s['skill__name'], 'count': s['count']}
+            for s in skill_counts
+        ]
+
+        # Score trend (last evaluations with dates)
+        recent_evals = evals.order_by('-created_at')[:20]
+        score_trend = [
+            {'date': e.created_at.strftime('%Y-%m-%d'), 'score': float(e.overall_score or 0)}
+            for e in reversed(recent_evals)
+            if e.overall_score is not None
+        ]
+
+        # Developer level
+        try:
+            from batch.models import DeveloperProfile
+            profile = DeveloperProfile.objects.get(user_id=subject.id)
+            level = profile.level
+        except Exception:
+            if avg_score >= 75:
+                level = 'senior'
+            elif avg_score >= 60:
+                level = 'intermediate'
+            elif avg_score >= 40:
+                level = 'junior'
+            else:
+                level = 'beginner'
+
         return Response({
             'commitCount': commit_count,
             'findingCount': finding_count,
@@ -234,6 +278,10 @@ class PerformanceStatsView(APIView):
             'strengths': strengths,
             'growthAreas': growth_areas,
             'recommendations': [],
+            'severityDistribution': severity_distribution,
+            'categoryBreakdown': category_breakdown,
+            'scoreTrend': score_trend,
+            'level': level,
         })
 
 

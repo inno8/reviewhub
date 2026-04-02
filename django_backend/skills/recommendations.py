@@ -23,15 +23,23 @@ class LearningRecommendationsView(APIView):
     
     def get(self, request):
         from evaluations.models import Finding
-        
+
         project_id = request.query_params.get('project')
         limit = int(request.query_params.get('limit', 5))
-        
+
+        # Get developer's primary language for targeted recommendations
+        primary_language = None
+        try:
+            if hasattr(request.user, 'dev_profile') and request.user.dev_profile:
+                primary_language = request.user.dev_profile.primary_language
+        except Exception:
+            pass
+
         # Get user's skill metrics
         metrics = SkillMetric.objects.filter(
             user=request.user
         ).select_related('skill', 'skill__category')
-        
+
         if project_id:
             metrics = metrics.filter(project_id=project_id)
         
@@ -54,8 +62,8 @@ class LearningRecommendationsView(APIView):
                 'reason': f'Low score in {metric.skill.name}',
                 'priority': priority,
                 'issue_count': metric.issue_count,
-                'suggested_resources': self._get_resources_for_skill(metric.skill.slug),
-                'improvement_tip': self._get_improvement_tip(metric.skill.slug, metric.issue_count)
+                'suggested_resources': self._get_resources_for_skill(metric.skill.slug, primary_language),
+                'improvement_tip': self._get_improvement_tip(metric.skill.slug, metric.issue_count, primary_language)
             })
         
         # 2. Find skills with many recent issues (last 30 days)
@@ -113,8 +121,8 @@ class LearningRecommendationsView(APIView):
                     'priority': priority,
                     'issue_count': data['count'],
                     'severity_breakdown': data['severity_counts'],
-                    'suggested_resources': self._get_resources_for_skill(skill.slug),
-                    'improvement_tip': self._get_improvement_tip(skill.slug, data['count'])
+                    'suggested_resources': self._get_resources_for_skill(skill.slug, primary_language),
+                    'improvement_tip': self._get_improvement_tip(skill.slug, data['count'], primary_language)
                 })
         
         # 3. Skills with negative trends
@@ -135,8 +143,8 @@ class LearningRecommendationsView(APIView):
                     'priority': 'medium',
                     'issue_count': metric.issue_count,
                     'trend': metric.trend,
-                    'suggested_resources': self._get_resources_for_skill(metric.skill.slug),
-                    'improvement_tip': self._get_improvement_tip(metric.skill.slug, metric.issue_count)
+                    'suggested_resources': self._get_resources_for_skill(metric.skill.slug, primary_language),
+                    'improvement_tip': self._get_improvement_tip(metric.skill.slug, metric.issue_count, primary_language)
                 })
         
         # 4. Pattern-based recommendations (recurring issues)
@@ -171,7 +179,7 @@ class LearningRecommendationsView(APIView):
                         f'issues. Focus on this area to see the biggest improvement.'
                     ),
                     'suggested_resources': self._get_resources_for_skill(
-                        pattern.pattern_key.split('_')[0]
+                        pattern.pattern_key.split(':')[0], primary_language
                     ),
                 })
 
@@ -193,49 +201,114 @@ class LearningRecommendationsView(APIView):
 
         return Response(recommendations[:limit])
     
-    def _get_resources_for_skill(self, skill_slug):
-        """Get learning resources for a skill."""
-        resources_map = {
-            'code-quality': [
-                {'title': 'Clean Code by Robert Martin', 'type': 'book', 'url': 'https://www.oreilly.com/library/view/clean-code-a/9780136083238/'},
-                {'title': 'Code Quality Best Practices', 'type': 'article', 'url': 'https://www.sonarsource.com/learn/code-quality/'},
-            ],
-            'security': [
-                {'title': 'OWASP Top 10', 'type': 'documentation', 'url': 'https://owasp.org/www-project-top-ten/'},
-                {'title': 'Secure Coding Practices', 'type': 'course', 'url': 'https://www.coursera.org/learn/secure-coding-practices'},
-            ],
-            'performance': [
-                {'title': 'Web Performance Fundamentals', 'type': 'course', 'url': 'https://frontendmasters.com/courses/web-performance/'},
-                {'title': 'High Performance Browser Networking', 'type': 'book', 'url': 'https://hpbn.co/'},
-            ],
-            'testing': [
-                {'title': 'Testing JavaScript', 'type': 'course', 'url': 'https://testingjavascript.com/'},
-                {'title': 'Unit Testing Best Practices', 'type': 'article', 'url': 'https://github.com/goldbergyoni/javascript-testing-best-practices'},
-            ],
-            'documentation': [
-                {'title': 'Write the Docs Guide', 'type': 'documentation', 'url': 'https://www.writethedocs.org/guide/'},
-                {'title': 'Documentation Best Practices', 'type': 'article', 'url': 'https://documentation.divio.com/'},
-            ],
-        }
-        
-        return resources_map.get(skill_slug, [
-            {'title': f'Learn more about {skill_slug}', 'type': 'search', 'url': f'https://google.com/search?q={skill_slug}+best+practices'}
-        ])
-    
-    def _get_improvement_tip(self, skill_slug, issue_count):
-        """Get an improvement tip for a skill."""
+    # Language-specific documentation for each skill
+    SKILL_DOCS = {
+        'input_validation': {
+            'python': [{'title': 'Python: Parameterized SQL Queries', 'type': 'documentation', 'url': 'https://docs.python.org/3/library/sqlite3.html#how-to-use-placeholders'}],
+            'javascript': [{'title': 'MDN: Client-side Form Validation', 'type': 'documentation', 'url': 'https://developer.mozilla.org/en-US/docs/Learn/Forms/Form_validation'}],
+            '_default': [{'title': 'OWASP: Input Validation Cheat Sheet', 'type': 'documentation', 'url': 'https://cheatsheetseries.owasp.org/cheatsheets/Input_Validation_Cheat_Sheet.html'}],
+        },
+        'secrets_management': {
+            'python': [{'title': 'Python: Environment Variables (os.environ)', 'type': 'documentation', 'url': 'https://docs.python.org/3/library/os.html#os.environ'}],
+            '_default': [{'title': '12-Factor App: Config', 'type': 'article', 'url': 'https://12factor.net/config'}],
+        },
+        'clean_code': {
+            'python': [{'title': 'PEP 8 — Python Style Guide', 'type': 'documentation', 'url': 'https://peps.python.org/pep-0008/'}],
+            'javascript': [{'title': 'MDN: JavaScript Best Practices', 'type': 'documentation', 'url': 'https://developer.mozilla.org/en-US/docs/Learn/JavaScript/Howto'}],
+            '_default': [{'title': 'Refactoring Guru: Code Smells', 'type': 'article', 'url': 'https://refactoring.guru/refactoring/smells'}],
+        },
+        'code_structure': {
+            'python': [{'title': 'Python: Modules and Packages', 'type': 'documentation', 'url': 'https://docs.python.org/3/tutorial/modules.html'}],
+            'javascript': [{'title': 'MDN: JavaScript Modules', 'type': 'documentation', 'url': 'https://developer.mozilla.org/en-US/docs/Web/JavaScript/Guide/Modules'}],
+            '_default': [{'title': 'Refactoring Guru: Extract Method', 'type': 'article', 'url': 'https://refactoring.guru/extract-method'}],
+        },
+        'dry_principle': {
+            '_default': [{'title': 'Refactoring Guru: Extract Method Pattern', 'type': 'article', 'url': 'https://refactoring.guru/extract-method'}],
+        },
+        'error_handling': {
+            'python': [{'title': 'Python: Errors and Exceptions', 'type': 'documentation', 'url': 'https://docs.python.org/3/tutorial/errors.html'}],
+            'javascript': [{'title': 'MDN: Error Handling (try...catch)', 'type': 'documentation', 'url': 'https://developer.mozilla.org/en-US/docs/Web/JavaScript/Reference/Statements/try...catch'}],
+        },
+        'edge_cases': {
+            '_default': [{'title': 'Defensive Programming Techniques', 'type': 'article', 'url': 'https://refactoring.guru/extract-method'}],
+        },
+        'html_semantics': {
+            '_default': [{'title': 'MDN: HTML Semantic Elements', 'type': 'documentation', 'url': 'https://developer.mozilla.org/en-US/docs/Glossary/Semantics#semantics_in_html'}],
+        },
+        'accessibility': {
+            '_default': [{'title': 'MDN: Accessibility Fundamentals', 'type': 'documentation', 'url': 'https://developer.mozilla.org/en-US/docs/Learn/Accessibility'}],
+        },
+        'css_organization': {
+            '_default': [{'title': 'MDN: Organizing Your CSS', 'type': 'documentation', 'url': 'https://developer.mozilla.org/en-US/docs/Learn/CSS/Building_blocks/Organizing'}],
+        },
+        'responsive_design': {
+            '_default': [{'title': 'MDN: Responsive Design', 'type': 'documentation', 'url': 'https://developer.mozilla.org/en-US/docs/Learn/CSS/CSS_layout/Responsive_Design'}],
+        },
+        'xss_csrf_prevention': {
+            '_default': [{'title': 'OWASP: XSS Prevention Cheat Sheet', 'type': 'documentation', 'url': 'https://cheatsheetseries.owasp.org/cheatsheets/Cross_Site_Scripting_Prevention_Cheat_Sheet.html'}],
+        },
+        'database_queries': {
+            'python': [{'title': 'Python: sqlite3 — Safe Query Patterns', 'type': 'documentation', 'url': 'https://docs.python.org/3/library/sqlite3.html#how-to-use-placeholders'}],
+            '_default': [{'title': 'OWASP: SQL Injection Prevention', 'type': 'documentation', 'url': 'https://cheatsheetseries.owasp.org/cheatsheets/SQL_Injection_Prevention_Cheat_Sheet.html'}],
+        },
+        'api_design': {
+            'python': [{'title': 'Flask: Quickstart — Routing', 'type': 'documentation', 'url': 'https://flask.palletsprojects.com/en/latest/quickstart/#routing'}],
+            '_default': [{'title': 'RESTful API Design Best Practices', 'type': 'article', 'url': 'https://restfulapi.net/resource-naming/'}],
+        },
+        'comments_docs': {
+            'python': [{'title': 'PEP 257 — Docstring Conventions', 'type': 'documentation', 'url': 'https://peps.python.org/pep-0257/'}],
+            'javascript': [{'title': 'JSDoc: Getting Started', 'type': 'documentation', 'url': 'https://jsdoc.app/about-getting-started'}],
+        },
+        'solid_principles': {
+            '_default': [{'title': 'SOLID Principles Explained', 'type': 'article', 'url': 'https://refactoring.guru/solid'}],
+        },
+    }
+
+    def _get_resources_for_skill(self, skill_slug, primary_language=None):
+        """Get targeted, language-specific resources for a skill."""
+        lang = (primary_language or '').lower()
+        skill_docs = self.SKILL_DOCS.get(skill_slug, {})
+
+        # Try language-specific first, then default
+        resources = skill_docs.get(lang) or skill_docs.get('_default') or []
+        if not resources:
+            # Fallback: try to find any matching docs
+            for key in skill_docs:
+                if key != '_default':
+                    resources = skill_docs[key]
+                    break
+
+        if not resources:
+            # Final fallback: generic search but with better formatting
+            readable = skill_slug.replace('_', ' ').title()
+            resources = [{'title': f'{readable} Best Practices', 'type': 'article', 'url': f'https://www.google.com/search?q={skill_slug.replace("_", "+")}+best+practices+{lang or "programming"}'}]
+
+        return resources
+
+    def _get_improvement_tip(self, skill_slug, issue_count, primary_language=None):
+        """Get a targeted improvement tip for a skill."""
+        lang = (primary_language or '').lower()
         tips_map = {
-            'code-quality': 'Focus on writing cleaner, more maintainable code. Review SOLID principles.',
-            'security': 'Review OWASP guidelines and implement security checks in your workflow.',
-            'performance': 'Profile your code to identify bottlenecks. Consider caching strategies.',
-            'testing': 'Aim for at least 80% code coverage. Write tests before fixing bugs.',
-            'documentation': 'Document as you code. Keep README and inline comments up to date.',
+            'clean_code': f'Your code has naming and formatting issues. Follow {lang.upper() or "language"} style conventions consistently.',
+            'code_structure': 'Break large functions into smaller, focused ones. Each function should do one thing well.',
+            'dry_principle': 'Look for repeated patterns in your code. Extract shared logic into reusable functions.',
+            'input_validation': 'Never trust user input. Always validate and sanitize before using in queries or rendering.',
+            'secrets_management': 'Move all secrets (API keys, passwords) to environment variables. Never commit them to git.',
+            'error_handling': 'Wrap risky operations in try/except blocks. Handle specific exceptions, not bare except.',
+            'edge_cases': 'Think about what happens with empty input, None values, or unexpected types.',
+            'html_semantics': 'Use semantic HTML tags (<header>, <nav>, <main>, <section>) instead of generic <div>.',
+            'accessibility': 'Add alt text to images, use ARIA labels on interactive elements, ensure keyboard navigation.',
+            'css_organization': 'Avoid inline styles. Use CSS classes and combine shared properties to reduce duplication.',
+            'responsive_design': 'Use relative units (rem, %) and media queries for layouts that adapt to screen size.',
+            'xss_csrf_prevention': 'Never use innerHTML with user data. Use textContent or a sanitization library.',
+            'database_queries': 'Use parameterized queries with ? placeholders. Never build SQL with string concatenation.',
+            'comments_docs': 'Add docstrings to functions explaining what they do, their parameters, and return values.',
         }
-        
-        base_tip = tips_map.get(skill_slug, f'Review recent issues and identify common patterns.')
-        
+
+        base_tip = tips_map.get(skill_slug, f'Review recent issues and identify common patterns in your {skill_slug.replace("_", " ")} code.')
+
         if issue_count > 10:
-            return f'{base_tip} Start with the most critical issues first.'
+            return f'{base_tip} You have {issue_count} issues — start with the most critical ones first.'
         elif issue_count > 5:
             return f'{base_tip} Focus on preventing similar issues in new code.'
         else:

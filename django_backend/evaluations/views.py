@@ -156,7 +156,11 @@ class InternalEvaluationCreateView(APIView):
             complexity_score=data.get('complexity_score'),
             evaluated_at=timezone.now()
         )
-        
+
+        # Skip individual notifications for batch evaluations
+        if batch_job:
+            evaluation._batch_skip_notifications = True
+
         # ── Create findings + skills + patterns ───────────────────────
         for finding_data in data['findings']:
             finding = Finding.objects.create(
@@ -352,18 +356,19 @@ class FindingFileContentView(APIView):
         if not rel_path:
             return Response({'content': '', 'detail': 'Finding has no file path.'})
 
+        # Fallback for non-GitHub or missing repo config: return stored code
         if project.provider != Project.Provider.GITHUB:
             return Response({
-                'content': '',
-                'detail': 'File fetch is only implemented for GitHub projects.',
+                'content': finding.original_code or '',
+                'detail': 'Showing stored code snippet (GitHub fetch not available).',
             })
 
         owner = (project.repo_owner or '').strip()
         repo = (project.repo_name or '').strip()
         if not owner or not repo:
             return Response({
-                'content': '',
-                'detail': 'Project has no GitHub repository configured.',
+                'content': finding.original_code or '',
+                'detail': 'Showing stored code snippet (no repo configured).',
             })
 
         branch = (evaluation.branch or project.default_branch or 'main').strip()
@@ -384,22 +389,20 @@ class FindingFileContentView(APIView):
         except requests.RequestException as e:
             return Response({'content': '', 'detail': str(e)}, status=status.HTTP_502_BAD_GATEWAY)
 
-        if r.status_code == 404:
+        if r.status_code == 200:
+            return Response({'content': r.text})
+
+        # Fallback: return the finding's stored original_code when GitHub fetch fails
+        if finding.original_code:
             return Response({
-                'content': '',
-                'detail': 'File or branch not found on GitHub (check path and token for private repos).',
+                'content': finding.original_code,
+                'detail': f'GitHub returned {r.status_code}. Showing stored code snippet.',
             })
 
-        if r.status_code != 200:
-            return Response(
-                {
-                    'content': '',
-                    'detail': f'GitHub returned {r.status_code}: {(r.text or "")[:300]}',
-                },
-                status=status.HTTP_502_BAD_GATEWAY,
-            )
-
-        return Response({'content': r.text})
+        return Response({
+            'content': '',
+            'detail': f'GitHub returned {r.status_code} and no stored code available.',
+        })
 
 
 class MarkFindingFixedView(APIView):

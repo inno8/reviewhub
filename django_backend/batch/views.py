@@ -340,13 +340,18 @@ class BatchJobInternalUpdateView(APIView):
         
         job.save()
 
-        # Build developer profile when batch completes
+        # Build developer profile and activate webhook when batch completes
         if data.get('status') == 'completed' and job.user and job.project:
             from .services import build_profile_from_batch
             try:
                 build_profile_from_batch(job.user, job)
             except Exception as e:
                 print(f"Failed to build profile for job {job.id}: {e}")
+
+            # Activate webhook for future push-based analysis
+            if job.project and not job.project.webhook_active:
+                job.project.webhook_active = True
+                job.project.save(update_fields=['webhook_active'])
 
         serializer = BatchJobSerializer(job)
         return Response(serializer.data)

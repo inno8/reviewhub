@@ -279,6 +279,80 @@ function openSkillBreakdown(id: number) { breakdownSkillId.value = id; breakdown
           </div>
         </section>
 
+        <!-- Developer Level Badge + Severity Distribution + Category Breakdown -->
+        <section v-if="performance" class="grid grid-cols-1 lg:grid-cols-3 gap-6 mb-12">
+          <!-- Developer Level -->
+          <div class="bg-surface-container-low p-6 rounded-xl text-center">
+            <p class="text-outline text-xs font-bold uppercase tracking-wider mb-3">Developer Level</p>
+            <div class="inline-flex items-center justify-center w-24 h-24 rounded-full mb-3"
+              :class="{
+                'bg-red-500/20 text-red-400': performance.level === 'beginner',
+                'bg-orange-500/20 text-orange-400': performance.level === 'junior',
+                'bg-yellow-500/20 text-yellow-400': performance.level === 'intermediate',
+                'bg-green-500/20 text-green-400': performance.level === 'senior',
+                'bg-primary/20 text-primary': performance.level === 'expert',
+              }">
+              <span class="text-2xl font-black uppercase">{{ performance.level?.[0] }}</span>
+            </div>
+            <p class="text-lg font-bold capitalize">{{ performance.level || 'Unknown' }}</p>
+            <p class="text-sm text-outline mt-1">{{ performance.averageScore }}% avg score</p>
+          </div>
+
+          <!-- Severity Distribution -->
+          <div class="bg-surface-container-low p-6 rounded-xl">
+            <p class="text-outline text-xs font-bold uppercase tracking-wider mb-4">Findings by Severity</p>
+            <div v-if="performance.severityDistribution" class="space-y-3">
+              <div v-for="(count, severity) in performance.severityDistribution" :key="severity" class="flex items-center gap-3">
+                <span class="text-xs font-bold uppercase w-20"
+                  :class="{
+                    'text-red-400': severity === 'critical',
+                    'text-orange-400': severity === 'warning',
+                    'text-blue-400': severity === 'info',
+                    'text-green-400': severity === 'suggestion',
+                  }">{{ severity }}</span>
+                <div class="flex-1 bg-surface-container-lowest rounded-full h-4 overflow-hidden">
+                  <div class="h-full rounded-full transition-all"
+                    :class="{
+                      'bg-red-500': severity === 'critical',
+                      'bg-orange-500': severity === 'warning',
+                      'bg-blue-500': severity === 'info',
+                      'bg-green-500': severity === 'suggestion',
+                    }"
+                    :style="{ width: performance.findingCount ? (count / performance.findingCount * 100) + '%' : '0%' }">
+                  </div>
+                </div>
+                <span class="text-sm font-bold w-8 text-right">{{ count }}</span>
+              </div>
+            </div>
+            <p v-else class="text-sm text-outline text-center py-4">No data yet</p>
+          </div>
+
+          <!-- Top Issue Categories -->
+          <div class="bg-surface-container-low p-6 rounded-xl">
+            <p class="text-outline text-xs font-bold uppercase tracking-wider mb-4">Top Issue Areas</p>
+            <div v-if="performance.categoryBreakdown?.length" class="space-y-2">
+              <div v-for="cat in performance.categoryBreakdown.slice(0, 6)" :key="cat.name" class="flex items-center gap-3">
+                <span class="text-xs font-medium w-28 truncate">{{ cat.name }}</span>
+                <div class="flex-1 bg-surface-container-lowest rounded-full h-3 overflow-hidden">
+                  <div class="h-full bg-tertiary rounded-full transition-all"
+                    :style="{ width: (cat.count / performance.categoryBreakdown[0].count * 100) + '%' }">
+                  </div>
+                </div>
+                <span class="text-xs font-bold w-6 text-right">{{ cat.count }}</span>
+              </div>
+            </div>
+            <p v-else class="text-sm text-outline text-center py-4">No data yet</p>
+          </div>
+        </section>
+
+        <!-- Score Trend -->
+        <section v-if="performance?.scoreTrend?.length" class="mb-12">
+          <div class="bg-surface-container-low rounded-3xl p-8 border border-outline-variant/10">
+            <h4 class="text-xl font-bold mb-4">Score Trend Across Commits</h4>
+            <TrendChart title="" :points="performance.scoreTrend.map((s: any) => ({ label: s.date, value: s.score }))" :width="800" :height="250" />
+          </div>
+        </section>
+
         <!-- Strengths / Growth -->
         <section v-if="performance" class="grid grid-cols-1 lg:grid-cols-2 gap-10 mb-12">
           <div class="space-y-6">
