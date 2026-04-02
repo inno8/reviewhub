@@ -6,6 +6,20 @@ interface Project {
   id: number;
   name: string;
   displayName: string;
+  description?: string;
+  /** Set when the project is linked to a Git remote (developer New Review flow). */
+  repoUrl: string | null;
+}
+
+function mapApiProject(project: any): Project {
+  const repoRaw = project.repoUrl ?? project.repo_url;
+  return {
+    id: project.id,
+    name: project.name,
+    displayName: project.name,
+    description: project.description ?? '',
+    repoUrl: typeof repoRaw === 'string' && repoRaw.trim() ? repoRaw.trim() : null,
+  };
 }
 
 export const useProjectsStore = defineStore('projects', () => {
@@ -20,23 +34,13 @@ export const useProjectsStore = defineStore('projects', () => {
     try {
       const { data } = await api.projects.list();
       
-      // Map Django DRF response to expected structure
+      // Map Django DRF response (paginated or plain)
       if (data.results) {
-        projects.value = data.results.map((project: any) => ({
-          id: project.id,
-          name: project.name,
-          displayName: project.name, // Use same name for display
-        }));
+        projects.value = data.results.map(mapApiProject);
       } else if (data.projects) {
-        // Legacy V1 response
-        projects.value = data.projects;
+        projects.value = data.projects.map(mapApiProject);
       } else if (Array.isArray(data)) {
-        // Direct array response
-        projects.value = data.map((project: any) => ({
-          id: project.id,
-          name: project.name,
-          displayName: project.name,
-        }));
+        projects.value = data.map(mapApiProject);
       } else {
         projects.value = [];
       }
@@ -74,5 +78,10 @@ export const useProjectsStore = defineStore('projects', () => {
     }
   }
 
-  return { projects, loading, selectedProjectId, fetchProjects, setSelectedProject };
+  function updateProjectRepoUrl(projectId: number, repoUrl: string) {
+    const p = projects.value.find(proj => proj.id === projectId);
+    if (p) p.repoUrl = repoUrl || null;
+  }
+
+  return { projects, loading, selectedProjectId, fetchProjects, setSelectedProject, updateProjectRepoUrl };
 });

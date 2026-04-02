@@ -12,6 +12,16 @@ export interface ReviewFilters {
 
 export type FindingFilters = ReviewFilters;
 
+/** Django expects `project` query param; frontend uses `projectId`. */
+function djangoListParams(params: ReviewFilters) {
+  const { projectId, ...rest } = params;
+  const out: Record<string, unknown> = { ...rest };
+  if (projectId !== undefined && projectId !== null) {
+    out.project = projectId;
+  }
+  return out;
+}
+
 export interface CreateUser {
   username: string;
   email: string;
@@ -30,8 +40,8 @@ export interface UpdateUser {
 }
 
 export interface PerformanceParams {
-  projectId: number;
-  periodType: 'DAILY' | 'WEEKLY' | 'MONTHLY';
+  projectId?: number | null;
+  periodType?: 'DAILY' | 'WEEKLY' | 'MONTHLY';
 }
 
 const client = axios.create({
@@ -86,45 +96,53 @@ export const api = {
     },
   },
   projects: {
-    list: () => client.get('/projects/'),
+    list: (params?: { page?: number }) => client.get('/projects/', { params }),
     get: (id: number) => client.get(`/projects/${id}/`),
     getBranches: (id: number) => client.get(`/projects/${id}/branches/`),
     createFromUrl: (url: string) => client.post('/projects/', { url }),
+    create: (data: { name: string; description?: string; member_ids?: number[]; category_id?: number }) =>
+      client.post('/projects/', data),
+    update: (
+      id: number,
+      data: Partial<{
+        name: string;
+        description: string;
+        default_branch: string;
+        provider: string;
+      }>,
+    ) => client.patch(`/projects/${id}/`, data),
+    delete: (id: number) => client.delete(`/projects/${id}/`),
+    linkRepo: (id: number, repoUrl: string) =>
+      client.patch(`/projects/${id}/link-repo/`, { repo_url: repoUrl }),
+    unlinkRepo: (id: number) => client.post(`/projects/${id}/unlink-repo/`, {}),
   },
   evaluations: {
-    list: (params: ReviewFilters = {}) => client.get('/evaluations/', { params }),
+    list: (params: ReviewFilters = {}) => client.get('/evaluations/', { params: djangoListParams(params) }),
     get: (id: number) => client.get(`/evaluations/${id}/`),
     dashboard: (projectId?: number) => client.get('/evaluations/dashboard/', { params: { project: projectId } }),
-    // Legacy reviews API (for backward compatibility during migration)
-    calendar: (projectId: number, month: string) => {
-      console.warn('Calendar API not yet implemented in Django backend');
-      return Promise.resolve({ data: { dates: [] as string[] } });
-    },
-    trigger: (projectId: number, branches?: string[]) => {
-      console.warn('Manual trigger not needed - use webhook flow');
-      return Promise.resolve({ data: { message: 'Use webhooks instead' } });
-    },
+    calendar: (projectId: number, month: string) => client.get('/evaluations/calendar/', { params: { project: projectId, month } }),
+    trigger: (projectId: number, branches?: string[]) =>
+      Promise.resolve({ data: { message: 'Use webhooks instead' } }),
+    patterns: (projectId?: number) =>
+      client.get('/evaluations/patterns/', { params: projectId ? { project: projectId } : {} }),
+    resolvePattern: (id: number) => client.post(`/evaluations/patterns/${id}/resolve/`),
   },
-  // Keep reviews as alias during migration
   reviews: {
-    list: (params: ReviewFilters = {}) => client.get('/evaluations/', { params }),
-    calendar: (projectId: number, month: string) => Promise.resolve({ data: { dates: [] as string[] } }),
+    list: (params: ReviewFilters = {}) => client.get('/evaluations/', { params: djangoListParams(params) }),
+    calendar: (projectId: number, month: string) => client.get('/evaluations/calendar/', { params: { project: projectId, month } }),
     trigger: (projectId: number, branches?: string[]) => Promise.resolve({ data: { message: 'Use webhooks instead', totalFindings: 0 } }),
     importMarkdown: (projectId: number, date: string) => Promise.resolve({ data: { message: 'Not implemented' } }),
     syncMarkdown: (projectId: number) => Promise.resolve({ data: { message: 'Not implemented' } }),
   },
   findings: {
-    list: (params: FindingFilters = {}) => client.get('/evaluations/findings/', { params }),
+    list: (params: FindingFilters = {}) => client.get('/evaluations/findings/', { params: djangoListParams(params) }),
     get: (id: number) => client.get(`/evaluations/findings/${id}/`),
     markFixed: (id: number, commitSha?: string) => client.post(`/evaluations/findings/${id}/fix/`, { commit_sha: commitSha }),
-    // Not yet implemented in Django
-    getFileContent: (id: number) => {
-      console.warn('File content API not yet implemented');
-      return Promise.resolve({ data: { content: '' } });
-    },
-    markUnderstood: (id: number) => Promise.resolve({ data: { markedUnderstood: true } }),
-    requestExplanation: (id: number) => Promise.resolve({ data: { message: 'Not implemented' } }),
-    applyFix: (id: number) => Promise.resolve({ data: { prUrl: '', message: 'Not implemented' } }),
+    getFileContent: (id: number) =>
+      client.get<{ content: string; detail?: string }>(`/evaluations/findings/${id}/file-content/`),
+    markUnderstood: (_id: number) => Promise.resolve({ data: { markedUnderstood: true } }),
+    requestExplanation: (_id: number) => Promise.resolve({ data: { message: 'Not implemented' } }),
+    applyFix: (_id: number) => Promise.resolve({ data: { prUrl: '', message: 'Not implemented' } }),
   },
   files: {
     getContent: (projectId: number, branch: string, filePath: string) =>
@@ -139,24 +157,42 @@ export const api = {
     delete: (id: number) => client.delete(`/users/${id}/`),
     getProjects: (id: number) => client.get(`/users/${id}/projects/`),
     assignProjects: (id: number, projectIds: number[]) => client.post(`/users/${id}/projects/`, { projectIds }),
+    adminStats: (params?: { search?: string; category?: number }) =>
+      client.get('/users/admin/stats/', { params }),
+    /** Encrypted GitHub PAT for private repo branch listing (batch). */
+    githubToken: {
+      get: () =>
+        client.get<{ configured: boolean; last_four: string | null }>('/users/me/github-token/'),
+      save: (token: string) => client.post('/users/me/github-token/', { token }),
+      delete: () => client.delete('/users/me/github-token/'),
+    },
+  },
+  categories: {
+    list: () => client.get('/users/categories/'),
+    get: (id: number) => client.get(`/users/categories/${id}/`),
+    create: (data: { name: string; description?: string; member_ids?: number[] }) =>
+      client.post('/users/categories/', data),
+    update: (id: number, data: { name?: string; description?: string; member_ids?: number[] }) =>
+      client.patch(`/users/categories/${id}/`, data),
+    delete: (id: number) => client.delete(`/users/categories/${id}/`),
   },
   performance: {
-    // Performance endpoints not yet implemented in Django v2 - return mock data
-    get: (userId: number, params: PerformanceParams) => 
-      Promise.resolve({ data: { 
-        totalReviews: 0, 
-        averageScore: 0, 
-        criticalIssues: 0, 
-        recommendations: [],
-        commitCount: 0,
-        findingCount: 0,
-        fixRate: 0,
-        reviewVelocity: null,
-        strengths: [],
-        growthAreas: []
-      } }),
-    trends: (userId: number, params: { projectId: number; weeks?: number }) =>
-      Promise.resolve({ data: [] }),
+    get: (userId: number, params?: PerformanceParams) =>
+      client.get(`/skills/performance/${userId}/`, {
+        params:
+          params?.projectId != null && params.projectId !== undefined
+            ? { project: params.projectId }
+            : {},
+      }),
+    trends: (userId: number, params?: { projectId?: number | null; weeks?: number }) =>
+      client.get(`/skills/performance/${userId}/trends/`, {
+        params: {
+          ...(params?.projectId != null && params.projectId !== undefined
+            ? { project: params.projectId }
+            : {}),
+          ...(params?.weeks != null ? { weeks: params.weeks } : {}),
+        },
+      }),
     recommendations: (userId: number, params: { projectId: number }) =>
       Promise.resolve({ data: [] }),
     leaderboard: (params: { projectId: number; periodType: 'DAILY' | 'WEEKLY' | 'MONTHLY' }) =>
@@ -164,25 +200,12 @@ export const api = {
   },
   skills: {
     categories: () => client.get('/skills/categories/'),
-    user: (userId: number) => client.get(`/skills/user/${userId}/`),
-    // Breakdown not implemented yet - return empty placeholder data
+    user: (userId: number, projectId?: number) =>
+      client.get(`/skills/user/${userId}/`, {
+        params: projectId != null ? { project: projectId } : {},
+      }),
     breakdown: (userId: number, skillId: number, projectId: number) =>
-      Promise.resolve({ data: { 
-        skill: { 
-          id: skillId, 
-          name: 'Skill', 
-          displayName: 'Skill', 
-          description: 'Skill details not available yet.',
-          category: { id: 1, name: 'General', displayName: 'General', icon: 'school' }
-        }, 
-        score: 0,
-        level: 0,
-        baseScore: 100,
-        deductions: [],
-        tips: ['Complete more code reviews to build your skill profile.'],
-        findings: [], 
-        trend: [] 
-      } }),
+      client.get(`/skills/user/${userId}/breakdown/${skillId}/`, { params: { project: projectId } }),
     recalculate: (userId: number, projectId: number) =>
       Promise.resolve({ data: { success: true } }),
     recommendations: (projectId?: number) => client.get('/skills/recommendations/', { params: { project: projectId } }),
@@ -199,13 +222,67 @@ export const api = {
     markAllRead: () => client.post('/notifications/mark-all-read/'),
     unreadCount: () => client.get('/notifications/unread-count/'),
   },
+  devProfile: {
+    get: () => client.get('/users/me/dev-profile/'),
+    save: (data: Record<string, unknown>) => client.post('/users/me/dev-profile/', data),
+    calibration: (jobId?: number) =>
+      client.get('/users/me/dev-calibration/', {
+        params: jobId != null ? { job: jobId } : {},
+      }),
+  },
+  gitConnections: {
+    list: () => client.get('/users/me/git-connections/'),
+    create: (data: { provider: string; username: string; email?: string | null }) =>
+      client.post('/users/me/git-connections/', data),
+    update: (id: number, data: Partial<{ username: string; email: string | null }>) =>
+      client.patch(`/users/me/git-connections/${id}/`, data),
+    delete: (id: number) => client.delete(`/users/me/git-connections/${id}/`),
+  },
+  llmConfig: {
+    get: () => client.get('/users/me/llm-config/'),
+    save: (data: Record<string, unknown>) => client.post('/users/me/llm-config/', data),
+    googleOAuthStart: (data: { model: string }) =>
+      client.post<{ authorization_url: string; error?: string }>(
+        '/users/me/llm-config/oauth/google/start/',
+        data,
+      ),
+    test: (data: {
+      provider: string;
+      api_key?: string;
+      access_token?: string;
+      model?: string;
+    }) =>
+      client.post<{ success: boolean; message?: string; error?: string; reply_preview?: string }>(
+        '/users/me/llm-config/test/',
+        data,
+      ),
+    delete: (provider: string) => client.delete(`/users/me/llm-config/${provider}/`),
+  },
+  webhooks: {
+    info: (projectId: number) => client.get(`/projects/${projectId}/webhook/`),
+    test: (projectId: number) => client.post(`/projects/${projectId}/webhook/test/`),
+  },
   batch: {
+    repoBranches: (params: { repo_url: string; author?: string }) =>
+      client.get<{ branches: string[] }>('/batch/repo-branches/', {
+        params: { repo_url: params.repo_url, ...(params.author ? { author: params.author } : {}) },
+      }),
+    checkOrgLlm: () =>
+      client.get<{ ready: boolean; detail: string }>('/batch/jobs/check-org-llm/'),
     listJobs: () => client.get('/batch/jobs/'),
     getJob: (id: number) => client.get(`/batch/jobs/${id}/`),
-    createJob: (data: { repo_url: string; branch?: string; target_email?: string; max_commits?: number }) => 
-      client.post('/batch/jobs/', data),
+    createJob: (data: {
+      repo_url: string;
+      project: number;
+      branch?: string;
+      target_github_username?: string;
+      max_commits?: number;
+      since_date?: string;
+    }) => client.post('/batch/jobs/', data),
     cancelJob: (id: number) => client.delete(`/batch/jobs/${id}/`),
+    rerunJob: (id: number) => client.post(`/batch/jobs/${id}/rerun/`, {}),
     getJobResults: (id: number) => client.get(`/batch/jobs/${id}/results/`),
+    getJobEvaluations: (id: number) => client.get(`/batch/jobs/${id}/evaluations/`),
     getProfile: () => client.get('/batch/profile/'),
     getStats: () => client.get('/batch/stats/'),
   },

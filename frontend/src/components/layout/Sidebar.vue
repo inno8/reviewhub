@@ -21,6 +21,13 @@ const reviewLoading = ref(false);
 const projectLoading = ref(false);
 const branches = ref<{ name: string; selected: boolean }[]>([]);
 const newProjectUrl = ref('');
+const newProjectName = ref('');
+const newProjectDesc = ref('');
+const newProjectCategoryId = ref<number | null>(null);
+const newProjectMemberIds = ref<number[]>([]);
+const projectCategories = ref<{ id: number; name: string }[]>([]);
+const projectUsersList = ref<{ id: number; username: string; email: string }[]>([]);
+const memberMode = ref<'individual' | 'category'>('category');
 const modalError = ref('');
 const modalSuccess = ref('');
 
@@ -31,13 +38,21 @@ onMounted(async () => {
 
 const navItems = [
   { name: 'Dashboard', icon: 'dashboard', path: '/' },
+  { name: 'Projects', icon: 'folder_open', path: '/projects' },
   { name: 'Skills', icon: 'school', path: '/skills' },
   { name: 'Insights', icon: 'analytics', path: '/insights' },
-  { name: 'Batch Analysis', icon: 'history', path: '/batch' },
+  { name: 'Dev profile', icon: 'psychology', path: '/dev-profile/results' },
+  { name: 'Batch Analysis', icon: 'history', path: '/batch', devOnly: true },
+  { name: 'Commit Timeline', icon: 'timeline', path: '/timeline', devOnly: true },
   { name: 'Team Management', icon: 'group', path: '/team', adminOnly: true },
 ];
 
 function isActive(path: string) {
+  if (path === '/dev-profile/results') {
+    return (
+      route.path === '/dev-profile/results' || route.path === '/dev-profile-setup'
+    );
+  }
   return route.path === path;
 }
 
@@ -67,6 +82,7 @@ const calendarCells = computed(() => {
 });
 
 const activityDates = ref<Set<string>>(new Set());
+const activityCounts = ref<Record<string, number>>({});
 
 const monthString = computed(() => {
   const year = currentMonth.value.getFullYear();
@@ -77,15 +93,27 @@ const monthString = computed(() => {
 async function fetchActivityDates() {
   if (!projectsStore.selectedProjectId) {
     activityDates.value = new Set();
+    activityCounts.value = {};
     return;
   }
   try {
     const { data } = await api.reviews.calendar(projectsStore.selectedProjectId, monthString.value);
-    activityDates.value = new Set(data.dates);
+    const dates = data.dates || [];
+    const counts = data.counts || {};
+    activityDates.value = new Set(Array.isArray(dates) ? dates : Object.keys(counts));
+    activityCounts.value = counts;
   } catch {
     activityDates.value = new Set();
+    activityCounts.value = {};
   }
 }
+
+function activityDotCount(day: number): number {
+  const dateStr = formatDateStr(day);
+  return Math.min(4, activityCounts.value[dateStr] || (activityDates.value.has(dateStr) ? 1 : 0));
+}
+
+const dotColors = ['bg-primary', 'bg-tertiary', 'bg-green-500', 'bg-yellow-500'];
 
 function formatDateStr(day: number): string {
   const year = currentMonth.value.getFullYear();
@@ -152,82 +180,207 @@ watch(() => projectsStore.selectedProjectId, () => {
 
 watch(monthString, fetchActivityDates);
 
+/** All accessible projects — developers can verify webhook/commits on linked repos too. */
+const newReviewProjectOptions = computed(() => projectsStore.projects);
+
 // New Review Modal
+const reviewProjectId = ref<number | null>(null);
+const reviewRepoUrl = ref('');
+const reviewStep = ref<'setup' | 'checking' | 'results'>('setup');
+const reviewPastCommits = ref<any[]>([]);
+const reviewWebhookConnected = ref(false);
+/** Latest GET /projects/:id/webhook/ payload for the results step */
+const reviewWebhookInfo = ref<Record<string, unknown> | null>(null);
+const reviewBranchSummary = ref<{
+  seen: string[];
+  defaultBranch: string | null;
+  matchesDefault: boolean | null;
+} | null>(null);
+
 async function openNewReviewModal() {
   showNewReviewModal.value = true;
   modalError.value = '';
   modalSuccess.value = '';
+  reviewStep.value = 'setup';
+  reviewPastCommits.value = [];
+  reviewWebhookConnected.value = false;
+  reviewWebhookInfo.value = null;
+  reviewBranchSummary.value = null;
+  reviewRepoUrl.value = '';
   branches.value = [];
-  
-  if (projectsStore.selectedProjectId) {
-    try {
-      const { data } = await api.projects.getBranches(projectsStore.selectedProjectId);
-      branches.value = data.branches.map((b: any) => ({ name: b.name, selected: true }));
-    } catch (e) {
-      modalError.value = 'Failed to fetch branches';
-    }
-  }
+
+  const options = newReviewProjectOptions.value;
+  const sel = projectsStore.selectedProjectId;
+  reviewProjectId.value = sel && options.some((p) => p.id === sel) ? sel : options[0]?.id ?? null;
 }
 
-async function triggerReview() {
-  if (!projectsStore.selectedProjectId) return;
-  
+async function startReviewCheck() {
+  if (!reviewProjectId.value) {
+    modalError.value = 'Select a project';
+    return;
+  }
   reviewLoading.value = true;
   modalError.value = '';
-  modalSuccess.value = '';
-  
+  reviewStep.value = 'checking';
+  reviewWebhookInfo.value = null;
+  reviewBranchSummary.value = null;
+  reviewPastCommits.value = [];
+
   try {
-    const selectedBranches = branches.value.filter(b => b.selected).map(b => b.name);
-    const { data } = await api.reviews.trigger(
-      projectsStore.selectedProjectId,
-      selectedBranches.length > 0 ? selectedBranches : undefined
-    );
-    
-    modalSuccess.value = data.message;
-    
-    // Refresh findings
-    await findingsStore.fetchFindings({ projectId: projectsStore.selectedProjectId });
-    
-    // Close modal after a delay
-    setTimeout(() => {
-      showNewReviewModal.value = false;
-      modalSuccess.value = '';
-    }, 2000);
-  } catch (e: any) {
-    modalError.value = e?.response?.data?.error || 'Failed to trigger review';
+    let projectDetail: { repo_url?: string | null; default_branch?: string } | null = null;
+    try {
+      const { data } = await api.projects.get(reviewProjectId.value);
+      projectDetail = data as { repo_url?: string | null; default_branch?: string };
+    } catch {
+      projectDetail = null;
+    }
+    const serverHasRepo = Boolean(projectDetail?.repo_url && String(projectDetail.repo_url).trim());
+    const urlTrim = reviewRepoUrl.value.trim();
+    if (!serverHasRepo && !urlTrim) {
+      modalError.value = 'This project has no repository URL yet. Enter one above, then run the check again.';
+      reviewStep.value = 'setup';
+      reviewLoading.value = false;
+      return;
+    }
+    if (urlTrim) {
+      try {
+        const { data } = await api.projects.linkRepo(reviewProjectId.value, urlTrim);
+        projectsStore.updateProjectRepoUrl(reviewProjectId.value, data.repo_url ?? urlTrim);
+        await projectsStore.fetchProjects();
+        projectDetail = { ...projectDetail, ...(data as object) } as typeof projectDetail;
+      } catch (linkErr: any) {
+        modalError.value = linkErr?.response?.data?.error || 'Failed to save repository URL';
+        reviewStep.value = 'setup';
+        reviewLoading.value = false;
+        return;
+      }
+    }
+
+    const pid = reviewProjectId.value;
+    const [evalRes, webhookRes] = await Promise.allSettled([
+      api.evaluations.list({ projectId: pid, limit: 20 }),
+      api.webhooks.info(pid),
+    ]);
+
+    let defaultBranch: string | null = projectDetail?.default_branch ?? null;
+    if (webhookRes.status === 'fulfilled') {
+      const w = webhookRes.value.data as Record<string, unknown>;
+      reviewWebhookInfo.value = w;
+      reviewWebhookConnected.value = Boolean(w.connected);
+      if (!defaultBranch && w.default_branch) {
+        defaultBranch = String(w.default_branch);
+      }
+    } else {
+      reviewWebhookInfo.value = null;
+      reviewWebhookConnected.value = false;
+    }
+
+    if (evalRes.status === 'fulfilled') {
+      const raw = evalRes.value.data as { results?: unknown[] } | unknown[];
+      const all = Array.isArray(raw) ? raw : raw?.results ?? [];
+      const list = Array.isArray(all) ? all : [];
+      reviewPastCommits.value = list.slice(0, 10);
+      const branches = [
+        ...new Set(
+          reviewPastCommits.value.map((e: { branch?: string }) => e.branch).filter(Boolean) as string[],
+        ),
+      ];
+      let matchesDefault: boolean | null = null;
+      if (defaultBranch && branches.length) {
+        matchesDefault = branches.some((b) => b === defaultBranch || b.endsWith(`/${defaultBranch}`));
+      }
+      reviewBranchSummary.value = {
+        seen: branches,
+        defaultBranch,
+        matchesDefault,
+      };
+    } else {
+      reviewPastCommits.value = [];
+      reviewBranchSummary.value = {
+        seen: [],
+        defaultBranch,
+        matchesDefault: null,
+      };
+      const reason = evalRes.status === 'rejected' ? evalRes.reason : null;
+      console.error('Evaluations list failed', reason);
+      const ax = reason && typeof reason === 'object' && 'response' in reason
+        ? (reason as { response?: { data?: unknown } }).response?.data
+        : null;
+      const msg =
+        ax && typeof ax === 'object' && ax !== null && 'detail' in ax
+          ? String((ax as { detail: unknown }).detail)
+          : null;
+      modalError.value = msg || 'Could not load past commits for this project.';
+    }
+
+    reviewStep.value = 'results';
+  } catch {
+    modalError.value = 'Failed to check project status';
+    reviewStep.value = 'setup';
   } finally {
     reviewLoading.value = false;
   }
 }
 
 // Add Project Modal
+async function openAddProjectModal() {
+  showAddProjectModal.value = true;
+  modalError.value = '';
+  modalSuccess.value = '';
+  newProjectName.value = '';
+  newProjectDesc.value = '';
+  newProjectCategoryId.value = null;
+  newProjectMemberIds.value = [];
+  memberMode.value = 'category';
+
+  try {
+    const [catsRes, usersRes] = await Promise.all([
+      api.categories.list(),
+      api.users.list(),
+    ]);
+    projectCategories.value = (catsRes.data.results || catsRes.data || []);
+    const allUsers = usersRes.data.results || usersRes.data || [];
+    projectUsersList.value = allUsers.filter((u: any) => u.role !== 'admin');
+  } catch { /* ignore */ }
+}
+
+function toggleMember(userId: number) {
+  const idx = newProjectMemberIds.value.indexOf(userId);
+  if (idx >= 0) newProjectMemberIds.value.splice(idx, 1);
+  else newProjectMemberIds.value.push(userId);
+}
+
 async function createProject() {
-  if (!newProjectUrl.value) {
-    modalError.value = 'Please enter a GitHub URL';
+  if (!newProjectName.value.trim()) {
+    modalError.value = 'Project name is required';
     return;
   }
-  
+
   projectLoading.value = true;
   modalError.value = '';
   modalSuccess.value = '';
-  
+
   try {
-    const { data } = await api.projects.createFromUrl(newProjectUrl.value);
-    
-    modalSuccess.value = data.message;
-    
-    // Refresh projects
+    const payload: any = {
+      name: newProjectName.value.trim(),
+      description: newProjectDesc.value.trim(),
+    };
+    if (memberMode.value === 'category' && newProjectCategoryId.value) {
+      payload.category_id = newProjectCategoryId.value;
+    } else if (memberMode.value === 'individual' && newProjectMemberIds.value.length) {
+      payload.member_ids = newProjectMemberIds.value;
+    }
+
+    await api.projects.create(payload);
+    modalSuccess.value = 'Project created!';
     await projectsStore.fetchProjects();
-    projectsStore.setSelectedProject(data.project.id);
-    
-    // Close modal after a delay
+
     setTimeout(() => {
       showAddProjectModal.value = false;
-      newProjectUrl.value = '';
       modalSuccess.value = '';
-    }, 2000);
+    }, 1500);
   } catch (e: any) {
-    modalError.value = e?.response?.data?.error || 'Failed to create project';
+    modalError.value = e?.response?.data?.error || e?.response?.data?.name?.[0] || 'Failed to create project';
   } finally {
     projectLoading.value = false;
   }
@@ -263,7 +416,7 @@ function toggleAllBranches(selected: boolean) {
       <!-- Add Project Button -->
       <button
         v-if="auth.isAdmin"
-        @click="showAddProjectModal = true"
+        @click="openAddProjectModal"
         class="w-full mt-2 py-2 px-3 border border-dashed border-outline-variant/30 rounded-lg text-xs text-outline hover:text-primary hover:border-primary/50 transition-colors flex items-center justify-center gap-2"
       >
         <span class="material-symbols-outlined text-sm">add</span>
@@ -288,7 +441,7 @@ function toggleAllBranches(selected: boolean) {
         v-for="item in navItems"
         :key="item.path"
         :to="item.path"
-        v-show="!item.adminOnly || auth.isAdmin"
+        v-show="(!item.adminOnly || auth.isAdmin) && (!item.devOnly || !auth.isAdmin)"
         :class="[
           'rounded-lg mx-2 my-1 px-4 py-3 flex items-center gap-3 transition-transform active:translate-x-1 text-sm font-medium',
           isActive(item.path)
@@ -333,16 +486,20 @@ function toggleAllBranches(selected: boolean) {
               :key="`cell-${index}`"
               :disabled="!day"
               :class="[
-                'p-1 text-center rounded transition-all',
+                'p-1 text-center rounded transition-all flex flex-col items-center',
                 !day && 'invisible',
                 day && isToday(day) && !isSelected(day) && 'bg-primary text-on-primary font-bold shadow-lg shadow-primary/20',
                 day && isSelected(day) && 'ring-2 ring-primary bg-primary/20 text-primary font-bold',
-                day && !isToday(day) && !isSelected(day) && hasActivity(day) && 'bg-primary-container/20 text-primary border border-primary/30 hover:bg-primary-container/40 cursor-pointer',
+                day && !isToday(day) && !isSelected(day) && hasActivity(day) && 'text-primary hover:bg-primary-container/40 cursor-pointer',
                 day && !isToday(day) && !isSelected(day) && !hasActivity(day) && 'text-on-surface-variant hover:bg-surface-container cursor-pointer',
               ]"
               @click="day && selectDate(day)"
             >
-              {{ day || '' }}
+              <span>{{ day || '' }}</span>
+              <span v-if="day && activityDotCount(day) > 0" class="flex gap-[2px] mt-[1px]">
+                <span v-for="d in activityDotCount(day)" :key="d"
+                  :class="['w-1 h-1 rounded-full', dotColors[(d - 1) % dotColors.length]]"></span>
+              </span>
             </button>
           </div>
           
@@ -390,73 +547,152 @@ function toggleAllBranches(selected: boolean) {
     v-if="showNewReviewModal"
     class="fixed inset-0 z-[100] flex items-center justify-center p-6 bg-background/80 backdrop-blur-sm"
   >
-    <div class="glass-panel w-full max-w-md rounded-xl overflow-hidden shadow-2xl">
+    <div class="glass-panel w-full max-w-lg rounded-xl overflow-hidden shadow-2xl max-h-[90vh] overflow-y-auto">
       <div class="px-6 py-4 border-b border-outline-variant/10 flex justify-between items-center">
-        <h3 class="text-lg font-bold text-on-surface">Run Code Review</h3>
+        <h3 class="text-lg font-bold text-on-surface">New Review</h3>
         <button @click="showNewReviewModal = false" class="text-outline hover:text-on-surface">
           <span class="material-symbols-outlined">close</span>
         </button>
       </div>
 
-      <div class="p-6">
-        <p class="text-sm text-on-surface-variant mb-4">
-          Run @code-review on 
-          <span class="font-bold text-primary">
-            {{ projectsStore.projects.find(p => p.id === projectsStore.selectedProjectId)?.displayName }}
-          </span>
-        </p>
+      <div class="p-6 space-y-4">
+        <!-- Step 1: Setup -->
+        <template v-if="reviewStep === 'setup'">
+          <div class="space-y-1.5">
+            <label class="text-xs font-bold uppercase tracking-widest text-outline">Project</label>
+            <p v-if="!newReviewProjectOptions.length" class="text-sm text-outline py-2">
+              No projects available. Ask an admin to add you to a project.
+            </p>
+            <select v-else v-model="reviewProjectId"
+              class="w-full bg-surface-container-lowest border border-outline-variant/30 rounded-lg text-on-surface text-sm focus:ring-1 focus:ring-primary/50 py-3 px-4">
+              <option :value="null" disabled>Select project...</option>
+              <option v-for="p in newReviewProjectOptions" :key="p.id" :value="p.id">{{ p.displayName }}</option>
+            </select>
+            <p v-if="newReviewProjectOptions.length" class="text-[10px] text-outline">
+              Pick the project whose repo and webhook you want to inspect. Enter a URL only if that project is not linked yet.
+            </p>
+          </div>
+          <div class="space-y-1.5">
+            <label class="text-xs font-bold uppercase tracking-widest text-outline">Repository URL</label>
+            <input v-model="reviewRepoUrl" type="url" placeholder="https://github.com/user/repo"
+              class="w-full bg-surface-container-lowest border border-outline-variant/30 rounded-lg text-on-surface placeholder:text-outline/40 focus:ring-1 focus:ring-primary/50 py-3 px-4 text-sm" />
+            <p class="text-[10px] text-outline">GitHub, GitLab, or Bitbucket repository URL</p>
+          </div>
+        </template>
 
-        <!-- Branch Selection -->
-        <div class="mb-4">
-          <div class="flex items-center justify-between mb-2">
-            <label class="text-xs font-bold uppercase tracking-widest text-outline">Select Branches</label>
-            <div class="flex gap-2">
-              <button @click="toggleAllBranches(true)" class="text-[10px] text-primary hover:underline">All</button>
-              <button @click="toggleAllBranches(false)" class="text-[10px] text-outline hover:underline">None</button>
+        <!-- Step 2: Checking -->
+        <template v-if="reviewStep === 'checking'">
+          <div class="flex flex-col items-center py-8">
+            <span class="material-symbols-outlined text-4xl text-primary animate-spin mb-4">progress_activity</span>
+            <p class="text-sm text-on-surface-variant">Checking for past commits & webhook status...</p>
+          </div>
+        </template>
+
+        <!-- Step 3: Results -->
+        <template v-if="reviewStep === 'results'">
+          <!-- Past commits (evaluations for this project only) -->
+          <div class="space-y-2">
+            <div class="flex items-center gap-2">
+              <span class="material-symbols-outlined text-sm" :class="reviewPastCommits.length ? 'text-green-400' : 'text-yellow-400'">
+                {{ reviewPastCommits.length ? 'check_circle' : 'info' }}
+              </span>
+              <span class="text-sm font-bold text-on-surface">
+                {{ reviewPastCommits.length ? `${reviewPastCommits.length} recent evaluations (this project)` : 'No evaluations yet for this project' }}
+              </span>
+            </div>
+            <div v-if="reviewPastCommits.length" class="max-h-36 overflow-y-auto bg-surface-container-lowest rounded-lg p-3 space-y-2">
+              <div v-for="c in reviewPastCommits" :key="c.id" class="text-xs text-on-surface-variant flex flex-col gap-0.5 border-b border-outline-variant/10 pb-2 last:border-0 last:pb-0">
+                <div class="flex justify-between gap-2">
+                  <span class="font-mono truncate">{{ c.commit_sha?.slice(0, 8) || c.id }}</span>
+                  <span class="text-outline shrink-0">{{ c.created_at?.split('T')[0] || '' }}</span>
+                </div>
+                <span v-if="c.branch" class="text-[10px] text-primary font-mono">branch: {{ c.branch }}</span>
+              </div>
             </div>
           </div>
-          <div class="max-h-48 overflow-y-auto bg-surface-container-lowest rounded-lg p-3 space-y-2">
-            <label
-              v-for="branch in branches"
-              :key="branch.name"
-              class="flex items-center gap-2 cursor-pointer group"
-            >
-              <input
-                type="checkbox"
-                v-model="branch.selected"
-                class="h-4 w-4 rounded border-outline-variant bg-surface-container text-primary"
-              />
-              <span class="text-sm text-on-surface-variant group-hover:text-on-surface font-mono">
-                {{ branch.name }}
-              </span>
-            </label>
-            <p v-if="branches.length === 0" class="text-sm text-outline">Loading branches...</p>
-          </div>
-        </div>
 
-        <!-- Error/Success Messages -->
-        <div v-if="modalError" class="mb-4 p-3 bg-error/10 border border-error/20 rounded-lg">
+          <!-- Branches vs default -->
+          <div v-if="reviewBranchSummary" class="space-y-2 pt-2 border-t border-outline-variant/10">
+            <p class="text-xs font-bold text-on-surface">Branches in recent activity</p>
+            <p v-if="reviewBranchSummary.seen.length" class="text-xs text-on-surface-variant">
+              <span class="font-mono text-primary">{{ reviewBranchSummary.seen.join(', ') }}</span>
+              <template v-if="reviewBranchSummary.defaultBranch">
+                · default: <span class="font-mono">{{ reviewBranchSummary.defaultBranch }}</span>
+              </template>
+            </p>
+            <p v-else class="text-xs text-outline">No branch info until at least one evaluation exists for this repo.</p>
+            <p
+              v-if="reviewBranchSummary.defaultBranch && reviewBranchSummary.seen.length"
+              class="text-[11px] flex items-center gap-1.5"
+              :class="reviewBranchSummary.matchesDefault ? 'text-green-400' : 'text-yellow-500'"
+            >
+              <span class="material-symbols-outlined text-sm">{{ reviewBranchSummary.matchesDefault ? 'check_circle' : 'warning' }}</span>
+              {{
+                reviewBranchSummary.matchesDefault
+                  ? 'Recent pushes include the project default branch.'
+                  : 'Recent activity is on other branches; ensure your webhook fires for the branch you care about (e.g. default branch).'
+              }}
+            </p>
+          </div>
+
+          <!-- Webhook: ReviewHub endpoint + optional live traffic -->
+          <div class="space-y-2 pt-2 border-t border-outline-variant/10">
+            <div class="flex items-center gap-2">
+              <span class="material-symbols-outlined text-sm" :class="reviewWebhookConnected ? 'text-green-400' : 'text-outline'">
+                {{ reviewWebhookConnected ? 'link' : 'link_off' }}
+              </span>
+              <span class="text-sm font-bold text-on-surface">Webhook endpoint (ReviewHub)</span>
+            </div>
+            <p class="text-[11px] text-on-surface-variant">
+              Paste this URL and secret in your Git host so pushes create evaluations for
+              <strong class="text-on-surface">this project</strong>.
+            </p>
+            <div v-if="reviewWebhookInfo?.webhook_url" class="bg-surface-container-lowest rounded-lg p-3 space-y-2">
+              <div>
+                <p class="text-[10px] uppercase text-outline font-bold mb-0.5">Payload URL</p>
+                <code class="text-[11px] text-primary break-all select-all block">{{ reviewWebhookInfo.webhook_url }}</code>
+              </div>
+              <div v-if="reviewWebhookInfo.webhook_secret">
+                <p class="text-[10px] uppercase text-outline font-bold mb-0.5">Secret</p>
+                <code class="text-[11px] text-on-surface-variant break-all select-all block">{{ reviewWebhookInfo.webhook_secret }}</code>
+              </div>
+            </div>
+            <div
+              v-if="reviewWebhookInfo && reviewWebhookInfo.receiving_webhooks"
+              class="flex items-center gap-2 text-xs text-green-400"
+            >
+              <span class="material-symbols-outlined text-sm">rss_feed</span>
+              Webhook traffic has been recorded for this project.
+            </div>
+            <div
+              v-else-if="reviewWebhookInfo && !reviewWebhookInfo.receiving_webhooks"
+              class="text-[11px] text-outline"
+            >
+              No webhook deliveries recorded yet—after you add the hook in GitHub/GitLab/Bitbucket, push a commit to see evaluations appear.
+            </div>
+          </div>
+
+          <button type="button" @click="reviewStep = 'setup'" class="text-xs text-primary hover:underline">← Back to setup</button>
+        </template>
+
+        <!-- Error/Success -->
+        <div v-if="modalError" class="p-3 bg-error/10 border border-error/20 rounded-lg">
           <p class="text-sm text-error">{{ modalError }}</p>
         </div>
-        <div v-if="modalSuccess" class="mb-4 p-3 bg-primary/10 border border-primary/20 rounded-lg">
+        <div v-if="modalSuccess" class="p-3 bg-primary/10 border border-primary/20 rounded-lg">
           <p class="text-sm text-primary">{{ modalSuccess }}</p>
         </div>
 
         <!-- Actions -->
-        <div class="flex gap-3">
-          <button
-            @click="showNewReviewModal = false"
-            class="flex-1 py-3 bg-surface-container-highest text-on-surface font-bold rounded-lg hover:bg-outline-variant transition-colors"
-          >
+        <div class="flex gap-3 pt-2">
+          <button @click="showNewReviewModal = false"
+            class="flex-1 py-3 bg-surface-container-highest text-on-surface font-bold rounded-lg hover:bg-outline-variant transition-colors">
             Cancel
           </button>
-          <button
-            @click="triggerReview"
-            :disabled="reviewLoading || branches.filter(b => b.selected).length === 0"
-            class="flex-1 py-3 primary-gradient text-on-primary font-bold rounded-lg disabled:opacity-50 flex items-center justify-center gap-2"
-          >
-            <span v-if="reviewLoading" class="material-symbols-outlined text-sm animate-spin">progress_activity</span>
-            {{ reviewLoading ? 'Running...' : 'Start Review' }}
+          <button v-if="reviewStep === 'setup'" @click="startReviewCheck"
+            :disabled="reviewLoading || !reviewProjectId || !newReviewProjectOptions.length"
+            class="flex-1 py-3 primary-gradient text-on-primary font-bold rounded-lg disabled:opacity-50 flex items-center justify-center gap-2">
+            Start Review
           </button>
         </div>
       </div>
@@ -468,7 +704,7 @@ function toggleAllBranches(selected: boolean) {
     v-if="showAddProjectModal"
     class="fixed inset-0 z-[100] flex items-center justify-center p-6 bg-background/80 backdrop-blur-sm"
   >
-    <div class="glass-panel w-full max-w-md rounded-xl overflow-hidden shadow-2xl">
+    <div class="glass-panel w-full max-w-lg rounded-xl overflow-hidden shadow-2xl max-h-[90vh] overflow-y-auto">
       <div class="px-6 py-4 border-b border-outline-variant/10 flex justify-between items-center">
         <h3 class="text-lg font-bold text-on-surface">Add New Project</h3>
         <button @click="showAddProjectModal = false" class="text-outline hover:text-on-surface">
@@ -476,50 +712,63 @@ function toggleAllBranches(selected: boolean) {
         </button>
       </div>
 
-      <div class="p-6">
-        <p class="text-sm text-on-surface-variant mb-4">
-          Enter the GitHub repository URL to connect it with @code-review.
-        </p>
-
-        <!-- GitHub URL Input -->
-        <div class="mb-4">
-          <label class="text-xs font-bold uppercase tracking-widest text-outline block mb-2">
-            GitHub Repository URL
-          </label>
-          <input
-            v-model="newProjectUrl"
-            type="text"
-            placeholder="https://github.com/owner/repo"
-            class="w-full bg-surface-container-lowest border border-outline-variant/30 rounded-lg text-on-surface placeholder:text-outline/40 focus:ring-1 focus:ring-primary/50 focus:border-primary py-3 px-4"
-          />
-          <p class="text-[10px] text-outline mt-2">
-            Examples: https://github.com/inno8/project or inno8/project
-          </p>
+      <div class="p-6 space-y-4">
+        <div class="space-y-1.5">
+          <label class="text-xs font-bold uppercase tracking-widest text-outline">Project Name</label>
+          <input v-model="newProjectName" type="text" placeholder="e.g. ReviewHub" required
+            class="w-full bg-surface-container-lowest border border-outline-variant/30 rounded-lg text-on-surface placeholder:text-outline/40 focus:ring-1 focus:ring-primary/50 py-3 px-4" />
         </div>
 
-        <!-- Error/Success Messages -->
-        <div v-if="modalError" class="mb-4 p-3 bg-error/10 border border-error/20 rounded-lg">
+        <div class="space-y-1.5">
+          <label class="text-xs font-bold uppercase tracking-widest text-outline">Description</label>
+          <input v-model="newProjectDesc" type="text" placeholder="Short description..."
+            class="w-full bg-surface-container-lowest border border-outline-variant/30 rounded-lg text-on-surface placeholder:text-outline/40 focus:ring-1 focus:ring-primary/50 py-3 px-4" />
+        </div>
+
+        <!-- Member Assignment -->
+        <div class="space-y-2">
+          <label class="text-xs font-bold uppercase tracking-widest text-outline">Add Members</label>
+          <div class="flex bg-surface-container-lowest p-1 rounded-lg w-fit">
+            <button type="button"
+              :class="['px-4 py-1.5 text-xs font-bold rounded-md transition-all', memberMode === 'category' ? 'bg-surface-container text-primary shadow-sm' : 'text-outline hover:text-on-surface']"
+              @click="memberMode = 'category'">By Category</button>
+            <button type="button"
+              :class="['px-4 py-1.5 text-xs font-bold rounded-md transition-all', memberMode === 'individual' ? 'bg-surface-container text-primary shadow-sm' : 'text-outline hover:text-on-surface']"
+              @click="memberMode = 'individual'">Individual</button>
+          </div>
+
+          <div v-if="memberMode === 'category'" class="space-y-1.5">
+            <select v-model="newProjectCategoryId"
+              class="w-full bg-surface-container-lowest border border-outline-variant/30 rounded-lg text-on-surface text-sm focus:ring-1 focus:ring-primary/50 py-3 px-4">
+              <option :value="null">Select a category...</option>
+              <option v-for="cat in projectCategories" :key="cat.id" :value="cat.id">{{ cat.name }}</option>
+            </select>
+          </div>
+
+          <div v-else class="max-h-40 overflow-y-auto bg-surface-container-lowest rounded-lg p-3 space-y-2 border border-outline-variant/30">
+            <label v-for="u in projectUsersList" :key="u.id" class="flex items-center gap-2 cursor-pointer group">
+              <input type="checkbox" :checked="newProjectMemberIds.includes(u.id)" @change="toggleMember(u.id)"
+                class="h-4 w-4 rounded border-outline-variant bg-surface-container text-primary" />
+              <span class="text-sm text-on-surface-variant group-hover:text-on-surface">{{ u.username }} <span class="text-outline text-xs">({{ u.email }})</span></span>
+            </label>
+            <p v-if="!projectUsersList.length" class="text-xs text-outline">No users available</p>
+          </div>
+        </div>
+
+        <div v-if="modalError" class="p-3 bg-error/10 border border-error/20 rounded-lg">
           <p class="text-sm text-error">{{ modalError }}</p>
         </div>
-        <div v-if="modalSuccess" class="mb-4 p-3 bg-primary/10 border border-primary/20 rounded-lg">
+        <div v-if="modalSuccess" class="p-3 bg-primary/10 border border-primary/20 rounded-lg">
           <p class="text-sm text-primary">{{ modalSuccess }}</p>
         </div>
 
-        <!-- Actions -->
-        <div class="flex gap-3">
-          <button
-            @click="showAddProjectModal = false"
-            class="flex-1 py-3 bg-surface-container-highest text-on-surface font-bold rounded-lg hover:bg-outline-variant transition-colors"
-          >
-            Cancel
-          </button>
-          <button
-            @click="createProject"
-            :disabled="projectLoading || !newProjectUrl"
-            class="flex-1 py-3 primary-gradient text-on-primary font-bold rounded-lg disabled:opacity-50 flex items-center justify-center gap-2"
-          >
+        <div class="flex gap-3 pt-2">
+          <button @click="showAddProjectModal = false"
+            class="flex-1 py-3 bg-surface-container-highest text-on-surface font-bold rounded-lg hover:bg-outline-variant transition-colors">Cancel</button>
+          <button @click="createProject" :disabled="projectLoading || !newProjectName.trim()"
+            class="flex-1 py-3 primary-gradient text-on-primary font-bold rounded-lg disabled:opacity-50 flex items-center justify-center gap-2">
             <span v-if="projectLoading" class="material-symbols-outlined text-sm animate-spin">progress_activity</span>
-            {{ projectLoading ? 'Creating...' : 'Add Project' }}
+            {{ projectLoading ? 'Creating...' : 'Create Project' }}
           </button>
         </div>
       </div>

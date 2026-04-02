@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { ref, onMounted, computed } from 'vue';
 import { useRouter } from 'vue-router';
-import { api } from '@/services/api';
+import { api } from '@/composables/useApi';
 
 const router = useRouter();
 
@@ -31,7 +31,7 @@ const unreadCount = computed(() => {
 async function fetchNotifications() {
   try {
     loading.value = true;
-    const response = await api.get('/notifications/?limit=100');
+    const response = await api.notifications.list(100);
     notifications.value = response.data.results || response.data;
   } catch (error) {
     console.error('Failed to fetch notifications:', error);
@@ -42,7 +42,7 @@ async function fetchNotifications() {
 
 async function markAsRead(notification: any) {
   try {
-    await api.patch(`/notifications/${notification.id}/read/`);
+    await api.notifications.markAsRead(notification.id);
     notification.read = true;
     
     // Navigate based on notification type
@@ -58,7 +58,7 @@ async function markAsRead(notification: any) {
 
 async function markAllRead() {
   try {
-    await api.post('/notifications/mark-all-read/');
+    await api.notifications.markAllRead();
     notifications.value.forEach(n => n.read = true);
   } catch (error) {
     console.error('Failed to mark all as read:', error);
