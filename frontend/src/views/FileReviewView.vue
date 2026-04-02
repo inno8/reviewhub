@@ -826,10 +826,10 @@ function goBack() {
                 <!-- Explanation Content -->
                 <div class="flex-1">
                   <div class="flex items-center gap-3 mb-3">
-                    <span :class="['px-2 py-1 rounded-full text-[10px] font-bold uppercase border', getCategoryClass(selectedFinding.category)]">
-                      {{ selectedFinding.category.replace('_', ' ') }}
+                    <span :class="['px-2 py-1 rounded-full text-[10px] font-bold uppercase border', getCategoryClass(selectedFinding.category || selectedFinding.severity || '')]">
+                      {{ (selectedFinding.category || selectedFinding.severity || 'unknown').replace('_', ' ') }}
                     </span>
-                    <span class="text-xs text-outline">by {{ selectedFinding.commitAuthor }}</span>
+                    <span class="text-xs text-outline">by {{ selectedFinding.commitAuthor || 'unknown' }}</span>
                     <span class="text-xs text-outline">{{ getLineRange(selectedFinding.id) }}</span>
                   </div>
                   
