@@ -2,6 +2,9 @@
 import { ref, computed, onMounted, watch } from 'vue';
 import { useRoute, useRouter } from 'vue-router';
 import AppShell from '@/components/layout/AppShell.vue';
+import SkillRadarChart from '@/components/charts/SkillRadarChart.vue';
+import TrendChart from '@/components/charts/TrendChart.vue';
+import SkillBreakdownDialog from '@/components/skills/SkillBreakdownDialog.vue';
 import { useFindingsStore } from '@/stores/findings';
 import { useProjectsStore } from '@/stores/projects';
 import { useAuthStore } from '@/stores/auth';
@@ -79,17 +82,48 @@ const selectedDate = ref<string | null>(null);
 const categories = ['SECURITY', 'PERFORMANCE', 'CODE_STYLE', 'TESTING', 'ARCHITECTURE'];
 const difficulties = ['BEGINNER', 'INTERMEDIATE', 'ADVANCED'];
 
-// Developer overview data (priorities, patterns, profile)
-const devOverview = ref<any>(null);
+// Developer home data (unified endpoint)
+const devHome = ref<any>(null);
+const devHomeLoading = ref(false);
+const devProjectFilter = ref<number | null>(null);
 
-async function loadDevOverview(projectId?: number) {
+// Skill breakdown dialog
+const breakdownOpen = ref(false);
+const breakdownSkillId = ref<number | null>(null);
+function openSkillBreakdown(id: number) {
+  breakdownSkillId.value = id;
+  breakdownOpen.value = true;
+}
+
+async function loadDevHome(projectId?: number) {
   if (authStore.isAdmin) return;
+  devHomeLoading.value = true;
   try {
     const params: any = {};
     if (projectId) params.project = projectId;
-    const { data } = await api.dashboard.overview(params.project);
-    devOverview.value = data;
-  } catch { devOverview.value = null; }
+    const axios = (await import('axios')).default;
+    const token = localStorage.getItem('reviewhub_token');
+    const { data } = await axios.get(
+      `${import.meta.env.VITE_API_URL}/skills/dashboard/developer-home/`,
+      { params, headers: token ? { Authorization: `Bearer ${token}` } : {} }
+    );
+    devHome.value = data;
+  } catch { devHome.value = null; }
+  finally { devHomeLoading.value = false; }
+}
+
+function setProjectFilter(projectId: number | null) {
+  devProjectFilter.value = projectId;
+  loadDevHome(projectId ?? undefined);
+}
+
+function getLevelColor(level: string) {
+  const m: Record<string, string> = { beginner: 'text-red-400', junior: 'text-orange-400', intermediate: 'text-yellow-400', senior: 'text-green-400', expert: 'text-primary' };
+  return m[level] || 'text-outline';
+}
+function getLevelBg(level: string) {
+  const m: Record<string, string> = { beginner: 'bg-red-500/15', junior: 'bg-orange-500/15', intermediate: 'bg-yellow-500/15', senior: 'bg-green-500/15', expert: 'bg-primary/15' };
+  return m[level] || 'bg-surface-container';
 }
 
 onMounted(async () => {
@@ -97,7 +131,7 @@ onMounted(async () => {
   if (authStore.isAdmin) {
     await loadAdminData();
   } else {
-    await loadDevOverview();
+    await loadDevHome();
   }
   applyIssuesProjectFromRoute();
 });
@@ -323,45 +357,196 @@ function scoreColor(score: number) {
     <!-- ═══ DEV DASHBOARD ═══ -->
     <template v-else>
       <div class="p-8 flex-1">
-        <!-- Project cards (no project selected) -->
-        <template v-if="!devSelectedProject">
-          <header class="mb-10">
-            <h1 class="text-4xl font-black text-on-surface tracking-tight mb-2">{{ currentDate }}</h1>
-            <p class="text-outline text-sm">Select a project to view findings and issues.</p>
-          </header>
 
-          <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
-            <div
-              v-for="project in projectsStore.projects" :key="project.id"
-              class="bg-surface-container-low p-6 rounded-xl border border-outline-variant/10 hover:border-primary/30 transition-all cursor-pointer group h-full flex flex-col"
-              @click="selectDevProject(project.id)">
-              <div class="flex items-start justify-between mb-4">
-                <div class="w-12 h-12 rounded-xl bg-primary/10 flex items-center justify-center">
-                  <span class="material-symbols-outlined text-primary text-2xl">terminal</span>
+        <!-- Loading -->
+        <div v-if="devHomeLoading && !devHome" class="flex items-center justify-center py-20">
+          <span class="material-symbols-outlined text-4xl text-outline animate-spin">progress_activity</span>
+        </div>
+
+        <template v-else-if="devHome">
+
+          <!-- ── Top Metrics Row ── -->
+          <section class="grid grid-cols-2 md:grid-cols-5 gap-4 mb-8">
+            <div class="bg-surface-container-low p-5 rounded-xl border border-outline-variant/10 text-center">
+              <p class="text-4xl font-black" :class="devHome.avgScore >= 70 ? 'text-green-400' : devHome.avgScore >= 50 ? 'text-yellow-400' : 'text-red-400'">
+                {{ devHome.avgScore }}%
+              </p>
+              <p class="text-[10px] text-outline uppercase tracking-wider mt-1">Avg Score</p>
+            </div>
+            <div class="bg-surface-container-low p-5 rounded-xl border border-outline-variant/10 text-center">
+              <div class="inline-flex items-center justify-center w-12 h-12 rounded-full mb-1" :class="getLevelBg(devHome.level)">
+                <span class="text-sm font-black uppercase" :class="getLevelColor(devHome.level)">{{ (devHome.level || '?')[0] }}</span>
+              </div>
+              <p class="text-sm font-bold capitalize" :class="getLevelColor(devHome.level)">{{ devHome.level }}</p>
+            </div>
+            <div class="bg-surface-container-low p-5 rounded-xl border border-outline-variant/10 text-center">
+              <p class="text-2xl font-black" :class="devHome.improving ? 'text-green-400' : 'text-orange-400'">
+                {{ devHome.improving ? '+' : '' }}{{ devHome.improvementPct }}%
+              </p>
+              <p class="text-[10px] text-outline uppercase tracking-wider mt-1">{{ devHome.improving ? 'Improving' : 'Trend' }}</p>
+            </div>
+            <div class="bg-surface-container-low p-5 rounded-xl border border-outline-variant/10 text-center">
+              <p class="text-2xl font-black text-tertiary">{{ devHome.findingCount }}</p>
+              <p class="text-[10px] text-outline uppercase tracking-wider mt-1">Findings</p>
+            </div>
+            <div class="bg-surface-container-low p-5 rounded-xl border border-outline-variant/10 text-center">
+              <p class="text-2xl font-black text-primary">{{ devHome.commitCount }}</p>
+              <p class="text-[10px] text-outline uppercase tracking-wider mt-1">Commits</p>
+            </div>
+          </section>
+
+          <!-- ── Two Column Layout ── -->
+          <section class="grid grid-cols-1 lg:grid-cols-3 gap-8 mb-8">
+
+            <!-- LEFT: Action Column (2/3 width) -->
+            <div class="lg:col-span-2 space-y-6">
+
+              <!-- Focus This Week -->
+              <div v-if="devHome.priorities?.length" class="p-5 rounded-xl bg-primary/5 border border-primary/20">
+                <div class="flex items-center gap-2 mb-3">
+                  <span class="material-symbols-outlined text-primary">target</span>
+                  <h3 class="text-sm font-bold text-primary uppercase tracking-wider">Focus this week</h3>
                 </div>
-                <span class="material-symbols-outlined text-outline group-hover:text-primary transition-colors">arrow_forward</span>
+                <div class="flex flex-wrap gap-3">
+                  <div v-for="p in devHome.priorities" :key="p.slug"
+                    class="flex items-center gap-2 px-4 py-2 rounded-lg bg-surface-container border border-outline-variant/20 cursor-pointer hover:border-primary/40 transition-colors"
+                    @click="p.id && openSkillBreakdown(p.id)">
+                    <div class="w-8 h-8 rounded-full flex items-center justify-center text-xs font-black"
+                      :class="p.score < 40 ? 'bg-red-500/20 text-red-400' : p.score < 70 ? 'bg-orange-500/20 text-orange-400' : 'bg-yellow-500/20 text-yellow-400'">
+                      {{ Math.round(p.score) }}
+                    </div>
+                    <div>
+                      <p class="text-sm font-bold">{{ p.skill }}</p>
+                      <p class="text-[10px] text-outline">{{ p.issues }} issues</p>
+                    </div>
+                  </div>
+                </div>
               </div>
-              <h3 class="text-lg font-bold text-on-surface mb-1">{{ project.displayName }}</h3>
-              <p class="text-xs text-outline mb-4 line-clamp-2 flex-1">{{ project.description || 'No description' }}</p>
-              <div class="flex items-center gap-3 text-xs text-outline">
-                <span class="flex items-center gap-1"><span class="material-symbols-outlined text-sm">code</span>Project</span>
+
+              <!-- Pattern Alerts -->
+              <div v-if="devHome.patterns?.length" class="space-y-2">
+                <div v-for="pat in devHome.patterns" :key="pat.key"
+                  class="flex items-center gap-3 p-3 rounded-lg bg-tertiary/5 border border-tertiary/20">
+                  <span class="material-symbols-outlined text-tertiary">repeat</span>
+                  <p class="text-sm flex-1">
+                    <span class="font-bold text-tertiary">{{ pat.type.replace('_', ' ') }}:</span>
+                    {{ pat.message }}.
+                  </p>
+                  <router-link to="/skills" class="text-xs text-primary font-semibold whitespace-nowrap">Fix it</router-link>
+                </div>
+              </div>
+
+              <!-- Recent Commits -->
+              <div class="bg-surface-container-low rounded-xl border border-outline-variant/10">
+                <div class="flex items-center justify-between p-4 border-b border-outline-variant/10">
+                  <h3 class="text-sm font-bold">Recent Activity</h3>
+                  <router-link to="/timeline" class="text-xs text-primary font-semibold">View all</router-link>
+                </div>
+                <div class="divide-y divide-outline-variant/10">
+                  <div v-for="c in devHome.recentCommits" :key="c.id"
+                    class="flex items-center gap-3 p-3 hover:bg-surface-container-lowest transition-colors cursor-pointer"
+                    @click="router.push({ name: 'file-review', query: { evaluationId: c.id } })">
+                    <div class="w-9 h-9 rounded-full flex items-center justify-center text-xs font-bold"
+                      :class="{
+                        'bg-red-500/20 text-red-400': (c.score || 0) < 40,
+                        'bg-orange-500/20 text-orange-400': (c.score || 0) >= 40 && (c.score || 0) < 60,
+                        'bg-yellow-500/20 text-yellow-400': (c.score || 0) >= 60 && (c.score || 0) < 75,
+                        'bg-green-500/20 text-green-400': (c.score || 0) >= 75,
+                      }">{{ c.score != null ? Math.round(c.score) : '?' }}</div>
+                    <div class="flex-1 min-w-0">
+                      <p class="text-sm font-medium truncate">{{ c.message }}</p>
+                      <p class="text-[10px] text-outline">{{ c.sha }} · {{ c.project }} · {{ c.findings }} findings</p>
+                    </div>
+                    <span class="material-symbols-outlined text-sm text-outline">chevron_right</span>
+                  </div>
+                  <div v-if="!devHome.recentCommits?.length" class="p-8 text-center text-outline text-sm">
+                    No commits analyzed yet. Link a repo to get started.
+                  </div>
+                </div>
+              </div>
+
+              <!-- Top Issue Areas -->
+              <div v-if="devHome.topIssues?.length" class="bg-surface-container-low rounded-xl p-5 border border-outline-variant/10">
+                <h3 class="text-sm font-bold mb-4">Where you lose the most points</h3>
+                <div class="space-y-2">
+                  <div v-for="issue in devHome.topIssues" :key="issue.id"
+                    class="flex items-center gap-3 cursor-pointer hover:bg-surface-container-lowest rounded-lg p-1 -m-1 transition-colors"
+                    @click="issue.id && openSkillBreakdown(issue.id)">
+                    <span class="text-xs font-medium w-28 truncate">{{ issue.name }}</span>
+                    <div class="flex-1 bg-surface-container-lowest rounded-full h-3 overflow-hidden">
+                      <div class="h-full bg-tertiary rounded-full" :style="{ width: (issue.count / devHome.topIssues[0].count * 100) + '%' }"></div>
+                    </div>
+                    <span class="text-xs font-bold w-6 text-right">{{ issue.count }}</span>
+                  </div>
+                </div>
               </div>
             </div>
 
-            <div v-if="!projectsStore.projects.length" class="col-span-full flex flex-col items-center justify-center py-16">
-              <span class="material-symbols-outlined text-6xl text-outline mb-4">folder_open</span>
-              <p class="text-on-surface-variant text-lg">No projects assigned to you</p>
-              <p class="text-outline text-sm">Ask your admin to add you to a project.</p>
+            <!-- RIGHT: Visual Column (1/3 width) -->
+            <div class="space-y-6">
+
+              <!-- Skill Radar -->
+              <div v-if="devHome.radar?.length" class="bg-surface-container-low rounded-xl p-5 border border-outline-variant/10">
+                <h3 class="text-sm font-bold mb-3">Skill Overview</h3>
+                <SkillRadarChart :data="devHome.radar" />
+              </div>
+
+              <!-- Score Sparkline -->
+              <div v-if="devHome.sparkline?.length >= 2" class="bg-surface-container-low rounded-xl p-5 border border-outline-variant/10">
+                <h3 class="text-sm font-bold mb-1">Score Progression</h3>
+                <p class="text-[10px] text-outline mb-3">Last {{ devHome.sparkline.length }} commits</p>
+                <TrendChart title=""
+                  :points="devHome.sparkline.map((s: number, i: number) => ({ label: String(i + 1), value: s }))"
+                  :width="300" :height="120" />
+              </div>
+
+              <!-- Severity Breakdown -->
+              <div v-if="devHome.severity" class="bg-surface-container-low rounded-xl p-5 border border-outline-variant/10">
+                <h3 class="text-sm font-bold mb-3">Finding Severity</h3>
+                <div class="space-y-2">
+                  <div v-for="(count, sev) in devHome.severity" :key="sev" class="flex items-center gap-2">
+                    <span class="text-[10px] font-bold uppercase w-16"
+                      :class="{ 'text-red-400': sev === 'critical', 'text-orange-400': sev === 'warning', 'text-blue-400': sev === 'info', 'text-green-400': sev === 'suggestion' }">
+                      {{ sev }}
+                    </span>
+                    <div class="flex-1 bg-surface-container-lowest rounded-full h-2.5 overflow-hidden">
+                      <div class="h-full rounded-full"
+                        :class="{ 'bg-red-500': sev === 'critical', 'bg-orange-500': sev === 'warning', 'bg-blue-500': sev === 'info', 'bg-green-500': sev === 'suggestion' }"
+                        :style="{ width: devHome.findingCount ? (count / devHome.findingCount * 100) + '%' : '0%' }">
+                      </div>
+                    </div>
+                    <span class="text-xs font-bold w-5 text-right">{{ count }}</span>
+                  </div>
+                </div>
+              </div>
             </div>
-          </div>
+          </section>
+
+          <!-- ── Project Filter Row ── -->
+          <section class="flex flex-wrap items-center gap-2">
+            <span class="text-xs text-outline font-bold uppercase tracking-wider mr-2">Projects:</span>
+            <button
+              :class="['px-3 py-1.5 rounded-lg text-xs font-semibold transition-all',
+                !devProjectFilter ? 'bg-primary text-white' : 'bg-surface-container text-outline hover:text-on-surface']"
+              @click="setProjectFilter(null)">All</button>
+            <button v-for="p in projectsStore.projects" :key="p.id"
+              :class="['px-3 py-1.5 rounded-lg text-xs font-semibold transition-all',
+                devProjectFilter === p.id ? 'bg-primary text-white' : 'bg-surface-container text-outline hover:text-on-surface']"
+              @click="setProjectFilter(p.id)">{{ p.displayName }}</button>
+          </section>
+
         </template>
 
-        <!-- Issues view (project selected) -->
-        <template v-else>
+        <!-- Empty state -->
+        <div v-else class="flex flex-col items-center justify-center py-20">
+          <span class="material-symbols-outlined text-6xl text-outline mb-4">analytics</span>
+          <p class="text-on-surface-variant text-lg">No data yet</p>
+          <p class="text-outline text-sm">Link a repository and push some code to get started.</p>
+        </div>
+
+        <!-- (Issues view removed — use Commit Timeline instead) -->
+        <template v-if="false">
           <header class="mb-10">
-            <button @click="backToProjects" class="flex items-center gap-1 text-sm text-outline hover:text-primary mb-4 transition-colors">
-              <span class="material-symbols-outlined text-sm">arrow_back</span> All Projects
-            </button>
             <h1 class="text-4xl font-black text-on-surface tracking-tight mb-2">{{ currentDate }}</h1>
             <p class="text-outline text-sm">
               <span class="text-primary font-semibold">{{ filteredFindings.length }} findings</span> across {{ fileGroups.length }} files
@@ -457,6 +642,14 @@ function scoreColor(score: number) {
       </div>
     </template>
   </AppShell>
+
+  <SkillBreakdownDialog
+    :open="breakdownOpen"
+    :user-id="authStore.user?.id ?? 0"
+    :skill-id="breakdownSkillId"
+    :project-id="devProjectFilter ?? projectsStore.selectedProjectId ?? 0"
+    @close="breakdownOpen = false"
+  />
 </template>
 
 <style scoped>

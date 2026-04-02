@@ -850,5 +850,162 @@ class UserSkillsView(APIView):
                 })
             
             result['categories'].append(cat_data)
-        
+
         return Response(result)
+
+
+class DeveloperHomeView(APIView):
+    """
+    Unified dashboard endpoint for the developer home page.
+    Returns everything needed in one call: metrics, skills, progression,
+    priorities, patterns, recent commits — across ALL projects.
+    """
+
+    permission_classes = [permissions.IsAuthenticated]
+
+    def get(self, request):
+        from evaluations.models import Evaluation, Finding, FindingSkill, Pattern
+        from django.db.models import Avg
+        from collections import defaultdict
+
+        user = request.user
+        project_id = request.query_params.get('project')
+
+        # All evaluations for this user
+        evals = Evaluation.objects.for_user(user)
+        if project_id:
+            evals = evals.filter(project_id=project_id)
+
+        findings = Finding.objects.filter(evaluation__in=evals)
+
+        # ── Key Metrics ──
+        commit_count = evals.count()
+        finding_count = findings.count()
+        fixed_count = findings.filter(is_fixed=True).count()
+        avg_score = round(evals.aggregate(avg=Avg('overall_score'))['avg'] or 0, 1)
+
+        # Level
+        try:
+            from batch.models import DeveloperProfile
+            profile = DeveloperProfile.objects.get(user=user)
+            level = profile.level
+            trend_label = profile.trend
+        except Exception:
+            if avg_score >= 75: level = 'senior'
+            elif avg_score >= 60: level = 'intermediate'
+            elif avg_score >= 40: level = 'junior'
+            else: level = 'beginner'
+            trend_label = 'new'
+
+        # ── Improvement ──
+        ordered_evals = evals.order_by('created_at').values_list('overall_score', flat=True)
+        scores_list = [s for s in ordered_evals if s is not None]
+        improving = False
+        improvement_pct = 0
+        if len(scores_list) >= 3:
+            first_3 = sum(scores_list[:3]) / 3
+            last_3 = sum(scores_list[-3:]) / 3
+            improvement_pct = round(last_3 - first_3, 1)
+            improving = improvement_pct > 0
+
+        # ── Severity ──
+        severity = {
+            'critical': findings.filter(severity='critical').count(),
+            'warning': findings.filter(severity='warning').count(),
+            'info': findings.filter(severity='info').count(),
+            'suggestion': findings.filter(severity='suggestion').count(),
+        }
+
+        # ── Top 3 Priority Skills (weakest) ──
+        metrics = SkillMetric.objects.filter(user=user).select_related('skill')
+        if project_id:
+            metrics = metrics.filter(project_id=project_id)
+        priority_metrics = metrics.order_by('score')[:3]
+        priorities = [
+            {
+                'id': m.skill.id,
+                'skill': m.skill.name,
+                'slug': m.skill.slug,
+                'score': float(m.score),
+                'issues': m.issue_count,
+                'trend': m.trend,
+            }
+            for m in priority_metrics
+        ]
+
+        # ── Pattern Insights ──
+        pattern_qs = Pattern.objects.filter(user=user, is_resolved=False)
+        if project_id:
+            pattern_qs = pattern_qs.filter(project_id=project_id)
+        top_patterns = pattern_qs.order_by('-frequency')[:3]
+        patterns = [
+            {
+                'type': p.pattern_type,
+                'key': p.pattern_key,
+                'frequency': p.frequency,
+                'message': f"You have {p.frequency} recurring {p.pattern_type.replace('_', ' ')} issues",
+            }
+            for p in top_patterns
+        ]
+
+        # ── Recent Commits (last 5) ──
+        recent_evals = evals.order_by('-created_at')[:5]
+        recent_commits = [
+            {
+                'id': e.id,
+                'sha': e.commit_sha[:7],
+                'message': (e.commit_message or '')[:60],
+                'score': float(e.overall_score) if e.overall_score else None,
+                'findings': e.findings.count(),
+                'date': e.created_at.strftime('%Y-%m-%d %H:%M'),
+                'project': e.project.name if e.project else '',
+            }
+            for e in recent_evals
+        ]
+
+        # ── Skill Radar (category averages) ──
+        cat_scores = defaultdict(list)
+        for m in metrics:
+            cat_scores[m.skill.category.name].append(m.score)
+        radar = [
+            {'category': cat, 'score': round(sum(scores) / len(scores), 1)}
+            for cat, scores in cat_scores.items()
+            if scores
+        ]
+
+        # ── Progression Sparkline (last 10 scores) ──
+        last_10 = evals.order_by('-created_at').values_list('overall_score', flat=True)[:10]
+        sparkline = [float(s) for s in reversed(last_10) if s is not None]
+
+        # ── Category Breakdown (top issues) ──
+        skill_counts = (
+            FindingSkill.objects.filter(finding__evaluation__in=evals)
+            .values('skill__id', 'skill__name')
+            .annotate(count=Count('id'))
+            .order_by('-count')[:6]
+        )
+        top_issues = [
+            {'id': s['skill__id'], 'name': s['skill__name'], 'count': s['count']}
+            for s in skill_counts
+        ]
+
+        return Response({
+            # Key metrics
+            'avgScore': avg_score,
+            'level': level,
+            'trend': trend_label,
+            'improving': improving,
+            'improvementPct': improvement_pct,
+            'commitCount': commit_count,
+            'findingCount': finding_count,
+            'fixedCount': fixed_count,
+            'severity': severity,
+            # Action items
+            'priorities': priorities,
+            'patterns': patterns,
+            'recentCommits': recent_commits,
+            # Visuals
+            'radar': radar,
+            'sparkline': sparkline,
+            'topIssues': top_issues,
+        })

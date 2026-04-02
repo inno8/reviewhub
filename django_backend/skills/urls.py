@@ -26,4 +26,7 @@ urlpatterns = [
 
     # Recommendations
     path('recommendations/', LearningRecommendationsView.as_view(), name='learning-recommendations'),
+
+    # Unified developer home
+    path('dashboard/developer-home/', views.DeveloperHomeView.as_view(), name='developer-home'),
 ]
