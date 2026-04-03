@@ -425,6 +425,73 @@ class MarkFindingFixedView(APIView):
         return Response(FindingSerializer(finding).data)
 
 
+class CheckUnderstandingView(APIView):
+    """
+    Fix & Learn: evaluate developer's understanding of findings.
+    Groups findings by skill category, sends explanation to LLM,
+    returns understanding level (got_it/partial/not_yet) with feedback.
+    """
+
+    permission_classes = [permissions.IsAuthenticated]
+
+    def post(self, request):
+        entries = request.data.get('findings', [])
+        if not entries:
+            return Response({'error': 'No findings provided'}, status=400)
+
+        results = []
+        for entry in entries:
+            finding_id = entry.get('id')
+            explanation = (entry.get('explanation') or '').strip()
+            if not finding_id or not explanation:
+                continue
+
+            try:
+                finding = Finding.objects.select_related('evaluation__project').get(pk=finding_id)
+            except Finding.DoesNotExist:
+                continue
+
+            # Call FastAPI to evaluate understanding
+            import httpx
+            from django.conf import settings as django_settings
+
+            fastapi_url = getattr(django_settings, 'FASTAPI_URL', 'http://localhost:8001')
+            try:
+                resp = httpx.post(
+                    f"{fastapi_url}/api/v1/analyze/understand",
+                    json={
+                        'category': finding.title,
+                        'finding_titles': [finding.title],
+                        'finding_descriptions': [finding.description],
+                        'suggested_fixes': [finding.suggested_code or ''],
+                        'developer_explanation': explanation,
+                        'developer_level': 'junior',  # TODO: get from profile
+                    },
+                    timeout=30,
+                )
+                if resp.status_code == 200:
+                    llm_result = resp.json()
+                else:
+                    llm_result = {'level': 'partial', 'feedback': 'Could not evaluate — try again.', 'deeper_explanation': ''}
+            except Exception:
+                llm_result = {'level': 'partial', 'feedback': 'Evaluation service unavailable.', 'deeper_explanation': ''}
+
+            # Store on finding
+            finding.developer_explanation = explanation
+            finding.understanding_level = llm_result.get('level', 'partial')
+            finding.understanding_feedback = llm_result.get('feedback', '')
+            finding.save(update_fields=['developer_explanation', 'understanding_level', 'understanding_feedback'])
+
+            results.append({
+                'finding_id': finding_id,
+                'level': finding.understanding_level,
+                'feedback': finding.understanding_feedback,
+                'deeper_explanation': llm_result.get('deeper_explanation', ''),
+            })
+
+        return Response({'results': results})
+
+
 class CalendarView(APIView):
     """Return dates with evaluation activity and per-date counts."""
 

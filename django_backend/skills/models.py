@@ -183,3 +183,28 @@ class SkillMetric(models.Model):
         self.last_evaluated_at = timezone.now()
 
         self.save()
+
+    def improve_score(self, fixed_issues: int = 1, recovery: float = 3.0):
+        """
+        Improve score when developer fixes an issue and demonstrates understanding.
+        Called from Finding.mark_fixed().
+        """
+        from django.utils import timezone
+
+        self.previous_score = self.score
+        self.fixed_count += fixed_issues
+        self.score = min(100.0, self.score + (fixed_issues * recovery))
+        self.score = round(self.score, 2)
+
+        # Update trend
+        if self.previous_score is not None:
+            diff = self.score - self.previous_score
+            if diff > 2:
+                self.trend = self.Trend.UP
+            elif diff < -2:
+                self.trend = self.Trend.DOWN
+            else:
+                self.trend = self.Trend.STABLE
+
+        self.last_evaluated_at = timezone.now()
+        self.save()

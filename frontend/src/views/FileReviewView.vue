@@ -614,6 +614,75 @@ async function applyFix() {
   }
 }
 
+// ── Fix & Learn ──────────────────────────────────────────────────────────
+const showFixLearnDialog = ref(false);
+const fixLearnLoading = ref(false);
+const fixLearnExplanations = ref<Record<number, string>>({});
+const fixLearnResults = ref<Record<number, { level: string; feedback: string; deeper_explanation: string }>>({});
+const fixLearnStep = ref<'explain' | 'results'>('explain');
+
+function openFixLearn() {
+  showFixLearnDialog.value = true;
+  fixLearnStep.value = 'explain';
+  fixLearnResults.value = {};
+  // Pre-populate explanation map with finding IDs
+  fixLearnExplanations.value = {};
+  for (const f of findings.value) {
+    fixLearnExplanations.value[f.id] = '';
+  }
+}
+
+async function submitUnderstanding() {
+  fixLearnLoading.value = true;
+  try {
+    const entries = findings.value
+      .filter(f => (fixLearnExplanations.value[f.id] || '').trim())
+      .map(f => ({ id: f.id, explanation: fixLearnExplanations.value[f.id] }));
+
+    if (!entries.length) {
+      toastMessage.value = 'Please write an explanation for at least one issue.';
+      fixLearnLoading.value = false;
+      return;
+    }
+
+    const { data } = await api.findings.checkUnderstanding(entries);
+    for (const r of (data.results || [])) {
+      fixLearnResults.value[r.finding_id] = {
+        level: r.level,
+        feedback: r.feedback,
+        deeper_explanation: r.deeper_explanation || '',
+      };
+    }
+    fixLearnStep.value = 'results';
+  } catch (e: any) {
+    toastMessage.value = 'Failed to check understanding.';
+  } finally {
+    fixLearnLoading.value = false;
+  }
+}
+
+async function copyFixToClipboard(finding: Finding) {
+  const code = finding.suggestedCode || finding.originalCode || '';
+  try {
+    await navigator.clipboard.writeText(code);
+    toastMessage.value = `Copied fix for "${finding.title}" to clipboard!`;
+    setTimeout(() => { toastMessage.value = ''; }, 3000);
+  } catch {
+    toastMessage.value = 'Failed to copy to clipboard.';
+  }
+}
+
+async function markFixedAfterCopy(finding: Finding) {
+  try {
+    await api.findings.markFixed(finding.id, '');
+    const f = findings.value.find(x => x.id === finding.id);
+    if (f) (f as any).isFixed = true;
+    toastMessage.value = `"${finding.title}" marked as fixed. Push your changes to see the score improve!`;
+  } catch {
+    toastMessage.value = 'Failed to mark as fixed.';
+  }
+}
+
 function goBack() {
   const projectId = route.query.project;
   if (projectId) {
@@ -884,20 +953,18 @@ function goBack() {
                   
                   <div class="flex gap-2">
                     <button
+                      class="px-4 py-2 bg-primary/10 text-primary text-sm font-bold rounded-lg hover:bg-primary/20 transition-all flex items-center gap-2"
+                      @click="openFixLearn"
+                    >
+                      <span class="material-symbols-outlined text-sm">school</span>
+                      Fix & Learn
+                    </button>
+                    <button
                       :disabled="actionLoading || selectedFinding.explanationRequested"
                       class="px-4 py-2 border border-outline-variant/30 rounded-lg text-sm font-medium text-on-surface-variant hover:bg-surface-container transition-all disabled:opacity-50"
                       @click="requestExplanation"
                     >
                       {{ selectedFinding.explanationRequested ? '✓ Requested' : 'Request Help' }}
-                    </button>
-                    
-                    <button
-                      v-if="auth.isAdmin"
-                      :disabled="actionLoading || selectedFinding.prCreated"
-                      class="px-4 py-2 primary-gradient text-on-primary text-sm font-bold rounded-lg disabled:opacity-50"
-                      @click="applyFix"
-                    >
-                      {{ selectedFinding.prCreated ? '✓ PR Created' : 'Apply Fix' }}
                     </button>
                   </div>
                 </div>
@@ -922,6 +989,125 @@ function goBack() {
       <span class="material-symbols-outlined text-4xl text-outline animate-spin">progress_activity</span>
     </div>
   </AppShell>
+
+  <!-- Fix & Learn Dialog -->
+  <Teleport to="body">
+    <div v-if="showFixLearnDialog" class="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/50" @click.self="showFixLearnDialog = false">
+      <div class="bg-surface-container rounded-2xl shadow-xl w-full max-w-2xl max-h-[85vh] overflow-hidden flex flex-col">
+        <!-- Header -->
+        <div class="px-6 py-4 border-b border-outline-variant/10 flex items-center justify-between">
+          <div class="flex items-center gap-2">
+            <span class="material-symbols-outlined text-primary">school</span>
+            <h3 class="text-lg font-bold">Fix & Learn</h3>
+          </div>
+          <button @click="showFixLearnDialog = false" class="p-1 rounded-lg hover:bg-surface-container-highest">
+            <span class="material-symbols-outlined text-outline">close</span>
+          </button>
+        </div>
+
+        <!-- Content -->
+        <div class="flex-1 overflow-y-auto p-6 space-y-6">
+
+          <!-- Step 1: Explain -->
+          <template v-if="fixLearnStep === 'explain'">
+            <p class="text-sm text-on-surface-variant">
+              Before copying the fix, explain <strong>in your own words</strong> why the original code is problematic.
+              This helps you learn, not just copy-paste.
+            </p>
+
+            <div v-for="f in findings" :key="f.id" class="p-4 rounded-xl border border-outline-variant/10 bg-surface-container-lowest space-y-3">
+              <div class="flex items-center gap-2">
+                <span class="px-2 py-0.5 rounded text-[10px] font-bold uppercase"
+                  :class="f.severity === 'critical' ? 'bg-red-500/10 text-red-400' : 'bg-orange-500/10 text-orange-400'">
+                  {{ f.severity }}
+                </span>
+                <span class="text-sm font-bold">{{ f.title }}</span>
+              </div>
+              <p class="text-xs text-outline">{{ (f.explanation || f.description || '').slice(0, 120) }}...</p>
+              <textarea
+                v-model="fixLearnExplanations[f.id]"
+                rows="3"
+                class="w-full bg-surface-container border border-outline-variant/30 rounded-lg text-sm text-on-surface p-3 focus:ring-1 focus:ring-primary/50 placeholder:text-outline/40"
+                :placeholder="`Why is this ${f.severity || 'issue'} problematic? What could go wrong?`"
+              ></textarea>
+            </div>
+          </template>
+
+          <!-- Step 2: Results -->
+          <template v-if="fixLearnStep === 'results'">
+            <div v-for="f in findings" :key="f.id" class="p-4 rounded-xl border space-y-3"
+              :class="{
+                'border-green-500/30 bg-green-500/5': fixLearnResults[f.id]?.level === 'got_it',
+                'border-yellow-500/30 bg-yellow-500/5': fixLearnResults[f.id]?.level === 'partial',
+                'border-red-500/30 bg-red-500/5': fixLearnResults[f.id]?.level === 'not_yet',
+                'border-outline-variant/10': !fixLearnResults[f.id],
+              }">
+              <div class="flex items-center justify-between">
+                <span class="text-sm font-bold">{{ f.title }}</span>
+                <span v-if="fixLearnResults[f.id]" class="px-2 py-0.5 rounded-full text-xs font-bold"
+                  :class="{
+                    'bg-green-500/20 text-green-400': fixLearnResults[f.id].level === 'got_it',
+                    'bg-yellow-500/20 text-yellow-400': fixLearnResults[f.id].level === 'partial',
+                    'bg-red-500/20 text-red-400': fixLearnResults[f.id].level === 'not_yet',
+                  }">
+                  {{ fixLearnResults[f.id].level === 'got_it' ? 'Understood!' : fixLearnResults[f.id].level === 'partial' ? 'Almost' : 'Keep Learning' }}
+                </span>
+              </div>
+
+              <!-- Feedback -->
+              <p v-if="fixLearnResults[f.id]?.feedback" class="text-sm text-on-surface-variant">
+                {{ fixLearnResults[f.id].feedback }}
+              </p>
+
+              <!-- Deeper explanation (not_yet only) -->
+              <div v-if="fixLearnResults[f.id]?.level === 'not_yet' && fixLearnResults[f.id]?.deeper_explanation" class="p-3 bg-surface-container rounded-lg">
+                <p class="text-xs font-bold text-red-400 mb-1">Here's a clearer explanation:</p>
+                <p class="text-sm text-on-surface">{{ fixLearnResults[f.id].deeper_explanation }}</p>
+              </div>
+
+              <!-- Copy Fix button (got_it or partial) -->
+              <div v-if="fixLearnResults[f.id]?.level === 'got_it' || fixLearnResults[f.id]?.level === 'partial'" class="flex gap-2">
+                <button @click="copyFixToClipboard(f)"
+                  class="flex items-center gap-2 px-3 py-2 bg-primary/10 text-primary text-sm font-bold rounded-lg hover:bg-primary/20 transition-all">
+                  <span class="material-symbols-outlined text-sm">content_copy</span>
+                  Copy Fix to Clipboard
+                </button>
+                <button @click="markFixedAfterCopy(f)"
+                  class="flex items-center gap-2 px-3 py-2 border border-green-500/30 text-green-400 text-sm rounded-lg hover:bg-green-500/10 transition-all">
+                  <span class="material-symbols-outlined text-sm">check</span>
+                  Mark Fixed
+                </button>
+              </div>
+
+              <!-- "I understand now" button (not_yet) -->
+              <div v-if="fixLearnResults[f.id]?.level === 'not_yet'" class="flex gap-2">
+                <button @click="copyFixToClipboard(f)"
+                  class="flex items-center gap-2 px-3 py-2 border border-outline-variant/30 text-on-surface-variant text-sm rounded-lg hover:bg-surface-container transition-all">
+                  <span class="material-symbols-outlined text-sm">content_copy</span>
+                  I Understand Now — Copy Fix
+                </button>
+              </div>
+            </div>
+          </template>
+        </div>
+
+        <!-- Footer -->
+        <div class="px-6 py-4 border-t border-outline-variant/10 flex justify-between">
+          <button @click="showFixLearnDialog = false" class="px-4 py-2 text-sm text-outline hover:text-on-surface">
+            Close
+          </button>
+          <button v-if="fixLearnStep === 'explain'" @click="submitUnderstanding" :disabled="fixLearnLoading"
+            class="px-6 py-2 primary-gradient text-on-primary text-sm font-bold rounded-lg disabled:opacity-50 flex items-center gap-2">
+            <span v-if="fixLearnLoading" class="material-symbols-outlined text-sm animate-spin">progress_activity</span>
+            {{ fixLearnLoading ? 'Checking...' : 'Check My Understanding' }}
+          </button>
+          <button v-if="fixLearnStep === 'results'" @click="fixLearnStep = 'explain'" class="px-4 py-2 text-sm text-primary font-bold">
+            ← Try Again
+          </button>
+        </div>
+      </div>
+    </div>
+  </Teleport>
 </template>
 
 <style scoped>

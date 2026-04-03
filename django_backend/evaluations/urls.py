@@ -14,6 +14,7 @@ urlpatterns = [
     path('findings/<int:pk>/', views.FindingDetailView.as_view(), name='finding-detail'),
     path('findings/<int:pk>/file-content/', views.FindingFileContentView.as_view(), name='finding-file-content'),
     path('findings/<int:pk>/fix/', views.MarkFindingFixedView.as_view(), name='finding-fix'),
+    path('findings/check-understanding/', views.CheckUnderstandingView.as_view(), name='finding-check-understanding'),
     
     # Dashboard & Calendar
     path('dashboard/', views.DashboardView.as_view(), name='evaluation-dashboard'),

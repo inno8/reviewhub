@@ -307,6 +307,12 @@ class PerformanceStatsView(APIView):
             'criticalIssues': critical_issues,
             'strengths': strengths,
             'growthAreas': growth_areas,
+            'understandingRate': {
+                'total_checked': findings.exclude(understanding_level='').count(),
+                'got_it': findings.filter(understanding_level='got_it').count(),
+                'partial': findings.filter(understanding_level='partial').count(),
+                'not_yet': findings.filter(understanding_level='not_yet').count(),
+            },
             'recommendations': [],
             'severityDistribution': severity_distribution,
             'categoryBreakdown': category_breakdown,

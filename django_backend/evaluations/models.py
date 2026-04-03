@@ -216,7 +216,23 @@ class Finding(models.Model):
     is_fixed = models.BooleanField(default=False)
     fixed_at = models.DateTimeField(null=True, blank=True)
     fixed_in_commit = models.CharField(max_length=40, blank=True)
-    
+
+    # Fix & Learn — developer understanding
+    developer_explanation = models.TextField(
+        blank=True,
+        help_text="Developer's explanation of why the original code was wrong"
+    )
+    understanding_level = models.CharField(
+        max_length=20,
+        blank=True,
+        choices=[('got_it', 'Got It'), ('partial', 'Partial'), ('not_yet', 'Not Yet')],
+        help_text="LLM-assessed understanding level"
+    )
+    understanding_feedback = models.TextField(
+        blank=True,
+        help_text="LLM feedback on the developer's explanation"
+    )
+
     # Skills (many-to-many via FindingSkill)
     skills = models.ManyToManyField(
         'skills.Skill',
@@ -244,15 +260,17 @@ class Finding(models.Model):
             self.fixed_in_commit = commit_sha
         self.save()
         
-        # Update skill metrics
+        # Update skill metrics — improve score on fix
         for finding_skill in self.finding_skills.all():
             metric = finding_skill.skill.metrics.filter(
                 user=self.evaluation.author,
                 project=self.evaluation.project
             ).first()
             if metric:
-                metric.fixed_count += 1
-                metric.save()
+                metric.improve_score(
+                    fixed_issues=1,
+                    recovery=finding_skill.impact_score * 0.6,  # recover 60% of the deduction
+                )
 
 
 class FindingSkill(models.Model):

@@ -222,6 +222,112 @@ class LLMAdapter:
         # (e.g. org chose gpt-4o-mini as default → all tiers use gpt-4o-mini)
         return derived
 
+    async def evaluate_understanding(
+        self,
+        category: str,
+        finding_titles: list,
+        finding_descriptions: list,
+        suggested_fixes: list,
+        developer_explanation: str,
+        developer_level: str = "junior",
+    ) -> dict:
+        """
+        Evaluate if a developer understands a code issue.
+        Returns dict with level (got_it/partial/not_yet), feedback, deeper_explanation.
+        """
+        issues_text = "\n".join(
+            f"- {t}: {d}" for t, d in zip(finding_titles, finding_descriptions)
+        )
+        fixes_text = "\n".join(
+            f"- {f}" for f in suggested_fixes if f
+        )
+
+        prompt = f"""You are evaluating if a {developer_level} developer understands a code issue.
+
+ISSUE CATEGORY: {category}
+
+ISSUES FOUND:
+{issues_text}
+
+SUGGESTED FIXES:
+{fixes_text}
+
+DEVELOPER'S EXPLANATION:
+"{developer_explanation}"
+
+Rate their understanding and return ONLY a JSON object:
+{{
+  "level": "got_it" or "partial" or "not_yet",
+  "feedback": "Brief constructive feedback (1-2 sentences)",
+  "deeper_explanation": "Only if level is not_yet: a clearer explanation tailored to a {developer_level} developer (3-5 sentences). Empty string if got_it or partial."
+}}
+
+Rating guide:
+- "got_it": They clearly understand the core problem AND why the fix is better
+- "partial": Right direction but missing key details or incomplete reasoning
+- "not_yet": Fundamental misunderstanding, too vague, or just restating the issue without explaining why
+
+Be encouraging but honest. Return ONLY the JSON."""
+
+        try:
+            if self.provider == "openai":
+                result = await self._call_openai(prompt, max_tokens=500)
+            elif self.provider == "anthropic":
+                result = await self._call_anthropic(prompt, max_tokens=500)
+            else:
+                # OpenClaw fallback — simple heuristic
+                return self._evaluate_understanding_fallback(
+                    developer_explanation, finding_descriptions
+                )
+
+            if result:
+                import json as json_mod
+                cleaned = result.strip()
+                if cleaned.startswith("```"):
+                    cleaned = cleaned.split("\n", 1)[-1].rsplit("```", 1)[0]
+                parsed = json_mod.loads(cleaned)
+                return {
+                    "level": parsed.get("level", "partial"),
+                    "feedback": parsed.get("feedback", ""),
+                    "deeper_explanation": parsed.get("deeper_explanation", ""),
+                }
+        except Exception as e:
+            print(f"[LLM] Understanding evaluation error: {e}")
+
+        return self._evaluate_understanding_fallback(
+            developer_explanation, finding_descriptions
+        )
+
+    def _evaluate_understanding_fallback(self, explanation: str, descriptions: list) -> dict:
+        """Simple heuristic fallback when no LLM is available."""
+        words = explanation.lower().split()
+        # Check if explanation has substance (more than 5 words, mentions key terms)
+        desc_keywords = set()
+        for d in descriptions:
+            desc_keywords.update(w.lower() for w in d.split() if len(w) > 4)
+
+        matched = sum(1 for w in words if w in desc_keywords)
+        total_words = len(words)
+
+        if total_words >= 10 and matched >= 3:
+            return {
+                "level": "got_it",
+                "feedback": "Good explanation! You seem to understand the issue well.",
+                "deeper_explanation": "",
+            }
+        elif total_words >= 5 and matched >= 1:
+            return {
+                "level": "partial",
+                "feedback": "You're on the right track but could be more specific about why this is problematic.",
+                "deeper_explanation": "",
+            }
+        else:
+            return {
+                "level": "not_yet",
+                "feedback": "Your explanation is too brief. Try to explain the specific risk or problem.",
+                "deeper_explanation": " ".join(descriptions[:2]),
+            }
+
     async def evaluate_diff(
         self,
         diff: str,
