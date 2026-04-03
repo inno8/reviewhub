@@ -359,12 +359,8 @@ function scoreColor(score: number) {
     <template v-else>
       <div class="p-8 flex-1">
 
-        <!-- Loading -->
-        <div v-if="devHomeLoading && !devHome" class="flex items-center justify-center py-20">
-          <span class="material-symbols-outlined text-4xl text-outline animate-spin">progress_activity</span>
-        </div>
-
-        <template v-else-if="devHome">
+        <!-- Developer Overview (default view, no project filter) -->
+        <template v-if="!devSelectedProject && devHome">
 
           <!-- ── Top Metrics Row ── -->
           <section class="grid grid-cols-2 md:grid-cols-5 gap-4 mb-8">
@@ -538,15 +534,15 @@ function scoreColor(score: number) {
 
         </template>
 
-        <!-- Empty state -->
-        <div v-else class="flex flex-col items-center justify-center py-20">
-          <span class="material-symbols-outlined text-6xl text-outline mb-4">analytics</span>
-          <p class="text-on-surface-variant text-lg">No data yet</p>
-          <p class="text-outline text-sm">Link a repository and push some code to get started.</p>
-        </div>
+        <!-- Developer Overview (no project selected) -->
+        <template v-else-if="devHomeLoading && !devHome">
+          <div class="flex items-center justify-center py-20">
+            <span class="material-symbols-outlined text-4xl text-outline animate-spin">progress_activity</span>
+          </div>
+        </template>
 
-        <!-- Findings view (when navigated from Projects page with ?project=) -->
-        <template v-if="devSelectedProject">
+        <!-- Findings view (project selected from Projects page) -->
+        <template v-else-if="devSelectedProject">
           <header class="mb-10">
             <h1 class="text-4xl font-black text-on-surface tracking-tight mb-2">{{ currentDate }}</h1>
             <p class="text-outline text-sm">
