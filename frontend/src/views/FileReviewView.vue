@@ -615,7 +615,12 @@ async function applyFix() {
 }
 
 function goBack() {
-  router.push('/');
+  const projectId = route.query.project;
+  if (projectId) {
+    router.push({ path: '/', query: { project: String(projectId) } });
+  } else {
+    router.back();
+  }
 }
 </script>
 

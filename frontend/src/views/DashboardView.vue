@@ -212,7 +212,7 @@ function getCategoryClass(cat: string) {
   const c = cat.toLowerCase().replace('_', '');
   return { security: 'bg-error/10 text-error border-error/20', performance: 'bg-tertiary/10 text-tertiary border-tertiary/20', codestyle: 'bg-primary/10 text-primary border-primary/20', testing: 'bg-primary-container/10 text-primary-container border-primary-container/20', architecture: 'bg-secondary/10 text-secondary border-secondary/20' }[c] || 'bg-outline/10 text-outline border-outline/20';
 }
-function openFile(filePath: string) { router.push({ path: '/file-review', query: { file: filePath, ids: groupedByFile.value[filePath].map(f => f.id).join(',') } }); }
+function openFile(filePath: string) { router.push({ path: '/file-review', query: { file: filePath, ids: groupedByFile.value[filePath].map(f => f.id).join(','), project: devSelectedProject.value ? String(devSelectedProject.value) : undefined } }); }
 function formatCategory(cat: string) { return cat.replace('_', ' '); }
 
 function scoreColor(score: number) {
