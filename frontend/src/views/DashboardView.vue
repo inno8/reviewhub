@@ -162,7 +162,7 @@ function applyIssuesProjectFromRoute() {
 
 function backToProjects() {
   devSelectedProject.value = null;
-  router.replace({ query: {} });
+  router.push('/projects');
 }
 
 watch(() => projectsStore.selectedProjectId, async (newId) => {
