@@ -183,6 +183,24 @@ watch(monthString, fetchActivityDates);
 /** All accessible projects — developers can verify webhook/commits on linked repos too. */
 const newReviewProjectOptions = computed(() => projectsStore.projects);
 
+// Git identity for commit filtering
+interface GitConnection { id: number; provider: string; username: string; email?: string; }
+const gitConnections = ref<GitConnection[]>([]);
+const selectedGitUsername = ref<string>('');
+
+async function loadGitConnections() {
+  try {
+    const { data } = await api.gitConnections.list();
+    gitConnections.value = Array.isArray(data) ? data : (data as any).results || [];
+    // Auto-select first connection if available
+    if (gitConnections.value.length && !selectedGitUsername.value) {
+      selectedGitUsername.value = gitConnections.value[0].username;
+    }
+  } catch { gitConnections.value = []; }
+}
+
+const hasGitConnection = computed(() => gitConnections.value.length > 0);
+
 // New Review Modal
 const reviewProjectId = ref<number | null>(null);
 const reviewRepoUrl = ref('');
@@ -212,6 +230,30 @@ async function openNewReviewModal() {
   const options = newReviewProjectOptions.value;
   const sel = projectsStore.selectedProjectId;
   reviewProjectId.value = sel && options.some((p) => p.id === sel) ? sel : options[0]?.id ?? null;
+
+  // Load git connections for commit filtering
+  await loadGitConnections();
+}
+
+async function analyzeMyHistory() {
+  if (!reviewProjectId.value || !selectedGitUsername.value) return;
+  reviewLoading.value = true;
+  modalError.value = '';
+  try {
+    await api.batch.createJob({
+      project: reviewProjectId.value,
+      repo_url: reviewRepoUrl.value || undefined,
+      branch: '__all__',
+      target_github_username: selectedGitUsername.value,
+      max_commits: 50,
+    });
+    modalSuccess.value = `Batch analysis started for commits by ${selectedGitUsername.value}. Check the Batch Analysis page for progress.`;
+    setTimeout(() => { showNewReviewModal.value = false; router.push('/batch'); }, 2000);
+  } catch (e: any) {
+    modalError.value = e?.response?.data?.detail || e?.response?.data?.error || 'Failed to start analysis';
+  } finally {
+    reviewLoading.value = false;
+  }
 }
 
 async function startReviewCheck() {
@@ -578,6 +620,32 @@ function toggleAllBranches(selected: boolean) {
               class="w-full bg-surface-container-lowest border border-outline-variant/30 rounded-lg text-on-surface placeholder:text-outline/40 focus:ring-1 focus:ring-primary/50 py-3 px-4 text-sm" />
             <p class="text-[10px] text-outline">GitHub, GitLab, or Bitbucket repository URL</p>
           </div>
+
+          <!-- Git Identity Selector -->
+          <div class="space-y-1.5">
+            <label class="text-xs font-bold uppercase tracking-widest text-outline">Your Git Identity</label>
+            <div v-if="hasGitConnection">
+              <select v-model="selectedGitUsername"
+                class="w-full bg-surface-container-lowest border border-outline-variant/30 rounded-lg text-on-surface text-sm focus:ring-1 focus:ring-primary/50 py-3 px-4">
+                <option v-for="c in gitConnections" :key="c.id" :value="c.username">
+                  {{ c.username }} ({{ c.provider }}{{ c.email ? ' · ' + c.email : '' }})
+                </option>
+              </select>
+              <p class="text-[10px] text-outline mt-1">
+                Only commits matching this git username will be fetched and reviewed.
+              </p>
+            </div>
+            <div v-else class="p-3 rounded-lg bg-orange-500/10 border border-orange-500/20">
+              <p class="text-sm text-orange-400 flex items-center gap-2">
+                <span class="material-symbols-outlined text-sm">warning</span>
+                No git account configured.
+              </p>
+              <p class="text-[10px] text-outline mt-1">
+                Go to <router-link to="/settings" class="text-primary font-semibold" @click="showNewReviewModal = false">Settings → Git Connections</router-link>
+                to link your GitHub/GitLab account first. This is needed to identify your commits.
+              </p>
+            </div>
+          </div>
         </template>
 
         <!-- Step 2: Checking -->
@@ -672,6 +740,19 @@ function toggleAllBranches(selected: boolean) {
             </div>
           </div>
 
+          <!-- Analyze History Button -->
+          <div v-if="!reviewPastCommits.length && hasGitConnection" class="pt-2 border-t border-outline-variant/10">
+            <p class="text-xs text-outline mb-2">No evaluations yet? Analyze your past commits:</p>
+            <button @click="analyzeMyHistory" :disabled="reviewLoading"
+              class="w-full py-2.5 bg-primary/10 text-primary font-bold text-sm rounded-lg hover:bg-primary/20 transition-colors disabled:opacity-50 flex items-center justify-center gap-2">
+              <span class="material-symbols-outlined text-sm">history</span>
+              Analyze My Commit History
+            </button>
+            <p class="text-[10px] text-outline mt-1">
+              Fetches commits by <strong>{{ selectedGitUsername }}</strong> and runs AI code review on each.
+            </p>
+          </div>
+
           <button type="button" @click="reviewStep = 'setup'" class="text-xs text-primary hover:underline">← Back to setup</button>
         </template>
 
@@ -690,7 +771,7 @@ function toggleAllBranches(selected: boolean) {
             Cancel
           </button>
           <button v-if="reviewStep === 'setup'" @click="startReviewCheck"
-            :disabled="reviewLoading || !reviewProjectId || !newReviewProjectOptions.length"
+            :disabled="reviewLoading || !reviewProjectId || !newReviewProjectOptions.length || !hasGitConnection"
             class="flex-1 py-3 primary-gradient text-on-primary font-bold rounded-lg disabled:opacity-50 flex items-center justify-center gap-2">
             Start Review
           </button>
