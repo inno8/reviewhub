@@ -162,6 +162,7 @@ function applyIssuesProjectFromRoute() {
 
 function backToProjects() {
   devSelectedProject.value = null;
+  router.replace({ query: {} });
 }
 
 watch(() => projectsStore.selectedProjectId, async (newId) => {
@@ -544,8 +545,8 @@ function scoreColor(score: number) {
           <p class="text-outline text-sm">Link a repository and push some code to get started.</p>
         </div>
 
-        <!-- (Issues view removed — use Commit Timeline instead) -->
-        <template v-if="false">
+        <!-- Findings view (when navigated from Projects page with ?project=) -->
+        <template v-if="devSelectedProject">
           <header class="mb-10">
             <h1 class="text-4xl font-black text-on-surface tracking-tight mb-2">{{ currentDate }}</h1>
             <p class="text-outline text-sm">
@@ -554,13 +555,13 @@ function scoreColor(score: number) {
           </header>
 
           <!-- Focus Priorities -->
-          <div v-if="devOverview?.priorities?.length" class="mb-6 p-5 rounded-xl bg-primary/5 border border-primary/20">
+          <div v-if="devHome?.priorities?.length" class="mb-6 p-5 rounded-xl bg-primary/5 border border-primary/20">
             <div class="flex items-center gap-2 mb-3">
               <span class="material-symbols-outlined text-primary">target</span>
               <h3 class="text-sm font-bold text-primary uppercase tracking-wider">This week, focus on:</h3>
             </div>
             <div class="flex flex-wrap gap-3">
-              <div v-for="p in devOverview.priorities" :key="p.skill_slug"
+              <div v-for="p in devHome.priorities" :key="p.skill_slug"
                 class="flex items-center gap-2 px-4 py-2 rounded-lg bg-surface-container border border-outline-variant/20">
                 <div class="w-8 h-8 rounded-full flex items-center justify-center text-xs font-black"
                   :class="p.score < 40 ? 'bg-red-500/20 text-red-400' : p.score < 60 ? 'bg-orange-500/20 text-orange-400' : 'bg-yellow-500/20 text-yellow-400'">
@@ -575,8 +576,8 @@ function scoreColor(score: number) {
           </div>
 
           <!-- Pattern Alerts -->
-          <div v-if="devOverview?.pattern_insights?.length" class="mb-6 space-y-2">
-            <div v-for="pat in devOverview.pattern_insights.slice(0, 3)" :key="pat.key"
+          <div v-if="devHome?.pattern_insights?.length" class="mb-6 space-y-2">
+            <div v-for="pat in devHome.pattern_insights.slice(0, 3)" :key="pat.key"
               class="flex items-center gap-3 p-3 rounded-lg bg-tertiary/5 border border-tertiary/20">
               <span class="material-symbols-outlined text-tertiary">repeat</span>
               <p class="text-sm">

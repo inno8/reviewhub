@@ -138,7 +138,7 @@ function closeDrawer() {
 
 function goToDashboardProject(p: ProjectRow) {
   projectsStore.setSelectedProject(p.id);
-  router.push({ path: '/timeline' });
+  router.push({ path: '/', query: { project: String(p.id) } });
 }
 
 function openUnlinkDialog(p: ProjectRow) {
