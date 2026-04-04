@@ -288,7 +288,23 @@ function openSkillBreakdown(id: number) { breakdownSkillId.value = id; breakdown
               <span class="text-2xl font-black uppercase">{{ performance.level?.[0] }}</span>
             </div>
             <p class="text-lg font-bold capitalize">{{ performance.level || 'Unknown' }}</p>
-            <p class="text-sm text-outline mt-1">{{ performance.averageScore }}% avg score</p>
+            <p class="text-sm text-outline mt-1">{{ performance.compositeScore || performance.averageScore }}pts composite</p>
+          </div>
+
+          <!-- Level Breakdown -->
+          <div v-if="performance.levelBreakdown" class="bg-surface-container-low p-6 rounded-xl">
+            <p class="text-outline text-xs font-bold uppercase tracking-wider mb-4">Level Breakdown</p>
+            <div class="space-y-2.5">
+              <div v-for="(data, factor) in performance.levelBreakdown" :key="factor" class="flex items-center gap-2">
+                <span class="text-[9px] font-medium w-20 text-right capitalize">{{ String(factor).replace('_', ' ') }}</span>
+                <div class="flex-1 bg-surface-container-lowest rounded-full h-3 overflow-hidden">
+                  <div class="h-full rounded-full transition-all"
+                    :class="data.score >= 70 ? 'bg-green-500' : data.score >= 40 ? 'bg-yellow-500' : 'bg-red-500'"
+                    :style="{ width: data.score + '%' }"></div>
+                </div>
+                <span class="text-[9px] font-bold w-8 text-right">{{ data.weighted }}pt</span>
+              </div>
+            </div>
           </div>
 
           <!-- Severity Distribution -->
