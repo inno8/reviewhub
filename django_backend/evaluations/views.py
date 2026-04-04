@@ -451,6 +451,35 @@ class CheckUnderstandingView(APIView):
             except Finding.DoesNotExist:
                 continue
 
+            # Anti-cheat: detect if developer copy-pasted the LLM explanation
+            from difflib import SequenceMatcher
+            explanation_lower = explanation.lower()
+            cheat_sources = [
+                (finding.explanation or '').lower(),
+                (finding.description or '').lower(),
+                (finding.suggested_code or '').lower(),
+            ]
+            is_copy_paste = any(
+                SequenceMatcher(None, explanation_lower, src).ratio() > 0.7
+                for src in cheat_sources if len(src) > 20
+            )
+            if is_copy_paste:
+                finding.developer_explanation = explanation
+                finding.understanding_level = 'not_yet'
+                finding.understanding_feedback = (
+                    "It looks like you copied the explanation from the review. "
+                    "Please explain in your own words why this code is problematic. "
+                    "The goal is to make sure you truly understand the issue, not just repeat it."
+                )
+                finding.save(update_fields=['developer_explanation', 'understanding_level', 'understanding_feedback'])
+                results.append({
+                    'finding_id': finding_id,
+                    'level': 'not_yet',
+                    'feedback': finding.understanding_feedback,
+                    'deeper_explanation': finding.explanation or finding.description or '',
+                })
+                continue
+
             # Call FastAPI to evaluate understanding
             import httpx
             from django.conf import settings as django_settings

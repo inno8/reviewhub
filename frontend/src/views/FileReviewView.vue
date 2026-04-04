@@ -650,6 +650,31 @@ function openFixLearn() {
   }));
 }
 
+function isCopyPaste(explanation: string, group: CategoryGroup): boolean {
+  const exp = explanation.toLowerCase().trim();
+  if (exp.length < 10) return false;
+  for (const f of group.findings) {
+    for (const src of [f.explanation, f.description, f.suggestedCode]) {
+      if (!src || src.length < 20) continue;
+      const srcLower = src.toLowerCase();
+      // Check if > 60% of the explanation words appear in the source
+      const expWords = exp.split(/\s+/);
+      const srcWords = new Set(srcLower.split(/\s+/));
+      const matches = expWords.filter(w => w.length > 3 && srcWords.has(w)).length;
+      if (matches / expWords.length > 0.6) return true;
+    }
+  }
+  return false;
+}
+
+const copyPasteWarning = ref<Record<string, boolean>>({});
+
+function checkCopyPaste(group: CategoryGroup) {
+  copyPasteWarning.value[group.key] = isCopyPaste(group.explanation, group);
+}
+
+const hasCopyPaste = computed(() => Object.values(copyPasteWarning.value).some(v => v));
+
 async function submitUnderstanding() {
   fixLearnLoading.value = true;
   try {
@@ -1054,10 +1079,16 @@ function goBack() {
               </ul>
               <textarea
                 v-model="group.explanation"
+                @input="checkCopyPaste(group)"
                 rows="3"
-                class="w-full bg-surface-container border border-outline-variant/30 rounded-lg text-sm text-on-surface p-3 focus:ring-1 focus:ring-primary/50 placeholder:text-outline/40"
+                class="w-full bg-surface-container border rounded-lg text-sm text-on-surface p-3 focus:ring-1 focus:ring-primary/50 placeholder:text-outline/40"
+                :class="copyPasteWarning[group.key] ? 'border-red-500/50' : 'border-outline-variant/30'"
                 :placeholder="`Why is ${group.label} problematic here? What could go wrong?`"
               ></textarea>
+              <p v-if="copyPasteWarning[group.key]" class="text-xs text-red-400 flex items-center gap-1">
+                <span class="material-symbols-outlined text-xs">warning</span>
+                This looks like a copy-paste. Please use your own words to explain the issue.
+              </p>
             </div>
           </template>
 
@@ -1132,7 +1163,7 @@ function goBack() {
           <button @click="showFixLearnDialog = false" class="px-4 py-2 text-sm text-outline hover:text-on-surface">
             Close
           </button>
-          <button v-if="fixLearnStep === 'explain'" @click="submitUnderstanding" :disabled="fixLearnLoading"
+          <button v-if="fixLearnStep === 'explain'" @click="submitUnderstanding" :disabled="fixLearnLoading || hasCopyPaste"
             class="px-6 py-2 primary-gradient text-on-primary text-sm font-bold rounded-lg disabled:opacity-50 flex items-center gap-2">
             <span v-if="fixLearnLoading" class="material-symbols-outlined text-sm animate-spin">progress_activity</span>
             {{ fixLearnLoading ? 'Checking...' : 'Check My Understanding' }}
