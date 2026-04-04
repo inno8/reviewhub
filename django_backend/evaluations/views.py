@@ -209,14 +209,96 @@ class InternalEvaluationCreateView(APIView):
                         
                 except Skill.DoesNotExist:
                     pass
-        
+
+        # Auto-resolve patterns that haven't appeared in last 10 commits
+        if author:
+            self._auto_resolve_patterns(author, project)
+
         return Response(
             EvaluationSerializer(evaluation).data,
             status=status.HTTP_201_CREATED
         )
     
+    @staticmethod
+    def _auto_resolve_patterns(user, project):
+        """
+        After each evaluation, check if any active patterns for this user
+        did NOT appear in the last 10 commits. If so, auto-resolve them.
+        """
+        try:
+            active_patterns = Pattern.objects.filter(
+                user=user, project=project, is_resolved=False
+            )
+            if not active_patterns.exists():
+                return
+
+            # Get last 10 evaluations for this user+project
+            recent_evals = Evaluation.objects.filter(
+                author=user, project=project
+            ).order_by('-created_at')[:10]
+
+            if recent_evals.count() < 5:
+                return  # Not enough data to auto-resolve
+
+            # Get all finding IDs from recent evaluations
+            recent_finding_ids = set(
+                Finding.objects.filter(
+                    evaluation__in=recent_evals
+                ).values_list('id', flat=True)
+            )
+
+            # Get skill slugs from recent findings
+            recent_skill_slugs = set(
+                FindingSkill.objects.filter(
+                    finding_id__in=recent_finding_ids
+                ).values_list('skill__slug', flat=True)
+            )
+
+            from notifications.models import Notification
+            from skills.models import SkillMetric, Skill
+
+            for pattern in active_patterns:
+                # Extract skill slug from pattern_key (format: "skill_slug:severity")
+                pattern_skill = pattern.pattern_key.split(':')[0] if ':' in pattern.pattern_key else pattern.pattern_type
+
+                # Check if this pattern's skill appeared in recent findings
+                if pattern_skill not in recent_skill_slugs:
+                    # Pattern hasn't appeared in last 10 commits — auto-resolve!
+                    pattern.is_resolved = True
+                    pattern.resolved_at = timezone.now()
+                    pattern.save(update_fields=['is_resolved', 'resolved_at'])
+
+                    # Improve skill score
+                    recovery = min(10.0, pattern.frequency / 5.0)
+                    try:
+                        skill = Skill.objects.get(slug=pattern_skill)
+                        for metric in SkillMetric.objects.filter(user=user, project=project, skill=skill):
+                            metric.improve_score(fixed_issues=0, recovery=recovery)
+                    except Skill.DoesNotExist:
+                        pass
+
+                    # Notify developer
+                    Notification.objects.create(
+                        user=user,
+                        type='skill_improvement',
+                        title=f'Pattern Resolved: {pattern.pattern_type.replace("_", " ").title()}',
+                        message=(
+                            f"You haven't had any {pattern.pattern_type.replace('_', ' ')} issues "
+                            f"in your last 10 commits. This pattern has been auto-resolved!"
+                        ),
+                        data={
+                            'pattern_id': pattern.id,
+                            'pattern_type': pattern.pattern_type,
+                            'frequency': pattern.frequency,
+                            'skill_boost': round(recovery, 1),
+                        },
+                    )
+        except Exception as e:
+            import logging
+            logging.getLogger(__name__).warning('Auto-resolve patterns failed: %s', e)
+
     # ── Private helpers ───────────────────────────────────────────────
-    
+
     @staticmethod
     def _resolve_author(project, email, sender_login=''):
         """
