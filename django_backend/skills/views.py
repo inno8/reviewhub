@@ -448,14 +448,17 @@ class SkillBreakdownView(APIView):
                 'file_path': f.file_path,
                 'line_start': f.line_start,
                 'is_fixed': f.is_fixed,
-                'created_at': f.created_at.isoformat(),
+                'created_at': f.created_at.isoformat() if f.created_at else None,
             })
-            if not f.is_fixed:
-                deductions.append({
-                    'reason': f.title,
-                    'impact': round(fs.impact_score, 1),
-                    'severity': f.severity,
-                })
+            deductions.append({
+                'findingId': f.id,
+                'explanation': f.title + (f' — {f.description[:80]}' if f.description else ''),
+                'impact': round(-fs.impact_score, 1) if not f.is_fixed else round(fs.impact_score * 0.6, 1),
+                'keyword': f.severity,
+                'type': 'positive' if f.is_fixed else 'negative',
+                'filePath': f.file_path or '',
+                'date': f.created_at.isoformat() if f.created_at else '',
+            })
 
         # Weekly trend (last 8 weeks)
         weeks = 8
