@@ -145,6 +145,39 @@ async function loadPatterns() {
   } catch { /* ignore */ } finally { patternsLoading.value = false; }
 }
 
+// Pattern info dialog
+const patternInfoOpen = ref(false);
+const patternInfoData = ref<{ name: string; description: string } | null>(null);
+
+const PATTERN_DESCRIPTIONS: Record<string, string> = {
+  'clean_code': 'Clean Code refers to writing code that is easy to read, understand, and maintain. It includes consistent naming conventions, proper formatting, avoiding unnecessary complexity, and following language-specific style guides (e.g. PEP 8 for Python). Clean code reduces bugs because other developers (and future you) can understand what the code does at a glance.',
+  'code_structure': 'Code Structure is about organizing your code into logical, modular pieces. Good structure means separating concerns, using functions for reusable logic, keeping files focused on a single responsibility, and avoiding deeply nested code. Well-structured code is easier to test, debug, and extend.',
+  'dry_principle': 'DRY (Don\'t Repeat Yourself) means avoiding code duplication. When you see the same logic repeated in multiple places, extract it into a shared function or module. Duplicated code means every bug fix or change must be applied in multiple places, increasing the risk of inconsistency and bugs.',
+  'input_validation': 'Input Validation means checking and sanitizing all data that comes from external sources (user input, API requests, file uploads) before using it. Without validation, your application is vulnerable to injection attacks (SQL injection, XSS), crashes from unexpected data types, and security breaches.',
+  'error_handling': 'Error Handling means anticipating what can go wrong and writing code to handle those situations gracefully. This includes using try/except blocks, validating return values, handling edge cases (empty lists, null values), and providing meaningful error messages instead of crashing silently.',
+  'edge_cases': 'Edge Cases are unusual or extreme inputs that your code might not handle correctly — empty strings, zero values, very large numbers, null/undefined values, or unexpected data types. Testing for edge cases prevents bugs that only appear in production with real-world data.',
+  'html_semantics': 'HTML Semantics means using the right HTML elements for their intended purpose — <header>, <nav>, <main>, <article>, <button> instead of generic <div> tags with click handlers. Semantic HTML improves accessibility (screen readers), SEO, and makes code more readable and maintainable.',
+  'accessibility': 'Accessibility (a11y) means making your web application usable by everyone, including people with disabilities. This includes adding alt text to images, using proper heading hierarchy, ensuring keyboard navigation works, providing ARIA labels for interactive elements, and maintaining sufficient color contrast.',
+  'css_organization': 'CSS Organization means keeping your stylesheets clean, avoiding inline styles, using consistent naming conventions (BEM, utility classes), and eliminating duplicate rules. Well-organized CSS uses variables for colors/spacing, groups related styles, and avoids specificity wars.',
+  'responsive_design': 'Responsive Design means building layouts that adapt to different screen sizes — mobile, tablet, and desktop. This involves using relative units (rem, %), media queries, flexbox/grid layouts, and testing on multiple devices. A responsive site provides a good experience regardless of screen size.',
+  'xss_csrf_prevention': 'XSS (Cross-Site Scripting) prevention means never inserting user-provided data into HTML without sanitizing it. Using innerHTML with user data allows attackers to inject malicious scripts. Use textContent, template literals with proper escaping, or sanitization libraries instead.',
+  'database_queries': 'Secure Database Queries means using parameterized queries (prepared statements) instead of string concatenation to build SQL. String concatenation allows SQL injection attacks where an attacker can modify your query to access, modify, or delete data they shouldn\'t have access to.',
+  'secrets_management': 'Secrets Management means never hardcoding passwords, API keys, tokens, or other sensitive values directly in your source code. Instead, use environment variables, secret managers (like AWS Secrets Manager), or .env files (excluded from git). Hardcoded secrets in git history can be found and exploited by anyone.',
+  'comments_docs': 'Comments & Documentation means writing clear inline comments for complex logic, docstrings for functions explaining parameters and return values, and maintaining README files. Good documentation helps others (and future you) understand the codebase without reading every line of code.',
+  'solid_principles': 'SOLID Principles are five design principles for writing maintainable object-oriented code: Single Responsibility (one class = one job), Open/Closed (open for extension, closed for modification), Liskov Substitution, Interface Segregation, and Dependency Inversion. Following SOLID reduces coupling and makes code easier to change.',
+  'api_design': 'API Design means creating consistent, intuitive REST endpoints with proper HTTP methods (GET for reading, POST for creating, etc.), meaningful status codes, clear error responses, versioning, and proper authentication. A well-designed API is easy for other developers to use without reading extensive documentation.',
+};
+
+function openPatternInfo(patternKey: string) {
+  const slug = patternKey.split(':')[0];
+  const name = slug.replace(/_/g, ' ').replace(/\b\w/g, c => c.toUpperCase());
+  patternInfoData.value = {
+    name,
+    description: PATTERN_DESCRIPTIONS[slug] || `${name} is a recurring code quality pattern detected in your commits. Review the related findings on the Skills page to understand the specific issues and how to fix them.`,
+  };
+  patternInfoOpen.value = true;
+}
+
 // Resolve pattern dialog state
 const resolveDialogOpen = ref(false);
 const resolveDialogData = ref<any>(null);
@@ -410,6 +443,10 @@ const selectedUserObj = computed(() => adminUsers.value.find(u => u.id === selec
                           </p>
                           <p class="text-xs text-outline capitalize">{{ p.pattern_type }}</p>
                         </div>
+                        <button @click.stop="openPatternInfo(p.pattern_key)"
+                          class="p-1 rounded-full hover:bg-surface-container-highest transition-colors" title="What is this?">
+                          <span class="material-symbols-outlined text-sm text-outline hover:text-primary">info</span>
+                        </button>
                       </div>
                     </td>
                     <td class="px-5 py-3 text-center">
@@ -463,6 +500,31 @@ const selectedUserObj = computed(() => adminUsers.value.find(u => u.id === selec
     :project-id="projectsStore.selectedProjectId ?? 0"
     @close="breakdownOpen = false"
   />
+
+  <!-- Pattern Info Dialog -->
+  <Teleport to="body">
+    <div v-if="patternInfoOpen && patternInfoData" class="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/50" @click.self="patternInfoOpen = false">
+      <div class="bg-surface-container rounded-2xl shadow-xl w-full max-w-md overflow-hidden">
+        <div class="px-6 py-4 border-b border-outline-variant/10 flex items-center justify-between">
+          <div class="flex items-center gap-2">
+            <span class="material-symbols-outlined text-primary">school</span>
+            <h3 class="text-lg font-bold capitalize">{{ patternInfoData.name }}</h3>
+          </div>
+          <button @click="patternInfoOpen = false" class="p-1 rounded-lg hover:bg-surface-container-highest">
+            <span class="material-symbols-outlined text-outline">close</span>
+          </button>
+        </div>
+        <div class="p-6">
+          <p class="text-sm text-on-surface-variant leading-relaxed">{{ patternInfoData.description }}</p>
+        </div>
+        <div class="px-6 py-3 border-t border-outline-variant/10 flex justify-end">
+          <button @click="patternInfoOpen = false" class="px-4 py-2 text-sm text-primary font-bold hover:bg-primary/10 rounded-lg transition-colors">
+            Got it
+          </button>
+        </div>
+      </div>
+    </div>
+  </Teleport>
 
   <!-- Pattern Resolve Dialog -->
   <Teleport to="body">
