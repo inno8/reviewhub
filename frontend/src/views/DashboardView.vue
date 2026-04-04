@@ -42,6 +42,19 @@ const adminProjectFilter = ref<number | null>(null);
 const adminCategories = ref<{ id: number; name: string }[]>([]);
 const adminProjects = ref<{ id: number; displayName: string }[]>([]);
 const drawerUser = ref<UserStat | null>(null);
+const adminTeam = ref<any>(null);
+
+async function loadAdminTeam() {
+  try {
+    const axios = (await import('axios')).default;
+    const token = localStorage.getItem('reviewhub_token');
+    const { data } = await axios.get(
+      `${import.meta.env.VITE_API_URL}/skills/dashboard/admin-team/`,
+      { headers: token ? { Authorization: `Bearer ${token}` } : {} }
+    );
+    adminTeam.value = data;
+  } catch { adminTeam.value = null; }
+}
 
 async function loadAdminData() {
   adminLoading.value = true;
@@ -131,7 +144,7 @@ function getLevelBg(level: string) {
 onMounted(async () => {
   await projectsStore.fetchProjects();
   if (authStore.isAdmin) {
-    await loadAdminData();
+    await Promise.all([loadAdminData(), loadAdminTeam()]);
   } else {
     await loadDevHome();
   }
@@ -229,70 +242,159 @@ function scoreColor(score: number) {
     <!-- ═══ ADMIN DASHBOARD ═══ -->
     <template v-if="authStore.isAdmin">
       <div class="p-8 flex-1">
-        <header class="mb-10">
+        <header class="mb-8">
           <span class="text-primary font-bold uppercase tracking-[0.2em] text-xs">Admin Dashboard</span>
           <h1 class="text-4xl font-black text-on-surface tracking-tight mb-2">Team Overview</h1>
-          <p class="text-outline text-sm">Monitor your team's progress and performance.</p>
         </header>
 
-        <!-- Filters -->
-        <div class="flex flex-wrap items-center gap-3 mb-8">
-          <input v-model="adminSearch" type="text" placeholder="Search..."
-            class="w-56 bg-surface-container-lowest border-none rounded-lg text-on-surface placeholder:text-outline/40 focus:ring-1 focus:ring-primary/50 py-2.5 px-4 text-sm" />
-          <select v-model="adminCategoryFilter"
-            class="bg-surface-container-lowest border-none rounded-lg text-on-surface text-sm focus:ring-1 focus:ring-primary/50 py-2.5 px-4">
-            <option :value="null">All Categories</option>
-            <option v-for="cat in adminCategories" :key="cat.id" :value="cat.id">{{ cat.name }}</option>
-          </select>
-          <select v-model="adminProjectFilter"
-            class="bg-surface-container-lowest border-none rounded-lg text-on-surface text-sm focus:ring-1 focus:ring-primary/50 py-2.5 px-4">
-            <option :value="null">All Projects</option>
-            <option v-for="p in adminProjects" :key="p.id" :value="p.id">{{ p.displayName }}</option>
-          </select>
-          <span class="ml-auto text-xs text-outline">{{ adminUsers.length }} users</span>
-        </div>
+        <!-- ── Team Health Row ── -->
+        <section v-if="adminTeam" class="grid grid-cols-2 md:grid-cols-5 gap-4 mb-8">
+          <div class="bg-surface-container-low p-5 rounded-xl border border-outline-variant/10 text-center">
+            <p class="text-3xl font-black" :class="adminTeam.teamAvgScore >= 60 ? 'text-green-400' : adminTeam.teamAvgScore >= 40 ? 'text-yellow-400' : 'text-red-400'">
+              {{ adminTeam.teamAvgScore }}
+            </p>
+            <p class="text-[10px] text-outline uppercase mt-1">Team Avg Score</p>
+          </div>
+          <div class="bg-surface-container-low p-5 rounded-xl border border-outline-variant/10 text-center">
+            <p class="text-3xl font-black text-primary">{{ adminTeam.totalDevelopers }}</p>
+            <p class="text-[10px] text-outline uppercase mt-1">Developers</p>
+          </div>
+          <div class="bg-surface-container-low p-5 rounded-xl border border-outline-variant/10 text-center">
+            <p class="text-3xl font-black text-tertiary">{{ adminTeam.totalFindings }}</p>
+            <p class="text-[10px] text-outline uppercase mt-1">Total Findings</p>
+          </div>
+          <div class="bg-surface-container-low p-5 rounded-xl border border-outline-variant/10 text-center">
+            <p class="text-3xl font-black" :class="adminTeam.teamFixRate > 30 ? 'text-green-400' : 'text-red-400'">{{ adminTeam.teamFixRate }}%</p>
+            <p class="text-[10px] text-outline uppercase mt-1">Fix Rate</p>
+          </div>
+          <div class="bg-surface-container-low p-5 rounded-xl border border-outline-variant/10">
+            <p class="text-[10px] text-outline uppercase mb-2">Level Distribution</p>
+            <div class="flex gap-1 h-6">
+              <div v-for="(count, lvl) in adminTeam.levelDistribution" :key="lvl"
+                v-show="count > 0"
+                class="rounded flex items-center justify-center text-[9px] font-bold text-white"
+                :class="{ 'bg-red-500': lvl === 'beginner', 'bg-orange-500': lvl === 'junior', 'bg-yellow-500': lvl === 'intermediate', 'bg-green-500': lvl === 'senior', 'bg-primary': lvl === 'expert' }"
+                :style="{ flex: count }">
+                {{ count }}{{ String(lvl)[0].toUpperCase() }}
+              </div>
+            </div>
+          </div>
+        </section>
 
-        <!-- User Grid -->
-        <div v-if="adminLoading" class="flex items-center justify-center py-16">
-          <span class="material-symbols-outlined text-4xl text-outline animate-spin">progress_activity</span>
-        </div>
-        <div v-else class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
-          <div
-            v-for="u in adminUsers" :key="u.id"
-            class="bg-surface-container-low p-5 rounded-xl border border-outline-variant/10 hover:border-primary/30 transition-all cursor-pointer group"
-            @click="openDrawer(u)">
-            <div class="flex items-center gap-3 mb-4">
-              <div class="w-11 h-11 rounded-lg bg-secondary-container flex items-center justify-center text-sm font-bold text-primary">
-                {{ u.username.slice(0, 2).toUpperCase() }}
-              </div>
-              <div class="min-w-0">
-                <div class="text-sm font-bold text-on-surface truncate">{{ u.display_name || u.username }}</div>
-                <div class="text-[11px] text-outline truncate">{{ u.email }}</div>
+        <!-- ── Two Column: Attention + Leaderboard ── -->
+        <section v-if="adminTeam" class="grid grid-cols-1 lg:grid-cols-2 gap-6 mb-8">
+          <!-- Needs Attention -->
+          <div class="bg-surface-container-low rounded-xl border border-outline-variant/10">
+            <div class="px-5 py-3 border-b border-outline-variant/10 flex items-center gap-2">
+              <span class="material-symbols-outlined text-red-400 text-sm">warning</span>
+              <h3 class="text-sm font-bold">Needs Attention</h3>
+            </div>
+            <div v-if="adminTeam.needsAttention?.length" class="divide-y divide-outline-variant/10">
+              <div v-for="a in adminTeam.needsAttention" :key="a.id" class="px-5 py-3 flex items-center gap-3 cursor-pointer hover:bg-surface-container-lowest transition-colors"
+                @click="goToUserInsights(a.id)">
+                <div class="w-8 h-8 rounded-full bg-red-500/15 flex items-center justify-center text-xs font-bold text-red-400">
+                  {{ a.displayName[0] }}
+                </div>
+                <div class="flex-1 min-w-0">
+                  <p class="text-sm font-bold truncate">{{ a.displayName }}</p>
+                  <p class="text-[10px] text-red-400">{{ a.reasons.join(' · ') }}</p>
+                </div>
+                <span class="material-symbols-outlined text-xs text-outline">chevron_right</span>
               </div>
             </div>
-            <div class="flex gap-1.5 flex-wrap mb-3">
-              <span v-for="cat in u.categories" :key="cat.id" class="text-[10px] bg-surface-container-highest px-1.5 py-0.5 rounded text-on-surface-variant">{{ cat.name }}</span>
+            <p v-else class="p-5 text-sm text-outline text-center">All developers are on track</p>
+          </div>
+
+          <!-- Leaderboard -->
+          <div class="bg-surface-container-low rounded-xl border border-outline-variant/10">
+            <div class="px-5 py-3 border-b border-outline-variant/10 flex items-center gap-2">
+              <span class="material-symbols-outlined text-yellow-400 text-sm">emoji_events</span>
+              <h3 class="text-sm font-bold">Leaderboard</h3>
             </div>
-            <div class="grid grid-cols-3 gap-2 text-center">
-              <div class="bg-surface-container-lowest rounded-lg p-2">
-                <p class="text-lg font-black text-on-surface">{{ u.total_evaluations }}</p>
-                <p class="text-[9px] text-outline uppercase tracking-wider">Evals</p>
+            <div class="p-5 space-y-4">
+              <div v-if="adminTeam.topImprovers?.length">
+                <p class="text-[10px] text-outline uppercase mb-2">Top Improvers</p>
+                <div v-for="t in adminTeam.topImprovers" :key="t.id" class="flex items-center gap-2 text-sm">
+                  <span class="text-green-400 font-bold">+{{ t.improvement }}%</span>
+                  <span class="truncate">{{ t.name }}</span>
+                  <span class="text-[9px] text-outline capitalize ml-auto">{{ t.level }}</span>
+                </div>
               </div>
-              <div class="bg-surface-container-lowest rounded-lg p-2">
-                <p class="text-lg font-black text-on-surface">{{ u.total_findings }}</p>
-                <p class="text-[9px] text-outline uppercase tracking-wider">Findings</p>
-              </div>
-              <div class="bg-surface-container-lowest rounded-lg p-2">
-                <p class="text-lg font-black" :class="scoreColor(u.avg_score)">{{ u.avg_score }}%</p>
-                <p class="text-[9px] text-outline uppercase tracking-wider">Score</p>
+              <div v-if="adminTeam.topQuality?.length">
+                <p class="text-[10px] text-outline uppercase mb-2">Top Code Quality</p>
+                <div v-for="t in adminTeam.topQuality" :key="t.id" class="flex items-center gap-2 text-sm">
+                  <span class="text-primary font-bold">{{ t.avgScore }}%</span>
+                  <span class="truncate">{{ t.name }}</span>
+                  <span class="text-[9px] text-outline capitalize ml-auto">{{ t.level }}</span>
+                </div>
               </div>
             </div>
           </div>
-          <div v-if="!adminUsers.length" class="col-span-full flex flex-col items-center justify-center py-16">
-            <span class="material-symbols-outlined text-6xl text-outline mb-4">group</span>
-            <p class="text-on-surface-variant text-lg">No users found</p>
+        </section>
+
+        <!-- ── Team Patterns ── -->
+        <section v-if="adminTeam?.teamPatterns?.length" class="mb-8">
+          <div class="bg-surface-container-low rounded-xl border border-outline-variant/10 p-5">
+            <h3 class="text-sm font-bold mb-3">Top Team-Wide Patterns</h3>
+            <div class="flex flex-wrap gap-3">
+              <div v-for="p in adminTeam.teamPatterns" :key="p.type" class="flex items-center gap-2 px-3 py-2 bg-tertiary/5 rounded-lg border border-tertiary/20">
+                <span class="material-symbols-outlined text-tertiary text-sm">repeat</span>
+                <span class="text-sm">{{ p.type }}</span>
+                <span class="text-xs font-bold text-tertiary">{{ p.count }} devs</span>
+              </div>
+            </div>
           </div>
-        </div>
+        </section>
+
+        <!-- ── Developer Cards (with enhanced data) ── -->
+        <section>
+          <div class="flex items-center justify-between mb-4">
+            <h3 class="text-sm font-bold">All Developers</h3>
+            <div class="flex items-center gap-3">
+              <input v-model="adminSearch" type="text" placeholder="Search..."
+                class="w-48 bg-surface-container-lowest border-none rounded-lg text-on-surface placeholder:text-outline/40 focus:ring-1 focus:ring-primary/50 py-2 px-3 text-xs" />
+              <span class="text-xs text-outline">{{ adminTeam?.developers?.length || adminUsers.length }} devs</span>
+            </div>
+          </div>
+          <div v-if="adminLoading" class="flex items-center justify-center py-16">
+            <span class="material-symbols-outlined text-4xl text-outline animate-spin">progress_activity</span>
+          </div>
+          <div v-else class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+            <div
+              v-for="dev in (adminTeam?.developers || [])" :key="dev.id"
+              class="bg-surface-container-low p-4 rounded-xl border border-outline-variant/10 hover:border-primary/30 transition-all cursor-pointer"
+              @click="goToUserInsights(dev.id)">
+              <div class="flex items-center gap-3 mb-3">
+                <div class="w-10 h-10 rounded-lg bg-secondary-container flex items-center justify-center text-sm font-bold text-primary">
+                  {{ dev.displayName[0]?.toUpperCase() || '?' }}
+                </div>
+                <div class="flex-1 min-w-0">
+                  <div class="text-sm font-bold truncate">{{ dev.displayName }}</div>
+                  <div class="text-[10px] text-outline">{{ dev.email }}</div>
+                </div>
+                <div class="text-right">
+                  <span class="text-xs font-bold capitalize px-2 py-0.5 rounded-full"
+                    :class="getLevelBg(dev.level) + ' ' + getLevelColor(dev.level)">{{ dev.level }}</span>
+                  <p class="text-[9px] text-outline mt-0.5">{{ dev.compositeScore }}pts</p>
+                </div>
+              </div>
+              <div class="grid grid-cols-4 gap-2 text-center text-[10px]">
+                <div><p class="text-sm font-black">{{ dev.commitCount }}</p><p class="text-outline">Commits</p></div>
+                <div><p class="text-sm font-black text-tertiary">{{ dev.findingCount }}</p><p class="text-outline">Findings</p></div>
+                <div><p class="text-sm font-black" :class="dev.fixRate > 0 ? 'text-green-400' : 'text-red-400'">{{ dev.fixRate }}%</p><p class="text-outline">Fix Rate</p></div>
+                <div><p class="text-sm font-black" :class="dev.improvement > 0 ? 'text-green-400' : dev.improvement < 0 ? 'text-red-400' : 'text-outline'">{{ dev.improvement > 0 ? '+' : '' }}{{ dev.improvement }}%</p><p class="text-outline">Trend</p></div>
+              </div>
+              <!-- Mini sparkline -->
+              <div v-if="dev.sparkline?.length >= 2" class="mt-2 flex items-end gap-0.5 h-6">
+                <div v-for="(s, i) in dev.sparkline" :key="i"
+                  class="flex-1 rounded-sm transition-all"
+                  :class="s >= 70 ? 'bg-green-500/50' : s >= 40 ? 'bg-yellow-500/50' : 'bg-red-500/50'"
+                  :style="{ height: Math.max(4, s * 0.24) + 'px' }">
+                </div>
+              </div>
+            </div>
+          </div>
+        </section>
       </div>
 
       <!-- User Drawer (RIGHT side) -->

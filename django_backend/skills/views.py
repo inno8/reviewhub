@@ -1021,3 +1021,158 @@ class DeveloperHomeView(APIView):
             'sparkline': sparkline,
             'topIssues': top_issues,
         })
+
+
+class AdminTeamOverviewView(APIView):
+    """
+    Admin-only: team-wide aggregate stats for the admin dashboard.
+    Returns team health, level distribution, attention flags, and leaderboard.
+    """
+
+    permission_classes = [permissions.IsAuthenticated]
+
+    def get(self, request):
+        if request.user.role != 'admin' and not request.user.is_staff:
+            return Response({'error': 'Admin only'}, status=403)
+
+        from evaluations.models import Evaluation, Finding, Pattern
+        from users.models import User
+        from django.db.models import Avg, Count
+        from .level_calculator import compute_level_for_user
+        from collections import Counter
+
+        developers = User.objects.filter(role='developer')
+
+        # Per-developer data
+        dev_data = []
+        level_counts = Counter()
+        all_scores = []
+
+        for dev in developers:
+            evals = Evaluation.objects.for_user(dev)
+            eval_count = evals.count()
+            if eval_count == 0:
+                continue
+
+            avg_score = evals.aggregate(avg=Avg('overall_score'))['avg'] or 0
+            findings = Finding.objects.filter(evaluation__in=evals)
+            finding_count = findings.count()
+            fixed_count = findings.filter(is_fixed=True).count()
+            fix_rate = round((fixed_count / finding_count * 100) if finding_count else 0, 1)
+
+            # Level
+            level_data = compute_level_for_user(dev)
+            level_counts[level_data['level']] += 1
+            all_scores.append(level_data['composite_score'])
+
+            # Improvement
+            scores_list = [s for s in evals.order_by('created_at').values_list('overall_score', flat=True) if s is not None]
+            improvement = 0
+            if len(scores_list) >= 3:
+                improvement = round(sum(scores_list[-3:]) / 3 - sum(scores_list[:3]) / 3, 1)
+
+            # Recent sparkline (last 5)
+            recent_scores = [float(s) for s in evals.order_by('-created_at').values_list('overall_score', flat=True)[:5] if s is not None]
+
+            # Active patterns
+            active_patterns = Pattern.objects.filter(user=dev, is_resolved=False).count()
+            resolved_patterns = Pattern.objects.filter(user=dev, is_resolved=True).count()
+
+            dev_data.append({
+                'id': dev.id,
+                'username': dev.username,
+                'email': dev.email,
+                'displayName': dev.display_name,
+                'level': level_data['level'],
+                'compositeScore': level_data['composite_score'],
+                'avgScore': round(avg_score, 1),
+                'improvement': improvement,
+                'commitCount': eval_count,
+                'findingCount': finding_count,
+                'fixRate': fix_rate,
+                'activePatterns': active_patterns,
+                'resolvedPatterns': resolved_patterns,
+                'sparkline': list(reversed(recent_scores)),
+            })
+
+        # Team aggregates
+        team_avg_score = round(sum(all_scores) / len(all_scores), 1) if all_scores else 0
+        total_findings = sum(d['findingCount'] for d in dev_data)
+        total_fixed = sum(int(d['findingCount'] * d['fixRate'] / 100) for d in dev_data)
+        team_fix_rate = round((total_fixed / total_findings * 100) if total_findings else 0, 1)
+
+        # Level distribution
+        level_distribution = {
+            'beginner': level_counts.get('beginner', 0),
+            'junior': level_counts.get('junior', 0),
+            'intermediate': level_counts.get('intermediate', 0),
+            'senior': level_counts.get('senior', 0),
+            'expert': level_counts.get('expert', 0),
+        }
+
+        # Developers who need attention
+        needs_attention = []
+        for d in dev_data:
+            reasons = []
+            if d['fixRate'] == 0 and d['findingCount'] > 5:
+                reasons.append(f"0% fix rate with {d['findingCount']} findings")
+            if d['improvement'] < -10:
+                reasons.append(f"Score declining ({d['improvement']}%)")
+            if d['activePatterns'] >= 5:
+                reasons.append(f"{d['activePatterns']} unresolved patterns")
+            if reasons:
+                needs_attention.append({
+                    'id': d['id'],
+                    'username': d['username'],
+                    'displayName': d['displayName'],
+                    'level': d['level'],
+                    'reasons': reasons,
+                })
+
+        # Top team patterns
+        team_patterns = (
+            Pattern.objects.filter(user__role='developer', is_resolved=False)
+            .values('pattern_type')
+            .annotate(total=Count('id'), total_freq=Count('frequency'))
+            .order_by('-total')[:5]
+        )
+
+        # Leaderboard
+        top_improvers = sorted(dev_data, key=lambda d: d['improvement'], reverse=True)[:3]
+        top_quality = sorted(dev_data, key=lambda d: d['avgScore'], reverse=True)[:3]
+        top_fixers = sorted(dev_data, key=lambda d: d['fixRate'], reverse=True)[:3]
+
+        return Response({
+            # Team health
+            'teamAvgScore': team_avg_score,
+            'teamFixRate': team_fix_rate,
+            'totalDevelopers': len(dev_data),
+            'totalFindings': total_findings,
+            'levelDistribution': level_distribution,
+
+            # Attention flags
+            'needsAttention': needs_attention,
+
+            # Team patterns
+            'teamPatterns': [
+                {'type': p['pattern_type'].replace('_', ' ').title(), 'count': p['total']}
+                for p in team_patterns
+            ],
+
+            # Leaderboard
+            'topImprovers': [
+                {'id': d['id'], 'name': d['displayName'], 'improvement': d['improvement'], 'level': d['level']}
+                for d in top_improvers if d['improvement'] > 0
+            ],
+            'topQuality': [
+                {'id': d['id'], 'name': d['displayName'], 'avgScore': d['avgScore'], 'level': d['level']}
+                for d in top_quality
+            ],
+            'topFixers': [
+                {'id': d['id'], 'name': d['displayName'], 'fixRate': d['fixRate'], 'level': d['level']}
+                for d in top_fixers if d['fixRate'] > 0
+            ],
+
+            # All developers with detailed data
+            'developers': sorted(dev_data, key=lambda d: d['compositeScore'], reverse=True),
+        })

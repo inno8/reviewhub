@@ -29,4 +29,7 @@ urlpatterns = [
 
     # Unified developer home
     path('dashboard/developer-home/', views.DeveloperHomeView.as_view(), name='developer-home'),
+
+    # Admin team overview
+    path('dashboard/admin-team/', views.AdminTeamOverviewView.as_view(), name='admin-team-overview'),
 ]
