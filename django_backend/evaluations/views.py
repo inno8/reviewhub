@@ -727,50 +727,67 @@ class PatternListView(generics.ListAPIView):
 class PatternResolveView(APIView):
     """
     POST /api/evaluations/patterns/<id>/resolve/
-    Mark a pattern as resolved — with verification and skill impact.
+    Verify the pattern is actually gone from recent commits before resolving.
+    If still present, return the affected findings so dev can fix them first.
     """
 
     permission_classes = [permissions.IsAuthenticated]
 
     def post(self, request, pk: int):
         pattern = get_object_or_404(Pattern, pk=pk, user=request.user)
+        force = request.data.get('force', False)
 
-        # Check if pattern appeared in recent commits
-        recent_evals = Evaluation.objects.for_user(request.user).order_by('-created_at')[:10]
-        recent_finding_ids = Finding.objects.filter(
-            evaluation__in=recent_evals
-        ).values_list('id', flat=True)
+        # Check last 3 commits for this pattern
+        recent_evals = Evaluation.objects.for_user(request.user)
+        if pattern.project:
+            recent_evals = recent_evals.filter(project=pattern.project)
+        recent_evals = recent_evals.order_by('-created_at')[:3]
 
-        recent_occurrences = pattern.sample_findings.filter(
-            id__in=recent_finding_ids
-        ).count()
+        # Find findings in recent commits that match this pattern's skill
+        pattern_skill = pattern.pattern_key.split(':')[0] if ':' in pattern.pattern_key else pattern.pattern_type
+        recent_findings = Finding.objects.filter(
+            evaluation__in=recent_evals,
+            finding_skills__skill__slug=pattern_skill,
+        ).select_related('evaluation').distinct()
 
-        # Warning if pattern is still active in recent commits
-        warning = None
-        if recent_occurrences > 0:
-            warning = (
-                f"This pattern appeared {recent_occurrences} time(s) in your "
-                f"last 10 commits. Resolving anyway — keep improving!"
-            )
+        recent_count = recent_findings.count()
 
-        # Mark as resolved
+        # If pattern still appears and not forced, BLOCK the resolve
+        if recent_count > 0 and not force:
+            affected_files = []
+            for f in recent_findings[:5]:
+                affected_files.append({
+                    'finding_id': f.id,
+                    'title': f.title,
+                    'file_path': f.file_path,
+                    'severity': f.severity,
+                    'commit_sha': f.evaluation.commit_sha[:7] if f.evaluation.commit_sha else '',
+                    'evaluation_id': f.evaluation.id,
+                })
+
+            return Response({
+                'resolved': False,
+                'reason': (
+                    f"This pattern still appeared {recent_count} time(s) in your "
+                    f"last 3 commits. Fix the issues below first, then try resolving again."
+                ),
+                'recent_occurrences': recent_count,
+                'affected_files': affected_files,
+            })
+
+        # Pattern not found in last 3 commits (or forced) — resolve it
         pattern.is_resolved = True
         pattern.resolved_at = timezone.now()
         pattern.save(update_fields=['is_resolved', 'resolved_at'])
 
-        # Improve related skill metrics — bigger boost for higher-frequency patterns
+        # Improve related skill metrics
         from skills.models import SkillMetric, Skill
-        pattern_skill_slug = pattern.pattern_key.split(':')[0] if ':' in pattern.pattern_key else pattern.pattern_type
+        recovery = 0
         try:
-            skill = Skill.objects.get(slug=pattern_skill_slug)
-            metrics = SkillMetric.objects.filter(
-                user=request.user,
-                skill=skill,
-            )
+            skill = Skill.objects.get(slug=pattern_skill)
+            metrics = SkillMetric.objects.filter(user=request.user, skill=skill)
             if pattern.project:
                 metrics = metrics.filter(project=pattern.project)
-
-            # Recovery: 1 point per 5 occurrences, capped at 10
             recovery = min(10.0, pattern.frequency / 5.0)
             for metric in metrics:
                 metric.improve_score(fixed_issues=0, recovery=recovery)
@@ -779,6 +796,10 @@ class PatternResolveView(APIView):
 
         from .serializers import PatternSerializer
         data = PatternSerializer(pattern).data
-        data['warning'] = warning
-        data['skill_boost'] = round(recovery, 1) if 'recovery' in dir() else 0
+        data['resolved'] = True
+        data['message'] = (
+            f"Confirmed! No {pattern.pattern_type.replace('_', ' ')} issues "
+            f"in your last 3 commits. Pattern resolved! (+{round(recovery, 1)} skill points)"
+        )
+        data['skill_boost'] = round(recovery, 1)
         return Response(data)

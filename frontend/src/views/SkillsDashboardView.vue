@@ -145,12 +145,47 @@ async function loadPatterns() {
   } catch { /* ignore */ } finally { patternsLoading.value = false; }
 }
 
+// Resolve pattern dialog state
+const resolveDialogOpen = ref(false);
+const resolveDialogData = ref<any>(null);
+const resolveDialogLoading = ref(false);
+
 async function resolvePattern(id: number) {
   resolvingId.value = id;
+  resolveDialogData.value = null;
   try {
-    await api.evaluations.resolvePattern(id);
-    patterns.value = patterns.value.map(p => p.id === id ? { ...p, is_resolved: true } : p);
+    const { data } = await api.evaluations.resolvePattern(id);
+
+    if (data.resolved) {
+      // Pattern successfully resolved
+      patterns.value = patterns.value.map(p => p.id === id ? { ...p, is_resolved: true } : p);
+      resolveDialogData.value = { success: true, message: data.message, skillBoost: data.skill_boost };
+      resolveDialogOpen.value = true;
+    } else {
+      // Pattern still active — show affected files
+      resolveDialogData.value = {
+        success: false,
+        patternId: id,
+        reason: data.reason,
+        affectedFiles: data.affected_files || [],
+      };
+      resolveDialogOpen.value = true;
+    }
   } catch { /* ignore */ } finally { resolvingId.value = null; }
+}
+
+async function forceResolvePattern() {
+  if (!resolveDialogData.value?.patternId) return;
+  resolveDialogLoading.value = true;
+  try {
+    const { data } = await api.evaluations.resolvePattern(resolveDialogData.value.patternId, true);
+    if (data.resolved) {
+      patterns.value = patterns.value.map(p =>
+        p.id === resolveDialogData.value.patternId ? { ...p, is_resolved: true } : p
+      );
+      resolveDialogData.value = { success: true, message: data.message, skillBoost: data.skill_boost };
+    }
+  } catch { /* ignore */ } finally { resolveDialogLoading.value = false; }
 }
 
 const filteredPatterns = computed(() =>
@@ -428,4 +463,63 @@ const selectedUserObj = computed(() => adminUsers.value.find(u => u.id === selec
     :project-id="projectsStore.selectedProjectId ?? 0"
     @close="breakdownOpen = false"
   />
+
+  <!-- Pattern Resolve Dialog -->
+  <Teleport to="body">
+    <div v-if="resolveDialogOpen" class="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/50" @click.self="resolveDialogOpen = false">
+      <div class="bg-surface-container rounded-2xl shadow-xl w-full max-w-lg overflow-hidden">
+        <div class="p-6">
+          <!-- Success -->
+          <template v-if="resolveDialogData?.success">
+            <div class="text-center mb-4">
+              <span class="material-symbols-outlined text-5xl text-green-400">check_circle</span>
+            </div>
+            <h3 class="text-lg font-bold text-center mb-2">Pattern Resolved!</h3>
+            <p class="text-sm text-on-surface-variant text-center">{{ resolveDialogData.message }}</p>
+            <div v-if="resolveDialogData.skillBoost" class="mt-3 p-3 bg-green-500/10 rounded-lg text-center">
+              <p class="text-sm text-green-400 font-bold">+{{ resolveDialogData.skillBoost }} skill points earned</p>
+            </div>
+          </template>
+
+          <!-- Still active — show affected files -->
+          <template v-else-if="resolveDialogData">
+            <div class="text-center mb-4">
+              <span class="material-symbols-outlined text-5xl text-orange-400">warning</span>
+            </div>
+            <h3 class="text-lg font-bold text-center mb-2">Pattern Still Active</h3>
+            <p class="text-sm text-on-surface-variant text-center mb-4">{{ resolveDialogData.reason }}</p>
+
+            <!-- Affected files with links -->
+            <div class="space-y-2 max-h-48 overflow-y-auto">
+              <div v-for="f in resolveDialogData.affectedFiles" :key="f.finding_id"
+                class="flex items-center gap-3 p-3 rounded-lg bg-surface-container-lowest border border-outline-variant/10 hover:border-primary/30 cursor-pointer transition-all"
+                @click="resolveDialogOpen = false; $router.push({ name: 'file-review', query: { evaluationId: f.evaluation_id, project: projectsStore.selectedProjectId } })">
+                <span class="material-symbols-outlined text-sm"
+                  :class="f.severity === 'critical' ? 'text-red-400' : 'text-orange-400'">{{ f.severity === 'critical' ? 'error' : 'warning' }}</span>
+                <div class="flex-1 min-w-0">
+                  <p class="text-sm font-medium truncate">{{ f.title }}</p>
+                  <p class="text-[10px] text-outline font-mono">{{ f.file_path }} · {{ f.commit_sha }}</p>
+                </div>
+                <span class="material-symbols-outlined text-sm text-outline">chevron_right</span>
+              </div>
+            </div>
+
+            <p class="text-xs text-outline text-center mt-3">Click a finding to review and fix it using Fix & Learn</p>
+          </template>
+        </div>
+
+        <!-- Footer -->
+        <div class="px-6 py-4 border-t border-outline-variant/10 flex justify-between">
+          <button @click="resolveDialogOpen = false" class="px-4 py-2 text-sm text-outline hover:text-on-surface">
+            Close
+          </button>
+          <button v-if="resolveDialogData && !resolveDialogData.success"
+            @click="forceResolvePattern" :disabled="resolveDialogLoading"
+            class="px-4 py-2 border border-outline-variant/30 text-on-surface-variant text-sm rounded-lg hover:bg-surface-container transition-all disabled:opacity-50">
+            {{ resolveDialogLoading ? 'Resolving...' : 'Resolve Anyway' }}
+          </button>
+        </div>
+      </div>
+    </div>
+  </Teleport>
 </template>

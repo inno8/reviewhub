@@ -70,7 +70,7 @@ export const api = {
         calendar: (projectId, month) => client.get('/evaluations/calendar/', { params: { project: projectId, month } }),
         trigger: (projectId, branches) => Promise.resolve({ data: { message: 'Use webhooks instead' } }),
         patterns: (projectId) => client.get('/evaluations/patterns/', { params: projectId ? { project: projectId } : {} }),
-        resolvePattern: (id) => client.post(`/evaluations/patterns/${id}/resolve/`),
+        resolvePattern: (id, force = false) => client.post(`/evaluations/patterns/${id}/resolve/`, { force }),
     },
     reviews: {
         list: (params = {}) => client.get('/evaluations/', { params: djangoListParams(params) }),
