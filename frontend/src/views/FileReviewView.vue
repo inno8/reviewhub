@@ -617,41 +617,68 @@ async function applyFix() {
 // ── Fix & Learn ──────────────────────────────────────────────────────────
 const showFixLearnDialog = ref(false);
 const fixLearnLoading = ref(false);
-const fixLearnExplanations = ref<Record<number, string>>({});
-const fixLearnResults = ref<Record<number, { level: string; feedback: string; deeper_explanation: string }>>({});
 const fixLearnStep = ref<'explain' | 'results'>('explain');
+
+// Group findings by category (skill or severity)
+interface CategoryGroup {
+  key: string;
+  label: string;
+  findings: Finding[];
+  explanation: string;
+  result: { level: string; feedback: string; deeper_explanation: string } | null;
+}
+const fixLearnGroups = ref<CategoryGroup[]>([]);
 
 function openFixLearn() {
   showFixLearnDialog.value = true;
   fixLearnStep.value = 'explain';
-  fixLearnResults.value = {};
-  // Pre-populate explanation map with finding IDs
-  fixLearnExplanations.value = {};
+
+  // Group findings by their first skill name, or severity as fallback
+  const groupMap: Record<string, Finding[]> = {};
   for (const f of findings.value) {
-    fixLearnExplanations.value[f.id] = '';
+    const key = (f.skills?.[0]?.name) || (f as any).category || f.severity || 'Other';
+    if (!groupMap[key]) groupMap[key] = [];
+    groupMap[key].push(f);
   }
+
+  fixLearnGroups.value = Object.entries(groupMap).map(([key, fList]) => ({
+    key,
+    label: key.replace(/_/g, ' '),
+    findings: fList,
+    explanation: '',
+    result: null,
+  }));
 }
 
 async function submitUnderstanding() {
   fixLearnLoading.value = true;
   try {
-    const entries = findings.value
-      .filter(f => (fixLearnExplanations.value[f.id] || '').trim())
-      .map(f => ({ id: f.id, explanation: fixLearnExplanations.value[f.id] }));
-
-    if (!entries.length) {
-      toastMessage.value = 'Please write an explanation for at least one issue.';
+    const filledGroups = fixLearnGroups.value.filter(g => g.explanation.trim());
+    if (!filledGroups.length) {
+      toastMessage.value = 'Please write an explanation for at least one category.';
       fixLearnLoading.value = false;
       return;
     }
 
+    // Send one check per group, using the first finding's ID to store the result
+    const entries = filledGroups.flatMap(g =>
+      g.findings.map(f => ({ id: f.id, explanation: g.explanation }))
+    );
+
     const { data } = await api.findings.checkUnderstanding(entries);
-    for (const r of (data.results || [])) {
-      fixLearnResults.value[r.finding_id] = {
-        level: r.level,
-        feedback: r.feedback,
-        deeper_explanation: r.deeper_explanation || '',
-      };
+
+    // Map results back to groups
+    for (const g of fixLearnGroups.value) {
+      const firstResult = (data.results || []).find(
+        (r: any) => g.findings.some(f => f.id === r.finding_id)
+      );
+      if (firstResult) {
+        g.result = {
+          level: firstResult.level,
+          feedback: firstResult.feedback,
+          deeper_explanation: firstResult.deeper_explanation || '',
+        };
+      }
     }
     fixLearnStep.value = 'results';
   } catch (e: any) {
@@ -1008,84 +1035,93 @@ function goBack() {
         <!-- Content -->
         <div class="flex-1 overflow-y-auto p-6 space-y-6">
 
-          <!-- Step 1: Explain -->
+          <!-- Step 1: Explain (grouped by category) -->
           <template v-if="fixLearnStep === 'explain'">
             <p class="text-sm text-on-surface-variant">
               Before copying the fix, explain <strong>in your own words</strong> why the original code is problematic.
-              This helps you learn, not just copy-paste.
+              Issues are grouped by category — one explanation per group.
             </p>
 
-            <div v-for="f in findings" :key="f.id" class="p-4 rounded-xl border border-outline-variant/10 bg-surface-container-lowest space-y-3">
+            <div v-for="group in fixLearnGroups" :key="group.key" class="p-4 rounded-xl border border-outline-variant/10 bg-surface-container-lowest space-y-3">
               <div class="flex items-center gap-2">
-                <span class="px-2 py-0.5 rounded text-[10px] font-bold uppercase"
-                  :class="f.severity === 'critical' ? 'bg-red-500/10 text-red-400' : 'bg-orange-500/10 text-orange-400'">
-                  {{ f.severity }}
+                <span class="px-2 py-0.5 rounded text-[10px] font-bold uppercase bg-tertiary/10 text-tertiary">
+                  {{ group.label }}
                 </span>
-                <span class="text-sm font-bold">{{ f.title }}</span>
+                <span class="text-sm font-bold">{{ group.findings.length }} issue{{ group.findings.length > 1 ? 's' : '' }}</span>
               </div>
-              <p class="text-xs text-outline">{{ (f.explanation || f.description || '').slice(0, 120) }}...</p>
+              <ul class="text-xs text-outline space-y-1 pl-4 list-disc">
+                <li v-for="f in group.findings" :key="f.id">{{ f.title }}</li>
+              </ul>
               <textarea
-                v-model="fixLearnExplanations[f.id]"
+                v-model="group.explanation"
                 rows="3"
                 class="w-full bg-surface-container border border-outline-variant/30 rounded-lg text-sm text-on-surface p-3 focus:ring-1 focus:ring-primary/50 placeholder:text-outline/40"
-                :placeholder="`Why is this ${f.severity || 'issue'} problematic? What could go wrong?`"
+                :placeholder="`Why is ${group.label} problematic here? What could go wrong?`"
               ></textarea>
             </div>
           </template>
 
-          <!-- Step 2: Results -->
+          <!-- Step 2: Results (grouped by category) -->
           <template v-if="fixLearnStep === 'results'">
-            <div v-for="f in findings" :key="f.id" class="p-4 rounded-xl border space-y-3"
+            <div v-for="group in fixLearnGroups" :key="group.key" class="p-4 rounded-xl border space-y-3"
               :class="{
-                'border-green-500/30 bg-green-500/5': fixLearnResults[f.id]?.level === 'got_it',
-                'border-yellow-500/30 bg-yellow-500/5': fixLearnResults[f.id]?.level === 'partial',
-                'border-red-500/30 bg-red-500/5': fixLearnResults[f.id]?.level === 'not_yet',
-                'border-outline-variant/10': !fixLearnResults[f.id],
+                'border-green-500/30 bg-green-500/5': group.result?.level === 'got_it',
+                'border-yellow-500/30 bg-yellow-500/5': group.result?.level === 'partial',
+                'border-red-500/30 bg-red-500/5': group.result?.level === 'not_yet',
+                'border-outline-variant/10': !group.result,
               }">
               <div class="flex items-center justify-between">
-                <span class="text-sm font-bold">{{ f.title }}</span>
-                <span v-if="fixLearnResults[f.id]" class="px-2 py-0.5 rounded-full text-xs font-bold"
+                <div class="flex items-center gap-2">
+                  <span class="text-sm font-bold capitalize">{{ group.label }}</span>
+                  <span class="text-xs text-outline">({{ group.findings.length }} issue{{ group.findings.length > 1 ? 's' : '' }})</span>
+                </div>
+                <span v-if="group.result" class="px-2 py-0.5 rounded-full text-xs font-bold"
                   :class="{
-                    'bg-green-500/20 text-green-400': fixLearnResults[f.id].level === 'got_it',
-                    'bg-yellow-500/20 text-yellow-400': fixLearnResults[f.id].level === 'partial',
-                    'bg-red-500/20 text-red-400': fixLearnResults[f.id].level === 'not_yet',
+                    'bg-green-500/20 text-green-400': group.result.level === 'got_it',
+                    'bg-yellow-500/20 text-yellow-400': group.result.level === 'partial',
+                    'bg-red-500/20 text-red-400': group.result.level === 'not_yet',
                   }">
-                  {{ fixLearnResults[f.id].level === 'got_it' ? 'Understood!' : fixLearnResults[f.id].level === 'partial' ? 'Almost' : 'Keep Learning' }}
+                  {{ group.result.level === 'got_it' ? 'Understood!' : group.result.level === 'partial' ? 'Almost' : 'Keep Learning' }}
                 </span>
               </div>
 
               <!-- Feedback -->
-              <p v-if="fixLearnResults[f.id]?.feedback" class="text-sm text-on-surface-variant">
-                {{ fixLearnResults[f.id].feedback }}
+              <p v-if="group.result?.feedback" class="text-sm text-on-surface-variant">
+                {{ group.result.feedback }}
               </p>
 
               <!-- Deeper explanation (not_yet only) -->
-              <div v-if="fixLearnResults[f.id]?.level === 'not_yet' && fixLearnResults[f.id]?.deeper_explanation" class="p-3 bg-surface-container rounded-lg">
+              <div v-if="group.result?.level === 'not_yet' && group.result?.deeper_explanation" class="p-3 bg-surface-container rounded-lg">
                 <p class="text-xs font-bold text-red-400 mb-1">Here's a clearer explanation:</p>
-                <p class="text-sm text-on-surface">{{ fixLearnResults[f.id].deeper_explanation }}</p>
+                <p class="text-sm text-on-surface">{{ group.result.deeper_explanation }}</p>
               </div>
 
-              <!-- Copy Fix button (got_it or partial) -->
-              <div v-if="fixLearnResults[f.id]?.level === 'got_it' || fixLearnResults[f.id]?.level === 'partial'" class="flex gap-2">
-                <button @click="copyFixToClipboard(f)"
-                  class="flex items-center gap-2 px-3 py-2 bg-primary/10 text-primary text-sm font-bold rounded-lg hover:bg-primary/20 transition-all">
-                  <span class="material-symbols-outlined text-sm">content_copy</span>
-                  Copy Fix to Clipboard
-                </button>
-                <button @click="markFixedAfterCopy(f)"
-                  class="flex items-center gap-2 px-3 py-2 border border-green-500/30 text-green-400 text-sm rounded-lg hover:bg-green-500/10 transition-all">
-                  <span class="material-symbols-outlined text-sm">check</span>
-                  Mark Fixed
-                </button>
+              <!-- Per-finding actions (copy fix for each) -->
+              <div v-if="group.result?.level === 'got_it' || group.result?.level === 'partial'" class="space-y-2 pt-2 border-t border-outline-variant/10">
+                <div v-for="f in group.findings" :key="f.id" class="flex items-center justify-between gap-2">
+                  <span class="text-xs text-on-surface truncate flex-1">{{ f.title }}</span>
+                  <div class="flex gap-1.5 shrink-0">
+                    <button @click="copyFixToClipboard(f)"
+                      class="flex items-center gap-1 px-2 py-1 bg-primary/10 text-primary text-xs font-bold rounded hover:bg-primary/20 transition-all">
+                      <span class="material-symbols-outlined text-xs">content_copy</span> Copy Fix
+                    </button>
+                    <button @click="markFixedAfterCopy(f)"
+                      class="flex items-center gap-1 px-2 py-1 border border-green-500/30 text-green-400 text-xs rounded hover:bg-green-500/10 transition-all">
+                      <span class="material-symbols-outlined text-xs">check</span> Fixed
+                    </button>
+                  </div>
+                </div>
               </div>
 
-              <!-- "I understand now" button (not_yet) -->
-              <div v-if="fixLearnResults[f.id]?.level === 'not_yet'" class="flex gap-2">
-                <button @click="copyFixToClipboard(f)"
-                  class="flex items-center gap-2 px-3 py-2 border border-outline-variant/30 text-on-surface-variant text-sm rounded-lg hover:bg-surface-container transition-all">
-                  <span class="material-symbols-outlined text-sm">content_copy</span>
-                  I Understand Now — Copy Fix
-                </button>
+              <!-- "I understand now" (not_yet) -->
+              <div v-if="group.result?.level === 'not_yet'" class="space-y-2 pt-2 border-t border-outline-variant/10">
+                <div v-for="f in group.findings" :key="f.id" class="flex items-center justify-between gap-2">
+                  <span class="text-xs text-on-surface truncate flex-1">{{ f.title }}</span>
+                  <button @click="copyFixToClipboard(f)"
+                    class="flex items-center gap-1 px-2 py-1 border border-outline-variant/30 text-on-surface-variant text-xs rounded hover:bg-surface-container transition-all">
+                    <span class="material-symbols-outlined text-xs">content_copy</span> I Get It — Copy
+                  </button>
+                </div>
               </div>
             </div>
           </template>
