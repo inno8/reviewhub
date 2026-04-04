@@ -1012,6 +1012,8 @@ class DeveloperHomeView(APIView):
             # Action items
             'priorities': priorities,
             'patterns': patterns,
+            'patternsResolved': Pattern.objects.filter(user=user, is_resolved=True).count(),
+            'patternsActive': pattern_qs.count(),
             'recentCommits': recent_commits,
             # Visuals
             'radar': radar,

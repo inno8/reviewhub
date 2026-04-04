@@ -421,7 +421,14 @@ function scoreColor(score: number) {
               </div>
 
               <!-- Pattern Alerts -->
-              <div v-if="devHome.patterns?.length" class="space-y-2">
+              <div v-if="devHome.patterns?.length || devHome.patternsResolved" class="space-y-2">
+                <div v-if="devHome.patternsResolved" class="flex items-center gap-3 p-3 rounded-lg bg-green-500/5 border border-green-500/20">
+                  <span class="material-symbols-outlined text-green-400">check_circle</span>
+                  <p class="text-sm text-green-400">
+                    <strong>{{ devHome.patternsResolved }}</strong> pattern{{ devHome.patternsResolved > 1 ? 's' : '' }} resolved
+                    <span v-if="devHome.patternsActive" class="text-outline"> · {{ devHome.patternsActive }} still active</span>
+                  </p>
+                </div>
                 <div v-for="pat in devHome.patterns" :key="pat.key"
                   class="flex items-center gap-3 p-3 rounded-lg bg-tertiary/5 border border-tertiary/20">
                   <span class="material-symbols-outlined text-tertiary">repeat</span>

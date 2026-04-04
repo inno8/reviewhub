@@ -645,15 +645,58 @@ class PatternListView(generics.ListAPIView):
 class PatternResolveView(APIView):
     """
     POST /api/evaluations/patterns/<id>/resolve/
-    Mark a pattern as resolved.
+    Mark a pattern as resolved — with verification and skill impact.
     """
 
     permission_classes = [permissions.IsAuthenticated]
 
     def post(self, request, pk: int):
         pattern = get_object_or_404(Pattern, pk=pk, user=request.user)
-        from django.utils import timezone as tz
+
+        # Check if pattern appeared in recent commits
+        recent_evals = Evaluation.objects.for_user(request.user).order_by('-created_at')[:10]
+        recent_finding_ids = Finding.objects.filter(
+            evaluation__in=recent_evals
+        ).values_list('id', flat=True)
+
+        recent_occurrences = pattern.sample_findings.filter(
+            id__in=recent_finding_ids
+        ).count()
+
+        # Warning if pattern is still active in recent commits
+        warning = None
+        if recent_occurrences > 0:
+            warning = (
+                f"This pattern appeared {recent_occurrences} time(s) in your "
+                f"last 10 commits. Resolving anyway — keep improving!"
+            )
+
+        # Mark as resolved
         pattern.is_resolved = True
-        pattern.resolved_at = tz.now()
+        pattern.resolved_at = timezone.now()
         pattern.save(update_fields=['is_resolved', 'resolved_at'])
-        return Response(PatternSerializer(pattern).data)
+
+        # Improve related skill metrics — bigger boost for higher-frequency patterns
+        from skills.models import SkillMetric, Skill
+        pattern_skill_slug = pattern.pattern_key.split(':')[0] if ':' in pattern.pattern_key else pattern.pattern_type
+        try:
+            skill = Skill.objects.get(slug=pattern_skill_slug)
+            metrics = SkillMetric.objects.filter(
+                user=request.user,
+                skill=skill,
+            )
+            if pattern.project:
+                metrics = metrics.filter(project=pattern.project)
+
+            # Recovery: 1 point per 5 occurrences, capped at 10
+            recovery = min(10.0, pattern.frequency / 5.0)
+            for metric in metrics:
+                metric.improve_score(fixed_issues=0, recovery=recovery)
+        except Skill.DoesNotExist:
+            pass
+
+        from .serializers import PatternSerializer
+        data = PatternSerializer(pattern).data
+        data['warning'] = warning
+        data['skill_boost'] = round(recovery, 1) if 'recovery' in dir() else 0
+        return Response(data)
