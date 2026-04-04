@@ -59,7 +59,7 @@ onMounted(async () => {
 
 watch([adminSearch, adminCategoryFilter, adminProjectFilter], () => loadAdminUsers());
 watch(() => periodType.value, () => loadPerformance());
-watch(() => projectsStore.selectedProjectId, () => { if (selectedUserId.value) loadAll(); });
+// No project watcher — Insights always shows cross-project data
 
 async function loadAdminUsers() {
   adminLoading.value = true;
@@ -96,9 +96,8 @@ async function loadPerformance() {
   if (!selectedUserId.value) return;
   loading.value = true;
   try {
-    const pid = projectsStore.selectedProjectId;
+    // Insights page: aggregate across ALL projects (no project filter)
     const { data } = await api.performance.get(selectedUserId.value, {
-      projectId: pid ?? undefined,
       periodType: periodType.value,
     });
     performance.value = data;
@@ -112,8 +111,8 @@ async function loadPerformance() {
 async function loadTrends() {
   if (!selectedUserId.value) return;
   try {
-    const pid = projectsStore.selectedProjectId;
-    const { data } = await api.performance.trends(selectedUserId.value, { projectId: pid ?? undefined, weeks: 8 });
+    // Insights page: aggregate across ALL projects
+    const { data } = await api.performance.trends(selectedUserId.value, { weeks: 8 });
     trends.value = data;
   } catch {
     trends.value = [];
@@ -123,7 +122,8 @@ async function loadTrends() {
 async function loadSkills() {
   if (!selectedUserId.value) return;
   try {
-    const pid = projectsStore.selectedProjectId;
+    // Insights page: aggregate across ALL projects
+    const pid = undefined;
     const { data } = await api.skills.user(selectedUserId.value, pid ?? undefined);
     skillCategories.value = data.categories;
   } catch {
@@ -160,7 +160,7 @@ function openSkillBreakdown(id: number) { breakdownSkillId.value = id; breakdown
         <div class="space-y-2">
           <span class="text-primary font-bold uppercase tracking-[0.2em] text-xs">Analytics Overview</span>
           <h1 class="text-5xl font-black tracking-tighter text-on-surface">
-            {{ showUserList ? 'Team Insights' : 'Performance Insights' }}
+            {{ showUserList ? 'Team Insights' : 'Performance Insights — All Projects' }}
           </h1>
         </div>
 
@@ -178,14 +178,7 @@ function openSkillBreakdown(id: number) { breakdownSkillId.value = id; breakdown
               <span class="text-sm font-semibold">{{ selectedUserObj.display_name || selectedUserObj.username }}</span>
             </div>
 
-            <div v-if="!authStore.isAdmin && projectsStore.projects.length > 1" class="flex items-center gap-2 px-3 py-2 bg-surface-container rounded-lg border border-outline-variant/20">
-              <span class="material-symbols-outlined text-sm text-outline">folder</span>
-              <select :value="projectsStore.selectedProjectId"
-                @change="projectsStore.setSelectedProject(Number(($event.target as HTMLSelectElement).value))"
-                class="bg-transparent border-none text-sm text-on-surface focus:ring-0 cursor-pointer p-0">
-                <option v-for="p in projectsStore.projects" :key="p.id" :value="p.id">{{ p.displayName }}</option>
-              </select>
-            </div>
+            <!-- Insights shows cross-project data — no project filter for developers -->
 
             <div class="flex bg-surface-container-lowest p-1 rounded-lg">
               <button v-for="p in (['DAILY', 'WEEKLY', 'MONTHLY'] as PeriodType[])" :key="p"
