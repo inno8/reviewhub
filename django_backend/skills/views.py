@@ -1014,6 +1014,15 @@ class DeveloperHomeView(APIView):
             'patterns': patterns,
             'patternsResolved': Pattern.objects.filter(user=user, is_resolved=True).count(),
             'patternsActive': pattern_qs.count(),
+            # Pattern breakdown for chart — all patterns with frequency and status
+            'patternChart': [
+                {
+                    'name': p.pattern_type.replace('_', ' ').title(),
+                    'frequency': p.frequency,
+                    'resolved': p.is_resolved,
+                }
+                for p in Pattern.objects.filter(user=user).order_by('-frequency')[:10]
+            ],
             'recentCommits': recent_commits,
             # Visuals
             'radar': radar,

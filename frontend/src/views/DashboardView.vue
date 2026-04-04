@@ -420,15 +420,41 @@ function scoreColor(score: number) {
                 </div>
               </div>
 
-              <!-- Pattern Alerts -->
-              <div v-if="devHome.patterns?.length || devHome.patternsResolved" class="space-y-2">
-                <div v-if="devHome.patternsResolved" class="flex items-center gap-3 p-3 rounded-lg bg-green-500/5 border border-green-500/20">
-                  <span class="material-symbols-outlined text-green-400">check_circle</span>
-                  <p class="text-sm text-green-400">
-                    <strong>{{ devHome.patternsResolved }}</strong> pattern{{ devHome.patternsResolved > 1 ? 's' : '' }} resolved
-                    <span v-if="devHome.patternsActive" class="text-outline"> · {{ devHome.patternsActive }} still active</span>
-                  </p>
+              <!-- Pattern Findings & Resolution Chart -->
+              <div v-if="devHome.patternChart?.length" class="bg-surface-container-low rounded-xl border border-outline-variant/10 overflow-hidden">
+                <div class="flex items-center justify-between p-4 border-b border-outline-variant/10">
+                  <div class="flex items-center gap-2">
+                    <span class="material-symbols-outlined text-tertiary">repeat</span>
+                    <h3 class="text-sm font-bold">Recurring Patterns</h3>
+                  </div>
+                  <div class="flex items-center gap-3 text-[10px]">
+                    <span class="flex items-center gap-1"><span class="w-3 h-3 rounded-sm bg-tertiary"></span> Active</span>
+                    <span class="flex items-center gap-1"><span class="w-3 h-3 rounded-sm bg-green-500"></span> Resolved</span>
+                    <span v-if="devHome.patternsResolved || devHome.patternsActive" class="text-outline">
+                      {{ devHome.patternsResolved }} resolved · {{ devHome.patternsActive }} active
+                    </span>
+                  </div>
                 </div>
+
+                <!-- Horizontal bar chart -->
+                <div class="p-4 space-y-2.5">
+                  <div v-for="p in devHome.patternChart" :key="p.name" class="flex items-center gap-3">
+                    <span class="text-[10px] font-medium w-24 truncate text-right">{{ p.name }}</span>
+                    <div class="flex-1 bg-surface-container-lowest rounded-full h-5 overflow-hidden relative">
+                      <div class="h-full rounded-full transition-all flex items-center"
+                        :class="p.resolved ? 'bg-green-500/70' : 'bg-tertiary/70'"
+                        :style="{ width: Math.max(10, (p.frequency / devHome.patternChart[0].frequency * 100)) + '%' }">
+                        <span class="text-[9px] font-bold text-white pl-2">{{ p.frequency }}x</span>
+                      </div>
+                    </div>
+                    <span v-if="p.resolved" class="material-symbols-outlined text-xs text-green-400">check_circle</span>
+                    <router-link v-else to="/skills" class="text-[10px] text-primary font-semibold">Fix</router-link>
+                  </div>
+                </div>
+              </div>
+
+              <!-- Active pattern alerts (text) -->
+              <div v-if="devHome.patterns?.length" class="space-y-2">
                 <div v-for="pat in devHome.patterns" :key="pat.key"
                   class="flex items-center gap-3 p-3 rounded-lg bg-tertiary/5 border border-tertiary/20">
                   <span class="material-symbols-outlined text-tertiary">repeat</span>
