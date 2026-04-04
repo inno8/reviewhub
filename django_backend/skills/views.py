@@ -252,20 +252,9 @@ class PerformanceStatsView(APIView):
             if e.overall_score is not None
         ]
 
-        # Developer level
-        try:
-            from batch.models import DeveloperProfile
-            profile = DeveloperProfile.objects.get(user_id=subject.id)
-            level = profile.level
-        except Exception:
-            if avg_score >= 75:
-                level = 'senior'
-            elif avg_score >= 60:
-                level = 'intermediate'
-            elif avg_score >= 40:
-                level = 'junior'
-            else:
-                level = 'beginner'
+        # Developer level (composite calculation)
+        from .level_calculator import compute_level_for_user
+        level_data = compute_level_for_user(subject, project_id=project_id)
 
         # Progression data — per-commit scores chronologically
         all_evals_ordered = evals.order_by('created_at').values_list(
@@ -317,7 +306,9 @@ class PerformanceStatsView(APIView):
             'severityDistribution': severity_distribution,
             'categoryBreakdown': category_breakdown,
             'scoreTrend': score_trend,
-            'level': level,
+            'level': level_data['level'],
+            'compositeScore': level_data['composite_score'],
+            'levelBreakdown': level_data['breakdown'],
             'progression': progression,
             'improving': improving,
             'improvementPct': improvement_pct,
@@ -893,18 +884,17 @@ class DeveloperHomeView(APIView):
         fixed_count = findings.filter(is_fixed=True).count()
         avg_score = round(evals.aggregate(avg=Avg('overall_score'))['avg'] or 0, 1)
 
-        # Level
+        # Level (composite calculation)
+        from .level_calculator import compute_level_for_user
+        level_data = compute_level_for_user(user, project_id=project_id)
+        level = level_data['level']
+        trend_label = 'new'
         try:
             from batch.models import DeveloperProfile
             profile = DeveloperProfile.objects.get(user=user)
-            level = profile.level
             trend_label = profile.trend
         except Exception:
-            if avg_score >= 75: level = 'senior'
-            elif avg_score >= 60: level = 'intermediate'
-            elif avg_score >= 40: level = 'junior'
-            else: level = 'beginner'
-            trend_label = 'new'
+            pass
 
         # ── Improvement ──
         ordered_evals = evals.order_by('created_at').values_list('overall_score', flat=True)
@@ -1002,6 +992,8 @@ class DeveloperHomeView(APIView):
             # Key metrics
             'avgScore': avg_score,
             'level': level,
+            'compositeScore': level_data['composite_score'],
+            'levelBreakdown': level_data['breakdown'],
             'trend': trend_label,
             'improving': improving,
             'improvementPct': improvement_pct,

@@ -214,6 +214,19 @@ class InternalEvaluationCreateView(APIView):
         if author:
             self._auto_resolve_patterns(author, project)
 
+        # Update DeveloperProfile level with composite calculation
+        if author:
+            try:
+                from skills.level_calculator import compute_level_for_user
+                from batch.models import DeveloperProfile
+                level_data = compute_level_for_user(author)
+                DeveloperProfile.objects.filter(user=author).update(
+                    level=level_data['level'],
+                    overall_score=level_data['composite_score'],
+                )
+            except Exception:
+                pass
+
         return Response(
             EvaluationSerializer(evaluation).data,
             status=status.HTTP_201_CREATED

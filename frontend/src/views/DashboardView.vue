@@ -117,6 +117,8 @@ function setProjectFilter(projectId: number | null) {
   loadDevHome(projectId ?? undefined);
 }
 
+const showLevelBreakdown = ref(false);
+
 function getLevelColor(level: string) {
   const m: Record<string, string> = { beginner: 'text-red-400', junior: 'text-orange-400', intermediate: 'text-yellow-400', senior: 'text-green-400', expert: 'text-primary' };
   return m[level] || 'text-outline';
@@ -370,11 +372,13 @@ function scoreColor(score: number) {
               </p>
               <p class="text-[10px] text-outline uppercase tracking-wider mt-1">Avg Score</p>
             </div>
-            <div class="bg-surface-container-low p-5 rounded-xl border border-outline-variant/10 text-center">
+            <div class="bg-surface-container-low p-5 rounded-xl border border-outline-variant/10 text-center cursor-pointer group"
+              @click="showLevelBreakdown = !showLevelBreakdown">
               <div class="inline-flex items-center justify-center w-12 h-12 rounded-full mb-1" :class="getLevelBg(devHome.level)">
                 <span class="text-sm font-black uppercase" :class="getLevelColor(devHome.level)">{{ (devHome.level || '?')[0] }}</span>
               </div>
               <p class="text-sm font-bold capitalize" :class="getLevelColor(devHome.level)">{{ devHome.level }}</p>
+              <p v-if="devHome.compositeScore" class="text-[9px] text-outline mt-0.5">{{ devHome.compositeScore }}pts <span class="group-hover:text-primary">▾</span></p>
             </div>
             <div class="bg-surface-container-low p-5 rounded-xl border border-outline-variant/10 text-center">
               <p class="text-2xl font-black" :class="devHome.improving ? 'text-green-400' : 'text-orange-400'">
@@ -389,6 +393,30 @@ function scoreColor(score: number) {
             <div class="bg-surface-container-low p-5 rounded-xl border border-outline-variant/10 text-center">
               <p class="text-2xl font-black text-primary">{{ devHome.commitCount }}</p>
               <p class="text-[10px] text-outline uppercase tracking-wider mt-1">Commits</p>
+            </div>
+          </section>
+
+          <!-- Level Breakdown Panel -->
+          <section v-if="showLevelBreakdown && devHome.levelBreakdown" class="mb-8 bg-surface-container-low rounded-xl border border-outline-variant/10 p-5">
+            <div class="flex items-center justify-between mb-4">
+              <h3 class="text-sm font-bold">How Your Level Is Calculated</h3>
+              <button @click="showLevelBreakdown = false" class="text-xs text-outline hover:text-on-surface">Hide</button>
+            </div>
+            <div class="space-y-2.5">
+              <div v-for="(data, factor) in devHome.levelBreakdown" :key="factor" class="flex items-center gap-3">
+                <span class="text-[10px] font-medium w-28 text-right capitalize">{{ String(factor).replace('_', ' ') }} ({{ data.weight }}%)</span>
+                <div class="flex-1 bg-surface-container-lowest rounded-full h-4 overflow-hidden">
+                  <div class="h-full rounded-full transition-all"
+                    :class="data.score >= 70 ? 'bg-green-500' : data.score >= 40 ? 'bg-yellow-500' : 'bg-red-500'"
+                    :style="{ width: data.score + '%' }">
+                  </div>
+                </div>
+                <span class="text-xs font-bold w-14 text-right">{{ data.score }}% → {{ data.weighted }}pt</span>
+              </div>
+            </div>
+            <div class="mt-3 pt-3 border-t border-outline-variant/10 flex items-center justify-between">
+              <p class="text-xs text-outline">Composite: <strong class="text-on-surface">{{ devHome.compositeScore }}pts</strong></p>
+              <p class="text-xs capitalize font-bold" :class="getLevelColor(devHome.level)">{{ devHome.level }}</p>
             </div>
           </section>
 
