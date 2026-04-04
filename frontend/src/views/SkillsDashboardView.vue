@@ -168,13 +168,350 @@ const PATTERN_DESCRIPTIONS: Record<string, string> = {
   'api_design': 'API Design means creating consistent, intuitive REST endpoints with proper HTTP methods (GET for reading, POST for creating, etc.), meaningful status codes, clear error responses, versioning, and proper authentication. A well-designed API is easy for other developers to use without reading extensive documentation.',
 };
 
+interface CodeExample { bad: string; good: string; language: string; }
+
+const PATTERN_EXAMPLES: Record<string, CodeExample> = {
+  'clean_code': {
+    language: 'python',
+    bad: `# Bad: unclear names, no spacing
+def p(d,t):
+    r=d*t/100
+    return d+r
+
+x=p(1000,5)
+print(x)`,
+    good: `# Good: descriptive names, clear logic
+def calculate_total_with_tax(price, tax_rate):
+    tax_amount = price * tax_rate / 100
+    return price + tax_amount
+
+total = calculate_total_with_tax(1000, 5)
+print(f"Total: {total}")`,
+  },
+  'input_validation': {
+    language: 'python',
+    bad: `# Bad: SQL injection vulnerability
+def get_user(name):
+    query = "SELECT * FROM users WHERE name = '" + name + "'"
+    cursor.execute(query)
+    return cursor.fetchone()`,
+    good: `# Good: parameterized query
+def get_user(name):
+    if not name or not isinstance(name, str):
+        raise ValueError("Invalid name")
+    cursor.execute(
+        "SELECT * FROM users WHERE name = ?",
+        (name,)
+    )
+    return cursor.fetchone()`,
+  },
+  'dry_principle': {
+    language: 'javascript',
+    bad: `// Bad: duplicated logic
+function addTax5(price) {
+  return price + price * 0.05;
+}
+function addTax10(price) {
+  return price + price * 0.10;
+}
+function addTax21(price) {
+  return price + price * 0.21;
+}`,
+    good: `// Good: single reusable function
+function addTax(price, rate) {
+  return price + price * (rate / 100);
+}
+
+addTax(100, 5);   // 105
+addTax(100, 10);  // 110
+addTax(100, 21);  // 121`,
+  },
+  'error_handling': {
+    language: 'python',
+    bad: `# Bad: no error handling, crashes on bad input
+def divide(a, b):
+    return a / b
+
+def read_config():
+    f = open("config.json")
+    return json.loads(f.read())`,
+    good: `# Good: handles errors gracefully
+def divide(a, b):
+    if b == 0:
+        raise ValueError("Cannot divide by zero")
+    return a / b
+
+def read_config():
+    try:
+        with open("config.json") as f:
+            return json.loads(f.read())
+    except FileNotFoundError:
+        return {}  # sensible default
+    except json.JSONDecodeError as e:
+        raise ValueError(f"Invalid config: {e}")`,
+  },
+  'secrets_management': {
+    language: 'python',
+    bad: `# Bad: secrets hardcoded in source
+API_KEY = "sk-abc123secret456"
+DB_PASSWORD = "admin123"
+SECRET = "mysupersecretkey"
+
+conn = connect(password=DB_PASSWORD)`,
+    good: `# Good: secrets from environment
+import os
+
+API_KEY = os.environ["API_KEY"]
+DB_PASSWORD = os.environ["DB_PASSWORD"]
+SECRET = os.environ["SECRET_KEY"]
+
+conn = connect(password=DB_PASSWORD)
+# Store secrets in .env (gitignored)`,
+  },
+  'html_semantics': {
+    language: 'html',
+    bad: `<!-- Bad: div soup, no semantics -->
+<div class="header">My Site</div>
+<div class="nav">
+  <div onclick="goto('/')">Home</div>
+  <div onclick="goto('/about')">About</div>
+</div>
+<div class="content">Welcome!</div>
+<div class="footer">© 2024</div>`,
+    good: `<!-- Good: semantic HTML -->
+<header><h1>My Site</h1></header>
+<nav>
+  <a href="/">Home</a>
+  <a href="/about">About</a>
+</nav>
+<main>
+  <article>Welcome!</article>
+</main>
+<footer>© 2024</footer>`,
+  },
+  'css_organization': {
+    language: 'css',
+    bad: `/* Bad: duplicated styles, inline-like */
+.btn-blue { background: blue; color: white;
+  padding: 10px 20px; border: none; cursor: pointer; }
+.btn-red { background: red; color: white;
+  padding: 10px 20px; border: none; cursor: pointer; }
+.btn-green { background: green; color: white;
+  padding: 10px 20px; border: none; cursor: pointer; }`,
+    good: `/* Good: shared base, color variants */
+.btn {
+  color: white;
+  padding: 10px 20px;
+  border: none;
+  cursor: pointer;
+}
+.btn--primary { background: var(--blue); }
+.btn--danger  { background: var(--red); }
+.btn--success { background: var(--green); }`,
+  },
+  'xss_csrf_prevention': {
+    language: 'javascript',
+    bad: `// Bad: XSS vulnerability via innerHTML
+const name = getUserInput();
+document.getElementById("greeting").innerHTML =
+  "<h1>Hello " + name + "</h1>";
+// If name = <script>steal(cookies)</script> → XSS!`,
+    good: `// Good: safe text insertion
+const name = getUserInput();
+const el = document.getElementById("greeting");
+el.textContent = "Hello " + name;
+// Script tags are rendered as plain text, not executed`,
+  },
+  'database_queries': {
+    language: 'python',
+    bad: `# Bad: string concatenation → SQL injection
+def delete_user(user_id):
+    query = "DELETE FROM users WHERE id = " + user_id
+    cursor.execute(query)
+    # user_id = "1 OR 1=1" deletes ALL users!`,
+    good: `# Good: parameterized query
+def delete_user(user_id: int):
+    cursor.execute(
+        "DELETE FROM users WHERE id = ?",
+        (user_id,)
+    )
+    # user_id is always treated as data, never SQL`,
+  },
+  'edge_cases': {
+    language: 'python',
+    bad: `# Bad: crashes on edge cases
+def average(numbers):
+    return sum(numbers) / len(numbers)
+
+def first_word(text):
+    return text.split()[0]
+# average([]) → ZeroDivisionError
+# first_word("") → IndexError`,
+    good: `# Good: handles edge cases
+def average(numbers):
+    if not numbers:
+        return 0
+    return sum(numbers) / len(numbers)
+
+def first_word(text):
+    words = (text or "").split()
+    return words[0] if words else ""`,
+  },
+  'code_structure': {
+    language: 'python',
+    bad: `# Bad: one giant function doing everything
+def process():
+    data = open("f.csv").read()
+    rows = data.split("\\n")
+    results = []
+    for r in rows:
+        cols = r.split(",")
+        if len(cols) > 2:
+            results.append(float(cols[2]))
+    total = sum(results)
+    avg = total / len(results)
+    print(f"Average: {avg}")`,
+    good: `# Good: small focused functions
+def read_csv(path):
+    with open(path) as f:
+        return [line.split(",") for line in f]
+
+def extract_values(rows, col):
+    return [float(r[col]) for r in rows if len(r) > col]
+
+def main():
+    rows = read_csv("f.csv")
+    values = extract_values(rows, 2)
+    print(f"Average: {sum(values)/len(values):.1f}")`,
+  },
+  'accessibility': {
+    language: 'html',
+    bad: `<!-- Bad: inaccessible -->
+<div onclick="submit()">Send</div>
+<img src="photo.jpg">
+<input type="text">
+<div style="color: #ccc; background: #ddd;">
+  Light gray on lighter gray
+</div>`,
+    good: `<!-- Good: accessible -->
+<button onclick="submit()">Send</button>
+<img src="photo.jpg" alt="Team photo from 2024">
+<label for="name">Name</label>
+<input type="text" id="name" aria-required="true">
+<div style="color: #333; background: #fff;">
+  High contrast text
+</div>`,
+  },
+  'responsive_design': {
+    language: 'css',
+    bad: `/* Bad: fixed pixel widths */
+.container { width: 1200px; }
+.sidebar { width: 300px; }
+.card { width: 400px; height: 300px; }
+/* Breaks on mobile, overflows on tablet */`,
+    good: `/* Good: responsive with relative units */
+.container { max-width: 1200px; width: 100%; }
+.sidebar { width: 25%; min-width: 200px; }
+.card { width: 100%; aspect-ratio: 4/3; }
+@media (max-width: 768px) {
+  .sidebar { width: 100%; }
+}`,
+  },
+  'comments_docs': {
+    language: 'python',
+    bad: `# Bad: no docs, cryptic code
+def p(d, r, t):
+    return d * (1 + r/100) ** t
+
+x = p(1000, 5, 10)`,
+    good: `def compound_interest(principal, annual_rate, years):
+    """Calculate compound interest.
+
+    Args:
+        principal: Initial investment amount
+        annual_rate: Annual interest rate (%)
+        years: Number of years
+
+    Returns:
+        Final amount after compound interest
+    """
+    return principal * (1 + annual_rate / 100) ** years`,
+  },
+  'solid_principles': {
+    language: 'python',
+    bad: `# Bad: one class does everything (violates SRP)
+class UserManager:
+    def create_user(self, data): ...
+    def send_email(self, to, body): ...
+    def generate_report(self): ...
+    def backup_database(self): ...`,
+    good: `# Good: each class has one responsibility
+class UserService:
+    def create_user(self, data): ...
+
+class EmailService:
+    def send(self, to, body): ...
+
+class ReportGenerator:
+    def generate(self): ...
+
+class DatabaseBackup:
+    def run(self): ...`,
+  },
+  'api_design': {
+    language: 'python',
+    bad: `# Bad: inconsistent, no validation
+@app.route("/getUser", methods=["POST"])
+def get_user():
+    id = request.json["id"]
+    return str(db.query(f"SELECT * FROM users WHERE id={id}"))
+
+@app.route("/deleteuser/<id>")
+def delete(id):
+    db.query(f"DELETE FROM users WHERE id={id}")
+    return "ok"`,
+    good: `# Good: RESTful, validated, proper responses
+@app.route("/users/<int:user_id>", methods=["GET"])
+def get_user(user_id):
+    user = User.query.get_or_404(user_id)
+    return jsonify(user.to_dict()), 200
+
+@app.route("/users/<int:user_id>", methods=["DELETE"])
+def delete_user(user_id):
+    user = User.query.get_or_404(user_id)
+    db.session.delete(user)
+    db.session.commit()
+    return jsonify({"status": "deleted"}), 200`,
+  },
+};
+
+const codeExampleOpen = ref(false);
+const codeExampleData = ref<{ name: string; example: CodeExample } | null>(null);
+
+function openCodeExample(slug?: string) {
+  if (!slug && patternInfoData.value) {
+    // Derive slug from current info dialog
+    slug = Object.keys(PATTERN_DESCRIPTIONS).find(
+      k => PATTERN_DESCRIPTIONS[k] === patternInfoData.value!.description
+    ) || '';
+  }
+  if (!slug) return;
+  const example = PATTERN_EXAMPLES[slug];
+  if (!example) return;
+  const name = slug.replace(/_/g, ' ').replace(/\b\w/g, c => c.toUpperCase());
+  codeExampleData.value = { name, example };
+  patternInfoOpen.value = false;
+  codeExampleOpen.value = true;
+}
+
 function openPatternInfo(patternKey: string) {
   const slug = patternKey.split(':')[0];
   const name = slug.replace(/_/g, ' ').replace(/\b\w/g, c => c.toUpperCase());
   patternInfoData.value = {
     name,
+    slug,
     description: PATTERN_DESCRIPTIONS[slug] || `${name} is a recurring code quality pattern detected in your commits. Review the related findings on the Skills page to understand the specific issues and how to fix them.`,
-  };
+  } as any;
   patternInfoOpen.value = true;
 }
 
@@ -517,9 +854,65 @@ const selectedUserObj = computed(() => adminUsers.value.find(u => u.id === selec
         <div class="p-6">
           <p class="text-sm text-on-surface-variant leading-relaxed">{{ patternInfoData.description }}</p>
         </div>
-        <div class="px-6 py-3 border-t border-outline-variant/10 flex justify-end">
+        <div class="px-6 py-3 border-t border-outline-variant/10 flex justify-between">
+          <button v-if="PATTERN_EXAMPLES[(patternInfoData as any)?.slug]"
+            @click="openCodeExample((patternInfoData as any)?.slug)"
+            class="px-4 py-2 text-sm font-bold bg-tertiary/10 text-tertiary rounded-lg hover:bg-tertiary/20 transition-colors flex items-center gap-2">
+            <span class="material-symbols-outlined text-sm">code</span>
+            Code Example
+          </button>
+          <span v-else></span>
           <button @click="patternInfoOpen = false" class="px-4 py-2 text-sm text-primary font-bold hover:bg-primary/10 rounded-lg transition-colors">
             Got it
+          </button>
+        </div>
+      </div>
+    </div>
+  </Teleport>
+
+  <!-- Code Example Dialog -->
+  <Teleport to="body">
+    <div v-if="codeExampleOpen && codeExampleData" class="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/50" @click.self="codeExampleOpen = false">
+      <div class="bg-surface-container rounded-2xl shadow-xl w-full max-w-3xl max-h-[85vh] overflow-hidden flex flex-col">
+        <div class="px-6 py-4 border-b border-outline-variant/10 flex items-center justify-between">
+          <div class="flex items-center gap-2">
+            <span class="material-symbols-outlined text-tertiary">code</span>
+            <h3 class="text-lg font-bold capitalize">{{ codeExampleData.name }} — Code Example</h3>
+          </div>
+          <button @click="codeExampleOpen = false" class="p-1 rounded-lg hover:bg-surface-container-highest">
+            <span class="material-symbols-outlined text-outline">close</span>
+          </button>
+        </div>
+
+        <div class="flex-1 overflow-y-auto p-6">
+          <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+            <!-- Bad Example -->
+            <div class="rounded-xl overflow-hidden border border-red-500/20">
+              <div class="px-4 py-2 bg-red-500/10 flex items-center gap-2">
+                <span class="material-symbols-outlined text-sm text-red-400">close</span>
+                <span class="text-sm font-bold text-red-400">Bad Practice</span>
+              </div>
+              <pre class="p-4 bg-surface-container-lowest text-xs text-on-surface-variant overflow-x-auto whitespace-pre leading-relaxed"><code>{{ codeExampleData.example.bad }}</code></pre>
+            </div>
+
+            <!-- Good Example -->
+            <div class="rounded-xl overflow-hidden border border-green-500/20">
+              <div class="px-4 py-2 bg-green-500/10 flex items-center gap-2">
+                <span class="material-symbols-outlined text-sm text-green-400">check</span>
+                <span class="text-sm font-bold text-green-400">Best Practice</span>
+              </div>
+              <pre class="p-4 bg-surface-container-lowest text-xs text-on-surface-variant overflow-x-auto whitespace-pre leading-relaxed"><code>{{ codeExampleData.example.good }}</code></pre>
+            </div>
+          </div>
+
+          <p class="text-xs text-outline text-center mt-4">
+            Language: <span class="text-on-surface font-mono">{{ codeExampleData.example.language }}</span>
+          </p>
+        </div>
+
+        <div class="px-6 py-3 border-t border-outline-variant/10 flex justify-end">
+          <button @click="codeExampleOpen = false" class="px-4 py-2 text-sm text-primary font-bold hover:bg-primary/10 rounded-lg transition-colors">
+            Close
           </button>
         </div>
       </div>
