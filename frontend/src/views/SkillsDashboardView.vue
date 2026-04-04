@@ -156,7 +156,7 @@ const PATTERN_DESCRIPTIONS: Record<string, string> = {
   'input_validation': 'Input Validation means checking and sanitizing all data that comes from external sources (user input, API requests, file uploads) before using it. Without validation, your application is vulnerable to injection attacks (SQL injection, XSS), crashes from unexpected data types, and security breaches.',
   'error_handling': 'Error Handling means anticipating what can go wrong and writing code to handle those situations gracefully. This includes using try/except blocks, validating return values, handling edge cases (empty lists, null values), and providing meaningful error messages instead of crashing silently.',
   'edge_cases': 'Edge Cases are unusual or extreme inputs that your code might not handle correctly — empty strings, zero values, very large numbers, null/undefined values, or unexpected data types. Testing for edge cases prevents bugs that only appear in production with real-world data.',
-  'html_semantics': 'HTML Semantics means using the right HTML elements for their intended purpose — <header>, <nav>, <main>, <article>, <button> instead of generic <div> tags with click handlers. Semantic HTML improves accessibility (screen readers), SEO, and makes code more readable and maintainable.',
+  'html_semantics': 'HTML Semantics means using the right HTML elements for their intended purpose — header, nav, main, article, button instead of generic div tags with click handlers. Semantic HTML improves accessibility (screen readers), SEO, and makes code more readable and maintainable.',
   'accessibility': 'Accessibility (a11y) means making your web application usable by everyone, including people with disabilities. This includes adding alt text to images, using proper heading hierarchy, ensuring keyboard navigation works, providing ARIA labels for interactive elements, and maintaining sufficient color contrast.',
   'css_organization': 'CSS Organization means keeping your stylesheets clean, avoiding inline styles, using consistent naming conventions (BEM, utility classes), and eliminating duplicate rules. Well-organized CSS uses variables for colors/spacing, groups related styles, and avoids specificity wars.',
   'responsive_design': 'Responsive Design means building layouts that adapt to different screen sizes — mobile, tablet, and desktop. This involves using relative units (rem, %), media queries, flexbox/grid layouts, and testing on multiple devices. A responsive site provides a good experience regardless of screen size.',
@@ -270,24 +270,8 @@ conn = connect(password=DB_PASSWORD)
   },
   'html_semantics': {
     language: 'html',
-    bad: `<!-- Bad: div soup, no semantics -->
-<div class="header">My Site</div>
-<div class="nav">
-  <div onclick="goto('/')">Home</div>
-  <div onclick="goto('/about')">About</div>
-</div>
-<div class="content">Welcome!</div>
-<div class="footer">© 2024</div>`,
-    good: `<!-- Good: semantic HTML -->
-<header><h1>My Site</h1></header>
-<nav>
-  <a href="/">Home</a>
-  <a href="/about">About</a>
-</nav>
-<main>
-  <article>Welcome!</article>
-</main>
-<footer>© 2024</footer>`,
+    bad: '\x3c!-- Bad: div soup, no semantics -->\n\x3cdiv class="header">My Site\x3c/div>\n\x3cdiv class="nav">\n  \x3cdiv onclick="goto(\'/\')">Home\x3c/div>\n  \x3cdiv onclick="goto(\'/about\')">About\x3c/div>\n\x3c/div>\n\x3cdiv class="content">Welcome!\x3c/div>\n\x3cdiv class="footer">\u00a9 2024\x3c/div>',
+    good: '\x3c!-- Good: semantic HTML -->\n\x3cheader>\x3ch1>My Site\x3c/h1>\x3c/header>\n\x3cnav>\n  \x3ca href="/">Home\x3c/a>\n  \x3ca href="/about">About\x3c/a>\n\x3c/nav>\n\x3cmain>\n  \x3carticle>Welcome!\x3c/article>\n\x3c/main>\n\x3cfooter>\u00a9 2024\x3c/footer>',
   },
   'css_organization': {
     language: 'css',
@@ -311,16 +295,8 @@ conn = connect(password=DB_PASSWORD)
   },
   'xss_csrf_prevention': {
     language: 'javascript',
-    bad: `// Bad: XSS vulnerability via innerHTML
-const name = getUserInput();
-document.getElementById("greeting").innerHTML =
-  "<h1>Hello " + name + "</h1>";
-// If name = <script>steal(cookies)</script> → XSS!`,
-    good: `// Good: safe text insertion
-const name = getUserInput();
-const el = document.getElementById("greeting");
-el.textContent = "Hello " + name;
-// Script tags are rendered as plain text, not executed`,
+    bad: '// Bad: XSS vulnerability via innerHTML\nconst name = getUserInput();\ndocument.getElementById("greeting").innerHTML =\n  "\x3ch1>Hello " + name + "\x3c/h1>";\n// If name contains a script tag → XSS!',
+    good: '// Good: safe text insertion\nconst name = getUserInput();\nconst el = document.getElementById("greeting");\nel.textContent = "Hello " + name;\n// Tags are rendered as plain text, not executed',
   },
   'database_queries': {
     language: 'python',
@@ -386,21 +362,8 @@ def main():
   },
   'accessibility': {
     language: 'html',
-    bad: `<!-- Bad: inaccessible -->
-<div onclick="submit()">Send</div>
-<img src="photo.jpg">
-<input type="text">
-<div style="color: #ccc; background: #ddd;">
-  Light gray on lighter gray
-</div>`,
-    good: `<!-- Good: accessible -->
-<button onclick="submit()">Send</button>
-<img src="photo.jpg" alt="Team photo from 2024">
-<label for="name">Name</label>
-<input type="text" id="name" aria-required="true">
-<div style="color: #333; background: #fff;">
-  High contrast text
-</div>`,
+    bad: '\x3c!-- Bad: inaccessible -->\n\x3cdiv onclick="submit()">Send\x3c/div>\n\x3cimg src="photo.jpg">\n\x3cinput type="text">\n\x3cdiv style="color: #ccc; background: #ddd;">\n  Light gray on lighter gray\n\x3c/div>',
+    good: '\x3c!-- Good: accessible -->\n\x3cbutton onclick="submit()">Send\x3c/button>\n\x3cimg src="photo.jpg" alt="Team photo from 2024">\n\x3clabel for="name">Name\x3c/label>\n\x3cinput type="text" id="name" aria-required="true">\n\x3cdiv style="color: #333; background: #fff;">\n  High contrast text\n\x3c/div>',
   },
   'responsive_design': {
     language: 'css',
