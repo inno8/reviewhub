@@ -64,8 +64,8 @@ onMounted(async () => {
     selectedUserId.value = Number(queryUser);
   }
 
-  // Always seed our own userId so we see our own data by default
-  if (!selectedUserId.value) {
+  // For developers: auto-select own ID. For admin: show user list first
+  if (!selectedUserId.value && !authStore.isAdmin) {
     selectedUserId.value = authStore.user?.id ?? null;
   }
 
@@ -114,8 +114,9 @@ async function loadDashboardData() {
   loading.value = true;
   try {
     const projectId = projectsStore.selectedProjectId ?? undefined;
+    const userId = authStore.isAdmin ? selectedUserId.value : undefined;
     const [overviewRes, skillsRes, progressRes, recentRes] = await Promise.all([
-      api.dashboard.overview(projectId),
+      api.dashboard.overview(projectId, userId),
       api.dashboard.skills(projectId),
       api.dashboard.progress(projectId, 8),
       api.dashboard.recent(projectId, 10),

@@ -143,7 +143,7 @@ export const api = {
         recommendations: (projectId) => client.get('/skills/recommendations/', { params: { project: projectId } }),
     },
     dashboard: {
-        overview: (projectId) => client.get('/skills/dashboard/overview/', { params: { project: projectId } }),
+        overview: (projectId, userId) => client.get('/skills/dashboard/overview/', { params: { project: projectId, user: userId } }),
         skills: (projectId) => client.get('/skills/dashboard/skills/', { params: { project: projectId } }),
         progress: (projectId, weeks) => client.get('/skills/dashboard/progress/', { params: { project: projectId, weeks } }),
         recent: (projectId, limit) => client.get('/skills/dashboard/recent/', { params: { project: projectId, limit } }),

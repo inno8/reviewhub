@@ -513,11 +513,21 @@ class DashboardOverviewView(APIView):
     def get(self, request):
         from evaluations.models import Evaluation, Finding
         from django.db.models import Avg
-        
+        from users.models import User
+
         project_id = request.query_params.get('project')
-        
-        # Get user's evaluations (includes unmatched commits with same email)
-        evaluations = Evaluation.objects.for_user(request.user)
+
+        # Admin can view any user's data via ?user=<id>
+        target_user = request.user
+        user_id_param = request.query_params.get('user')
+        if user_id_param and (request.user.role == 'admin' or request.user.is_staff):
+            try:
+                target_user = User.objects.get(pk=user_id_param)
+            except User.DoesNotExist:
+                pass
+
+        # Get user's evaluations
+        evaluations = Evaluation.objects.for_user(target_user)
         if project_id:
             evaluations = evaluations.filter(project_id=project_id)
         
@@ -551,7 +561,7 @@ class DashboardOverviewView(APIView):
 
         # Top 3 priority skills to improve (lowest scores)
         priority_metrics = SkillMetric.objects.filter(
-            user=request.user
+            user=target_user
         ).select_related('skill')
         if project_id:
             priority_metrics = priority_metrics.filter(project_id=project_id)
@@ -571,7 +581,7 @@ class DashboardOverviewView(APIView):
         profile_data = None
         try:
             from batch.models import DeveloperProfile
-            profile = DeveloperProfile.objects.get(user=request.user)
+            profile = DeveloperProfile.objects.get(user=target_user)
             profile_data = {
                 "level": profile.level,
                 "trend": profile.trend,
@@ -584,7 +594,7 @@ class DashboardOverviewView(APIView):
 
         # Pattern insights (top recurring patterns)
         from evaluations.models import Pattern
-        pattern_qs = Pattern.objects.filter(user=request.user, is_resolved=False)
+        pattern_qs = Pattern.objects.filter(user=target_user, is_resolved=False)
         if project_id:
             pattern_qs = pattern_qs.filter(project_id=project_id)
         top_patterns = pattern_qs.order_by('-frequency')[:5]

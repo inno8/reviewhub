@@ -466,9 +466,9 @@ function toggleAllBranches(selected: boolean) {
       </button>
     </div>
 
-    <!-- New Review Button -->
-    <div class="px-4 mb-6">
-      <button 
+    <!-- New Review Button (developers only) -->
+    <div v-if="!auth.isAdmin" class="px-4 mb-6">
+      <button
         @click="openNewReviewModal"
         class="w-full primary-gradient text-on-primary font-bold py-3 px-4 rounded-lg flex items-center justify-center gap-2 active:scale-95 transition-transform"
       >
