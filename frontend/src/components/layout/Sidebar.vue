@@ -43,7 +43,7 @@ const navItems = [
   { name: 'Insights', icon: 'analytics', path: '/insights' },
   { name: 'Dev profile', icon: 'psychology', path: '/dev-profile/results' },
   { name: 'Batch Analysis', icon: 'history', path: '/batch', devOnly: true },
-  { name: 'Commit Timeline', icon: 'timeline', path: '/timeline', devOnly: true },
+  { name: 'Commit Timeline', icon: 'timeline', path: '/timeline' },
   { name: 'Team Management', icon: 'group', path: '/team', adminOnly: true },
 ];
 

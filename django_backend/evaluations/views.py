@@ -42,7 +42,7 @@ class EvaluationListView(generics.ListAPIView):
     
     serializer_class = EvaluationListSerializer
     permission_classes = [permissions.IsAuthenticated]
-    filterset_fields = ['project', 'status', 'branch']
+    filterset_fields = ['project', 'status', 'branch', 'author']
     search_fields = ['commit_message', 'author_name']
     ordering_fields = ['created_at', 'overall_score']
     ordering = ['-created_at']
