@@ -43,6 +43,28 @@ const adminCategories = ref<{ id: number; name: string }[]>([]);
 const adminProjects = ref<{ id: number; displayName: string }[]>([]);
 const drawerUser = ref<UserStat | null>(null);
 const adminTeam = ref<any>(null);
+const skillMatrix = ref<any>(null);
+
+async function loadSkillMatrix() {
+  try {
+    const axios = (await import('axios')).default;
+    const token = localStorage.getItem('reviewhub_token');
+    const { data } = await axios.get(
+      `${import.meta.env.VITE_API_URL}/skills/dashboard/admin-skill-matrix/`,
+      { headers: token ? { Authorization: `Bearer ${token}` } : {} }
+    );
+    skillMatrix.value = data;
+  } catch { skillMatrix.value = null; }
+}
+
+function heatColor(score: number | null): string {
+  if (score == null) return 'bg-surface-container-lowest text-outline';
+  if (score >= 90) return 'bg-green-500/30 text-green-300';
+  if (score >= 75) return 'bg-green-500/15 text-green-400';
+  if (score >= 60) return 'bg-yellow-500/15 text-yellow-400';
+  if (score >= 40) return 'bg-orange-500/15 text-orange-400';
+  return 'bg-red-500/20 text-red-400';
+}
 
 async function loadAdminTeam() {
   try {
@@ -144,7 +166,7 @@ function getLevelBg(level: string) {
 onMounted(async () => {
   await projectsStore.fetchProjects();
   if (authStore.isAdmin) {
-    await Promise.all([loadAdminData(), loadAdminTeam()]);
+    await Promise.all([loadAdminData(), loadAdminTeam(), loadSkillMatrix()]);
   } else {
     await loadDevHome();
   }
@@ -346,6 +368,67 @@ function scoreColor(score: number) {
           </div>
         </section>
 
+        <!-- ── Skill Matrix Heatmap ── -->
+        <section v-if="skillMatrix?.developers?.length" class="mb-8">
+          <div class="bg-surface-container-low rounded-xl border border-outline-variant/10 overflow-hidden">
+            <div class="px-5 py-3 border-b border-outline-variant/10 flex items-center justify-between">
+              <div class="flex items-center gap-2">
+                <span class="material-symbols-outlined text-primary text-sm">grid_view</span>
+                <h3 class="text-sm font-bold">Team Skill Matrix</h3>
+              </div>
+              <div class="flex items-center gap-3 text-[9px]">
+                <span class="flex items-center gap-1"><span class="w-3 h-2 rounded-sm bg-red-500/20"></span> &lt;40</span>
+                <span class="flex items-center gap-1"><span class="w-3 h-2 rounded-sm bg-orange-500/15"></span> 40-59</span>
+                <span class="flex items-center gap-1"><span class="w-3 h-2 rounded-sm bg-yellow-500/15"></span> 60-74</span>
+                <span class="flex items-center gap-1"><span class="w-3 h-2 rounded-sm bg-green-500/15"></span> 75-89</span>
+                <span class="flex items-center gap-1"><span class="w-3 h-2 rounded-sm bg-green-500/30"></span> 90+</span>
+              </div>
+            </div>
+            <div class="overflow-x-auto">
+              <table class="w-full text-xs">
+                <thead>
+                  <tr class="border-b border-outline-variant/10">
+                    <th class="px-3 py-2 text-left text-outline font-medium sticky left-0 bg-surface-container-low z-10">Developer</th>
+                    <th v-for="cat in skillMatrix.categories" :key="cat" class="px-2 py-2 text-center text-outline font-medium whitespace-nowrap">
+                      {{ cat.length > 12 ? cat.slice(0, 10) + '..' : cat }}
+                    </th>
+                  </tr>
+                </thead>
+                <tbody>
+                  <tr v-for="dev in skillMatrix.developers" :key="dev.id" class="border-b border-outline-variant/5 hover:bg-surface-container-lowest/40">
+                    <td class="px-3 py-2 font-medium sticky left-0 bg-surface-container-low z-10">{{ dev.name }}</td>
+                    <td v-for="cat in skillMatrix.categories" :key="cat" class="px-1 py-1 text-center">
+                      <span class="inline-block w-full py-1 rounded text-[10px] font-bold"
+                        :class="heatColor(dev.scores[cat])">
+                        {{ dev.scores[cat] != null ? dev.scores[cat] : '—' }}
+                      </span>
+                    </td>
+                  </tr>
+                  <!-- Team average row -->
+                  <tr class="border-t-2 border-outline-variant/20 font-bold">
+                    <td class="px-3 py-2 text-primary sticky left-0 bg-surface-container-low z-10">TEAM AVG</td>
+                    <td v-for="cat in skillMatrix.categories" :key="cat" class="px-1 py-1 text-center">
+                      <span class="inline-block w-full py-1 rounded text-[10px] font-bold"
+                        :class="heatColor(skillMatrix.teamAverages[cat])">
+                        {{ skillMatrix.teamAverages[cat] != null ? skillMatrix.teamAverages[cat] : '—' }}
+                      </span>
+                    </td>
+                  </tr>
+                </tbody>
+              </table>
+            </div>
+            <!-- Weakest categories callout -->
+            <div v-if="skillMatrix.weakestCategories?.length" class="px-5 py-3 border-t border-outline-variant/10 flex items-center gap-2">
+              <span class="material-symbols-outlined text-sm text-orange-400">priority_high</span>
+              <span class="text-xs text-outline">Team weakest areas:</span>
+              <span v-for="w in skillMatrix.weakestCategories" :key="w.name"
+                class="text-xs font-bold text-orange-400 bg-orange-500/10 px-2 py-0.5 rounded">
+                {{ w.name }} ({{ w.avg }}%)
+              </span>
+            </div>
+          </div>
+        </section>
+
         <!-- ── Developer Cards (with enhanced data) ── -->
         <section>
           <div class="flex items-center justify-between mb-4">
@@ -495,6 +578,10 @@ function scoreColor(score: number) {
             <div class="bg-surface-container-low p-5 rounded-xl border border-outline-variant/10 text-center">
               <p class="text-2xl font-black text-primary">{{ devHome.commitCount }}</p>
               <p class="text-[10px] text-outline uppercase tracking-wider mt-1">Commits</p>
+              <div v-if="devHome.streak?.active" class="mt-1 flex items-center gap-1 justify-center">
+                <span class="material-symbols-outlined text-xs text-yellow-400">local_fire_department</span>
+                <span class="text-[9px] font-bold text-yellow-400">{{ devHome.streak.count }} streak</span>
+              </div>
             </div>
           </section>
 

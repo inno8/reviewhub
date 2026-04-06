@@ -227,11 +227,70 @@ class InternalEvaluationCreateView(APIView):
             except Exception:
                 pass
 
+        # Admin alerts: notify admins if developer score drops significantly
+        if author and evaluation.overall_score is not None:
+            self._check_admin_alerts(author, evaluation)
+
         return Response(
             EvaluationSerializer(evaluation).data,
             status=status.HTTP_201_CREATED
         )
     
+    @staticmethod
+    def _check_admin_alerts(user, evaluation):
+        """Notify admins if developer's score drops significantly."""
+        try:
+            from notifications.models import Notification
+
+            # Get last 5 evaluations to check for decline
+            recent = Evaluation.objects.filter(
+                author=user, project=evaluation.project
+            ).order_by('-created_at')[:5]
+
+            scores = [e.overall_score for e in recent if e.overall_score is not None]
+            if len(scores) < 3:
+                return
+
+            # Check if last score is significantly below average of prior scores
+            current = scores[0]
+            prior_avg = sum(scores[1:]) / len(scores[1:])
+            drop = prior_avg - current
+
+            if drop >= 20:
+                # Significant drop — alert admins
+                admins = User.objects.filter(role='admin')
+                for admin in admins:
+                    # Don't spam — check if alert was sent recently
+                    recent_alert = Notification.objects.filter(
+                        user=admin,
+                        type='team_update',
+                        data__developer_id=user.id,
+                        data__alert_type='score_drop',
+                    ).order_by('-created_at').first()
+
+                    if recent_alert and (timezone.now() - recent_alert.created_at).days < 1:
+                        continue
+
+                    Notification.objects.create(
+                        user=admin,
+                        type='team_update',
+                        title=f'Score Drop: {user.display_name}',
+                        message=(
+                            f'{user.display_name}\'s score dropped to {current:.0f} '
+                            f'(was averaging {prior_avg:.0f}). '
+                            f'Check their recent commits.'
+                        ),
+                        data={
+                            'developer_id': user.id,
+                            'alert_type': 'score_drop',
+                            'current_score': float(current),
+                            'prior_avg': float(prior_avg),
+                            'drop': float(drop),
+                        },
+                    )
+        except Exception:
+            pass
+
     @staticmethod
     def _auto_resolve_patterns(user, project):
         """

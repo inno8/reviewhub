@@ -888,6 +888,25 @@ class DeveloperHomeView(APIView):
 
     permission_classes = [permissions.IsAuthenticated]
 
+    @staticmethod
+    def _calculate_streak(evals):
+        """Count consecutive recent commits with score >= 70 and no critical findings."""
+        streak = 0
+        for e in evals.order_by('-created_at')[:20]:
+            if e.overall_score and e.overall_score >= 70:
+                has_critical = e.findings.filter(severity='critical').exists()
+                if not has_critical:
+                    streak += 1
+                else:
+                    break
+            else:
+                break
+        return {
+            'count': streak,
+            'label': f'{streak} commit{"s" if streak != 1 else ""} without critical issues',
+            'active': streak >= 3,
+        }
+
     def get(self, request):
         from evaluations.models import Evaluation, Finding, FindingSkill, Pattern
         from django.db.models import Avg
@@ -1045,6 +1064,8 @@ class DeveloperHomeView(APIView):
             'radar': radar,
             'sparkline': sparkline,
             'topIssues': top_issues,
+            # Streak: consecutive commits with score >= 70 and 0 critical findings
+            'streak': self._calculate_streak(evals),
         })
 
 
@@ -1200,4 +1221,68 @@ class AdminTeamOverviewView(APIView):
 
             # All developers with detailed data
             'developers': sorted(dev_data, key=lambda d: d['compositeScore'], reverse=True),
+        })
+
+
+class AdminSkillMatrixView(APIView):
+    """
+    Admin-only: team skill matrix heatmap data.
+    Returns developers as rows, skill categories as columns, scores as values.
+    """
+
+    permission_classes = [permissions.IsAuthenticated]
+
+    def get(self, request):
+        if request.user.role != 'admin' and not request.user.is_staff:
+            return Response({'error': 'Admin only'}, status=403)
+
+        from users.models import User
+        from collections import defaultdict
+
+        developers = User.objects.filter(role='developer')
+        categories = SkillCategory.objects.prefetch_related('skills').order_by('order')
+
+        # Build category list
+        cat_names = [cat.name for cat in categories]
+
+        # Build matrix: developer → category → avg score
+        rows = []
+        for dev in developers:
+            metrics = SkillMetric.objects.filter(user=dev).select_related('skill__category')
+            if not metrics.exists():
+                continue
+
+            cat_scores = defaultdict(list)
+            for m in metrics:
+                cat_scores[m.skill.category.name].append(m.score)
+
+            scores = {}
+            for cat_name in cat_names:
+                s_list = cat_scores.get(cat_name, [])
+                scores[cat_name] = round(sum(s_list) / len(s_list), 1) if s_list else None
+
+            rows.append({
+                'id': dev.id,
+                'name': dev.display_name,
+                'email': dev.email,
+                'scores': scores,
+            })
+
+        # Team averages per category
+        team_avgs = {}
+        for cat_name in cat_names:
+            vals = [r['scores'][cat_name] for r in rows if r['scores'].get(cat_name) is not None]
+            team_avgs[cat_name] = round(sum(vals) / len(vals), 1) if vals else None
+
+        # Weakest categories (sorted by team avg ascending)
+        weakest = sorted(
+            [(cat, avg) for cat, avg in team_avgs.items() if avg is not None],
+            key=lambda x: x[1]
+        )[:3]
+
+        return Response({
+            'categories': cat_names,
+            'developers': rows,
+            'teamAverages': team_avgs,
+            'weakestCategories': [{'name': w[0], 'avg': w[1]} for w in weakest],
         })

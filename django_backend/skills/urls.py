@@ -32,4 +32,5 @@ urlpatterns = [
 
     # Admin team overview
     path('dashboard/admin-team/', views.AdminTeamOverviewView.as_view(), name='admin-team-overview'),
+    path('dashboard/admin-skill-matrix/', views.AdminSkillMatrixView.as_view(), name='admin-skill-matrix'),
 ]

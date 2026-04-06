@@ -19,20 +19,33 @@ class FindingSkillSerializer(serializers.ModelSerializer):
 
 class FindingSerializer(serializers.ModelSerializer):
     """Finding serializer."""
-    
+
     skills = SkillSerializer(many=True, read_only=True)
     finding_skills = FindingSkillSerializer(many=True, read_only=True)
-    
+    difficulty = serializers.SerializerMethodField()
+
     class Meta:
         model = Finding
         fields = [
-            'id', 'title', 'description', 'severity',
+            'id', 'title', 'description', 'severity', 'difficulty',
             'file_path', 'line_start', 'line_end',
             'original_code', 'suggested_code', 'explanation',
             'is_fixed', 'fixed_at', 'fixed_in_commit',
+            'developer_explanation', 'understanding_level', 'understanding_feedback',
             'skills', 'finding_skills', 'created_at'
         ]
         read_only_fields = ['id', 'created_at']
+
+    def get_difficulty(self, obj):
+        """Compute difficulty: quick_fix / moderate / deep_dive based on severity and code size."""
+        sev = (obj.severity or '').lower()
+        code_lines = len((obj.original_code or '').split('\n'))
+
+        if sev == 'suggestion' or (sev == 'info' and code_lines <= 3):
+            return 'quick_fix'
+        elif sev == 'critical' or code_lines > 15:
+            return 'deep_dive'
+        return 'moderate'
 
 
 class EvaluationSerializer(serializers.ModelSerializer):
