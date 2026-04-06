@@ -624,22 +624,35 @@ class DashboardOverviewView(APIView):
         })
 
 
+def _resolve_target_user(request):
+    """Admin can view any user's data via ?user=<id>."""
+    from users.models import User
+    user_id = request.query_params.get('user')
+    if user_id and (request.user.role == 'admin' or request.user.is_staff):
+        try:
+            return User.objects.get(pk=user_id)
+        except User.DoesNotExist:
+            pass
+    return request.user
+
+
 class DashboardSkillsView(APIView):
     """
     Get skill scores grouped by category for radar chart.
     Returns: categories with avg scores.
     """
-    
+
     permission_classes = [permissions.IsAuthenticated]
-    
+
     def get(self, request):
         from django.db.models import Avg
-        
+
         project_id = request.query_params.get('project')
-        
+        target_user = _resolve_target_user(request)
+
         # Get user's metrics grouped by category
         metrics = SkillMetric.objects.filter(
-            user=request.user
+            user=target_user
         ).select_related('skill', 'skill__category')
         
         if project_id:
@@ -693,22 +706,23 @@ class DashboardProgressView(APIView):
     Get skill progress over time for line chart.
     Returns: time series data for skills.
     """
-    
+
     permission_classes = [permissions.IsAuthenticated]
-    
+
     def get(self, request):
         from evaluations.models import Evaluation
         from django.db.models import Avg
         from datetime import datetime, timedelta
-        
+
         project_id = request.query_params.get('project')
         weeks = int(request.query_params.get('weeks', 8))
-        
+        target_user = _resolve_target_user(request)
+
         # Get evaluations for the last N weeks
         end_date = tz.now()
         start_date = end_date - timedelta(weeks=weeks)
-        
-        evaluations = Evaluation.objects.for_user(request.user).filter(
+
+        evaluations = Evaluation.objects.for_user(target_user).filter(
             created_at__gte=start_date,
         ).order_by('created_at')
         
@@ -748,18 +762,19 @@ class DashboardRecentView(APIView):
     Get recent findings with skill tags.
     Returns: recent findings with associated skills.
     """
-    
+
     permission_classes = [permissions.IsAuthenticated]
-    
+
     def get(self, request):
         from evaluations.models import Finding
-        
+
         project_id = request.query_params.get('project')
         limit = int(request.query_params.get('limit', 10))
-        
+        target_user = _resolve_target_user(request)
+
         from evaluations.models import Evaluation
 
-        user_evals = Evaluation.objects.for_user(request.user)
+        user_evals = Evaluation.objects.for_user(target_user)
         if project_id:
             user_evals = user_evals.filter(project_id=project_id)
 

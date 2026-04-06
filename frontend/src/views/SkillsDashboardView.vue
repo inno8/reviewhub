@@ -117,9 +117,9 @@ async function loadDashboardData() {
     const userId = authStore.isAdmin ? selectedUserId.value : undefined;
     const [overviewRes, skillsRes, progressRes, recentRes] = await Promise.all([
       api.dashboard.overview(projectId, userId),
-      api.dashboard.skills(projectId),
-      api.dashboard.progress(projectId, 8),
-      api.dashboard.recent(projectId, 10),
+      api.dashboard.skills(projectId, userId),
+      api.dashboard.progress(projectId, 8, userId),
+      api.dashboard.recent(projectId, 10, userId),
     ]);
     overview.value = overviewRes.data;
     categoryScores.value = skillsRes.data;
