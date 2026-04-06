@@ -157,8 +157,8 @@ export const api = {
     devProfile: {
         get: () => client.get('/users/me/dev-profile/'),
         save: (data) => client.post('/users/me/dev-profile/', data),
-        calibration: (jobId) => client.get('/users/me/dev-calibration/', {
-            params: jobId != null ? { job: jobId } : {},
+        calibration: (jobId, userId) => client.get('/users/me/dev-calibration/', {
+            params: { ...(jobId != null ? { job: jobId } : {}), ...(userId != null ? { user: userId } : {}) },
         }),
     },
     gitConnections: {

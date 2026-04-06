@@ -986,18 +986,27 @@ class DevCalibrationSummaryView(APIView):
         from evaluations.models import Evaluation, Finding, FindingSkill
         from skills.models import Skill
 
+        # Admin can view any user's profile via ?user=<id>
+        target_user = request.user
+        user_id_param = request.query_params.get('user')
+        if user_id_param and (request.user.role == 'admin' or request.user.is_staff):
+            try:
+                target_user = User.objects.get(pk=user_id_param)
+            except User.DoesNotExist:
+                pass
+
         job_param = request.query_params.get('job')
         batch_job = None
         if job_param:
-            batch_job = BatchJob.objects.filter(pk=job_param, user=request.user).first()
+            batch_job = BatchJob.objects.filter(pk=job_param, user=target_user).first()
         if batch_job is None:
             batch_job = (
-                BatchJob.objects.filter(user=request.user).order_by('-created_at').first()
+                BatchJob.objects.filter(user=target_user).order_by('-created_at').first()
             )
 
         questionnaire = None
         try:
-            questionnaire = UserDevProfileSerializer(request.user.dev_profile).data
+            questionnaire = UserDevProfileSerializer(target_user.dev_profile).data
         except UserDevProfile.DoesNotExist:
             pass
 
@@ -1005,12 +1014,12 @@ class DevCalibrationSummaryView(APIView):
 
         developer_profile_data = None
         try:
-            dp = DeveloperProfile.objects.get(user=request.user)
+            dp = DeveloperProfile.objects.get(user=target_user)
             developer_profile_data = DeveloperProfileSerializer(dp).data
         except DeveloperProfile.DoesNotExist:
             pass
 
-        evals = Evaluation.objects.for_user(request.user)
+        evals = Evaluation.objects.for_user(target_user)
         if batch_job:
             evals = evals.filter(batch_job=batch_job)
 

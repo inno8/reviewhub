@@ -45,8 +45,8 @@ onMounted(async () => {
   const queryUser = route.query.user;
   if (queryUser) selectedUserId.value = Number(queryUser);
 
-  // Always seed our own userId so we see our own data by default
-  if (!selectedUserId.value) {
+  // For developers: auto-select own ID. For admin: show user list first
+  if (!selectedUserId.value && !authStore.isAdmin) {
     selectedUserId.value = authStore.user?.id ?? null;
   }
 

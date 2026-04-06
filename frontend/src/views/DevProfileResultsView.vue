@@ -4,13 +4,37 @@ import { useRoute, useRouter } from 'vue-router';
 import AppShell from '@/components/layout/AppShell.vue';
 import SkillRadarChart from '@/components/charts/SkillRadarChart.vue';
 import { api } from '@/composables/useApi';
+import { useAuthStore } from '@/stores/auth';
 
 const route = useRoute();
 const router = useRouter();
+const authStore = useAuthStore();
 
 const loading = ref(true);
 const error = ref('');
 const data = ref<any>(null);
+
+// Admin: user selection
+const adminUsers = ref<any[]>([]);
+const selectedUserId = ref<number | null>(null);
+const showUserList = computed(() => authStore.isAdmin && !selectedUserId.value);
+
+async function loadAdminUsers() {
+  try {
+    const { data: users } = await api.users.adminStats({});
+    adminUsers.value = users;
+  } catch { adminUsers.value = []; }
+}
+
+function selectUser(userId: number) {
+  selectedUserId.value = userId;
+  loadAll();
+}
+
+function backToList() {
+  selectedUserId.value = null;
+  data.value = null;
+}
 
 const jobId = computed(() => {
   const j = route.query.job;
@@ -42,7 +66,10 @@ function stopPolling() {
 
 async function loadAll() {
   try {
-    const { data: payload } = await api.devProfile.calibration(jobId.value);
+    const params: any = {};
+    if (jobId.value) params.job = jobId.value;
+    if (authStore.isAdmin && selectedUserId.value) params.user = selectedUserId.value;
+    const { data: payload } = await api.devProfile.calibration(params.job, params.user);
     data.value = payload;
     error.value = '';
     const st = payload?.batch_job?.status as string | undefined;
@@ -59,6 +86,20 @@ async function loadAll() {
 
 onMounted(async () => {
   loading.value = true;
+
+  // Admin: check for ?user= query or show user list
+  if (authStore.isAdmin) {
+    const queryUser = route.query.user;
+    if (queryUser) {
+      selectedUserId.value = Number(queryUser);
+    }
+    await loadAdminUsers();
+    if (!selectedUserId.value) {
+      loading.value = false;
+      return; // Show user list
+    }
+  }
+
   await loadAll();
   if (isJobRunning.value) {
     pollTimer = setInterval(() => {
@@ -87,10 +128,47 @@ function goSkills() {
 <template>
   <AppShell>
     <div class="p-8 flex-1 max-w-4xl mx-auto w-full">
+      <!-- Admin: user list -->
+      <template v-if="showUserList">
+        <header class="mb-10">
+          <span class="text-primary font-bold uppercase tracking-[0.2em] text-xs">Developer Profiles</span>
+          <h1 class="text-4xl font-black tracking-tight text-on-surface mt-2">Team Profiles</h1>
+          <p class="text-outline text-sm mt-2">Select a developer to view their profile and calibration results.</p>
+        </header>
+        <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+          <div v-for="u in adminUsers" :key="u.id"
+            class="bg-surface-container-low p-5 rounded-xl border border-outline-variant/10 hover:border-primary/30 transition-all cursor-pointer"
+            @click="selectUser(u.id)">
+            <div class="flex items-center gap-3 mb-3">
+              <div class="w-10 h-10 rounded-lg bg-secondary-container flex items-center justify-center text-sm font-bold text-primary">
+                {{ (u.display_name || u.username || '?')[0].toUpperCase() }}
+              </div>
+              <div>
+                <p class="text-sm font-bold">{{ u.display_name || u.username }}</p>
+                <p class="text-[10px] text-outline">{{ u.email }}</p>
+              </div>
+            </div>
+            <div class="grid grid-cols-3 gap-2 text-center text-[10px]">
+              <div><p class="text-sm font-black">{{ u.total_commits || 0 }}</p><p class="text-outline">Commits</p></div>
+              <div><p class="text-sm font-black">{{ u.total_findings || 0 }}</p><p class="text-outline">Findings</p></div>
+              <div><p class="text-sm font-black">{{ u.avg_score || 0 }}%</p><p class="text-outline">Score</p></div>
+            </div>
+          </div>
+        </div>
+      </template>
+
+      <!-- Profile content (developer or admin-selected user) -->
+      <template v-else>
       <header class="mb-10">
+        <div class="flex items-center gap-3 mb-2">
+          <button v-if="authStore.isAdmin" @click="backToList"
+            class="flex items-center gap-1 text-sm text-outline hover:text-primary transition-colors">
+            <span class="material-symbols-outlined text-sm">arrow_back</span> All Developers
+          </button>
+        </div>
         <span class="text-primary font-bold uppercase tracking-[0.2em] text-xs">Calibration complete</span>
         <h1 class="text-4xl font-black tracking-tight text-on-surface mt-2">
-          Your developer profile
+          {{ authStore.isAdmin ? 'Developer Profile' : 'Your developer profile' }}
         </h1>
         <p class="text-outline text-sm mt-2 max-w-2xl">
           Here is what we know from your questionnaire and from the commits we analysed with the LLM.
@@ -378,6 +456,7 @@ function goSkills() {
           </button>
         </footer>
       </template>
+      </template><!-- close v-else (profile content) -->
     </div>
   </AppShell>
 </template>
