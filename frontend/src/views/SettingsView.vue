@@ -618,8 +618,8 @@ const tabs = computed(() => {
           <button @click="saveProfile" :disabled="loading" class="primary-gradient text-on-primary font-bold py-3 px-6 rounded-lg disabled:opacity-50">Save Profile</button>
         </div>
 
-        <!-- Developer profile (questionnaire + LLM calibration) -->
-        <div class="glass-panel rounded-xl p-6 mb-6">
+        <!-- Developer profile (questionnaire + LLM calibration) — developers only -->
+        <div v-if="!auth.isAdmin" class="glass-panel rounded-xl p-6 mb-6">
           <div class="flex items-center gap-3 mb-2">
             <span class="material-symbols-outlined text-primary">psychology</span>
             <h2 class="text-lg font-bold text-on-surface">Developer profile</h2>
@@ -672,8 +672,8 @@ const tabs = computed(() => {
             class="bg-surface-container-highest text-on-surface font-bold py-3 px-6 rounded-lg hover:bg-outline-variant transition-colors disabled:opacity-50">Change Password</button>
         </div>
 
-        <!-- GitHub token (private repos / batch branch list) -->
-        <div class="glass-panel rounded-xl p-6 mb-6">
+        <!-- GitHub token (private repos / batch branch list) — developers only -->
+        <div v-if="!auth.isAdmin" class="glass-panel rounded-xl p-6 mb-6">
           <div class="flex items-center gap-3 mb-4">
             <span class="material-symbols-outlined text-primary">key</span>
             <h2 class="text-lg font-bold text-on-surface">GitHub personal access token</h2>
