@@ -6,6 +6,7 @@ from . import views
 
 urlpatterns = [
     path('', views.EvaluationListView.as_view(), name='evaluation-list'),
+    path('chart/', views.EvaluationChartView.as_view(), name='evaluation-chart'),
     path('<int:pk>/', views.EvaluationDetailView.as_view(), name='evaluation-detail'),
     path('internal/', views.InternalEvaluationCreateView.as_view(), name='evaluation-internal-create'),
     

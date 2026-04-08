@@ -69,6 +69,7 @@ export const api = {
         dashboard: (projectId) => client.get('/evaluations/dashboard/', { params: { project: projectId } }),
         calendar: (projectId, month) => client.get('/evaluations/calendar/', { params: { project: projectId, month } }),
         trigger: (projectId, branches) => Promise.resolve({ data: { message: 'Use webhooks instead' } }),
+        chart: (params = {}) => client.get('/evaluations/chart/', { params: djangoListParams(params) }),
         patterns: (projectId) => client.get('/evaluations/patterns/', { params: projectId ? { project: projectId } : {} }),
         resolvePattern: (id, force = false) => client.post(`/evaluations/patterns/${id}/resolve/`, { force }),
     },

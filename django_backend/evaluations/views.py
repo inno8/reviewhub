@@ -79,9 +79,108 @@ class EvaluationListView(generics.ListAPIView):
         return qs
 
 
+class EvaluationChartView(APIView):
+    """Return evaluation data optimised for the score-over-time chart.
+
+    Each item includes a compact skill_summary (top affected skills)
+    and a delta vs the previous commit so the frontend can render
+    improvement / decline indicators without extra computation.
+    """
+
+    permission_classes = [permissions.IsAuthenticated]
+
+    def get(self, request):
+        user = request.user
+        is_admin = getattr(user, 'role', None) == 'admin' or getattr(user, 'is_staff', False)
+
+        if is_admin:
+            qs = Evaluation.objects.select_related('author', 'project')
+        else:
+            by_identity = Evaluation.objects.for_user(user).values_list('pk', flat=True)
+            by_project = Evaluation.objects.filter(
+                _user_can_access_project_q(user, "project")
+            ).values_list('pk', flat=True)
+            qs = Evaluation.objects.select_related('author', 'project').filter(
+                pk__in=set(by_identity) | set(by_project)
+            )
+
+        # Filters
+        project_id = request.query_params.get('project')
+        if project_id:
+            qs = qs.filter(project_id=project_id)
+
+        author_id = request.query_params.get('author')
+        if author_id:
+            qs = qs.filter(author_id=author_id)
+
+        # Only completed evaluations with a score
+        qs = qs.filter(status='completed', overall_score__isnull=False)
+
+        # Limit to last 50 evaluations, oldest first (for chart X axis)
+        evals = list(qs.order_by('-created_at')[:50])
+        evals.reverse()
+
+        # Prefetch findings + skills in bulk
+        eval_ids = [e.id for e in evals]
+        findings_qs = (
+            Finding.objects.filter(evaluation_id__in=eval_ids)
+            .select_related('evaluation')
+            .prefetch_related('skills')
+        )
+
+        # Build per-evaluation skill summary
+        eval_findings: dict = {}
+        for f in findings_qs:
+            eid = f.evaluation_id
+            if eid not in eval_findings:
+                eval_findings[eid] = []
+            eval_findings[eid].append(f)
+
+        result = []
+        prev_score = None
+        for ev in evals:
+            findings = eval_findings.get(ev.id, [])
+
+            # Skill counter
+            skill_counts: dict = {}
+            severities: dict = {}
+            for f in findings:
+                sev = (f.severity or 'info').lower()
+                severities[sev] = severities.get(sev, 0) + 1
+                for sk in f.skills.all():
+                    skill_counts[sk.name] = skill_counts.get(sk.name, 0) + 1
+
+            # Top 5 skills
+            top_skills = sorted(skill_counts.items(), key=lambda x: -x[1])[:5]
+
+            delta = round(ev.overall_score - prev_score, 1) if prev_score is not None else None
+
+            result.append({
+                'id': ev.id,
+                'commit_sha': ev.commit_sha,
+                'commit_message': ev.commit_message,
+                'branch': ev.branch,
+                'overall_score': round(ev.overall_score, 1),
+                'delta': delta,
+                'finding_count': len(findings),
+                'fixed_count': sum(1 for f in findings if f.is_fixed),
+                'severities': severities,
+                'top_skills': [{'name': s[0], 'count': s[1]} for s in top_skills],
+                'commit_complexity': ev.commit_complexity,
+                'files_changed': ev.files_changed,
+                'lines_added': ev.lines_added,
+                'lines_removed': ev.lines_removed,
+                'created_at': ev.created_at.isoformat(),
+                'author_name': ev.author.username if ev.author else ev.author_name,
+            })
+            prev_score = ev.overall_score
+
+        return Response(result)
+
+
 class EvaluationDetailView(generics.RetrieveAPIView):
     """Get evaluation details with findings."""
-    
+
     queryset = Evaluation.objects.prefetch_related('findings__skills')
     serializer_class = EvaluationSerializer
     permission_classes = [permissions.IsAuthenticated]
