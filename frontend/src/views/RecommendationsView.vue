@@ -8,7 +8,7 @@ const projectsStore = useProjectsStore();
 
 <template>
   <AppShell>
-    <div class="p-8 flex-1 max-w-4xl mx-auto w-full">
+    <div class="p-8 flex-1 max-w-6xl mx-auto w-full">
       <header class="mb-8">
         <span class="text-primary font-bold uppercase tracking-[0.2em] text-xs">Learning Path</span>
         <h1 class="text-3xl font-black tracking-tight text-on-surface mt-2">Recommendations</h1>
