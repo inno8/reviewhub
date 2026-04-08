@@ -896,6 +896,64 @@ const tabs = computed(() => {
               </div>
             </div>
 
+            <!-- What we see in your code -->
+            <div v-if="devProfileData.evaluation_insights?.evaluation_count" class="mb-6">
+              <h3 class="text-sm font-bold text-on-surface uppercase tracking-wider mb-3 flex items-center gap-2">
+                <span class="material-symbols-outlined text-tertiary text-base">analytics</span>
+                What we see in your code
+              </h3>
+
+              <!-- Top skill issues -->
+              <div v-if="devProfileData.evaluation_insights.top_skill_issues?.length"
+                class="p-4 rounded-xl bg-surface-container-low border border-outline-variant/10 mb-4">
+                <p class="text-xs text-outline uppercase tracking-wider mb-3">Where the LLM saw the most issues</p>
+                <ul class="space-y-2">
+                  <li v-for="row in devProfileData.evaluation_insights.top_skill_issues" :key="row.slug"
+                    class="flex justify-between text-sm">
+                    <span>{{ row.name }}</span>
+                    <span class="font-mono text-outline">{{ row.issue_count }}</span>
+                  </li>
+                </ul>
+              </div>
+
+              <!-- Severity visual bars -->
+              <div v-if="Object.keys(devProfileData.evaluation_insights.severity_breakdown || {}).length"
+                class="p-4 rounded-xl bg-surface-container-low border border-outline-variant/10 mb-4">
+                <p class="text-xs text-outline uppercase tracking-wider mb-3">Issue Severity Distribution</p>
+                <div class="space-y-3">
+                  <div v-for="(count, sev) in (devProfileData.evaluation_insights.severity_breakdown || {})" :key="sev"
+                    class="flex items-center gap-3">
+                    <span class="text-xs font-bold uppercase w-20"
+                      :class="{ 'text-red-400': sev === 'critical', 'text-orange-400': sev === 'warning', 'text-blue-400': sev === 'info', 'text-green-400': sev === 'suggestion' }">
+                      {{ sev }}
+                    </span>
+                    <div class="flex-1 bg-surface-container-lowest rounded-full h-4 overflow-hidden">
+                      <div class="h-full rounded-full transition-all"
+                        :class="{ 'bg-red-500': sev === 'critical', 'bg-orange-500': sev === 'warning', 'bg-blue-500': sev === 'info', 'bg-green-500': sev === 'suggestion' }"
+                        :style="{ width: devProfileData.evaluation_insights.total_findings ? (count / devProfileData.evaluation_insights.total_findings * 100) + '%' : '0%' }">
+                      </div>
+                    </div>
+                    <span class="text-sm font-bold w-8 text-right">{{ count }}</span>
+                  </div>
+                </div>
+              </div>
+
+              <!-- Developer Profile snapshot -->
+              <div v-if="devProfileData.developer_profile"
+                class="p-4 rounded-xl border border-primary/20 bg-primary/5">
+                <p class="text-xs text-primary font-bold uppercase tracking-wider mb-2">Profile snapshot</p>
+                <p class="text-sm capitalize">
+                  Level: <strong>{{ devProfileData.developer_profile.level }}</strong>
+                  · Score: <strong>{{ devProfileData.developer_profile.overall_score }}</strong>
+                  · Trend: <strong>{{ devProfileData.developer_profile.trend }}</strong>
+                </p>
+                <p v-if="devProfileData.developer_profile.commits_analyzed" class="text-xs text-outline mt-2">
+                  {{ devProfileData.developer_profile.commits_analyzed }} commits analyzed ·
+                  {{ devProfileData.developer_profile.total_findings }} findings
+                </p>
+              </div>
+            </div>
+
             <!-- Edit profile link -->
             <div class="border-t border-outline-variant/10 pt-4">
               <router-link to="/dev-profile-setup" class="text-primary text-sm font-semibold hover:underline flex items-center gap-1">
