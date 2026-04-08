@@ -185,19 +185,74 @@ class LearningRecommendationsView(APIView):
 
         # 5. Add profile context (user level)
         user_level = 'intermediate'
+        profile_weaknesses = []
         try:
             from batch.models import DeveloperProfile
             profile = DeveloperProfile.objects.get(user=request.user)
             user_level = profile.level
+            profile_weaknesses = profile.weaknesses or []
         except Exception:
             pass
 
         for rec in recommendations:
             rec['user_level'] = user_level
 
+        # 6. Recently mastered skills — skills that were weak but improved above 70
+        mastered_metrics = metrics.filter(
+            score__gte=70,
+            previous_score__isnull=False,
+            previous_score__lt=70,
+        ).order_by('-score')[:3]
+
+        for metric in mastered_metrics:
+            existing_ids = {r['skill']['id'] for r in recommendations}
+            if metric.skill.id not in existing_ids:
+                recommendations.append({
+                    'skill': {
+                        'id': metric.skill.id,
+                        'name': metric.skill.name,
+                        'slug': metric.skill.slug,
+                        'category': metric.skill.category.name,
+                    },
+                    'current_score': metric.score,
+                    'reason': f'Great progress! {metric.skill.name} improved from {metric.previous_score:.0f} to {metric.score:.0f}',
+                    'priority': 'mastered',
+                    'issue_count': metric.issue_count,
+                    'suggested_resources': self._get_advanced_resources(metric.skill.slug, primary_language),
+                    'improvement_tip': self._get_next_level_tip(metric.skill.slug, metric.score, primary_language),
+                    'user_level': user_level,
+                })
+
+        # 7. Growth opportunities — high-scoring skills to take to the next level
+        if len(recommendations) < limit:
+            growth_metrics = (
+                metrics
+                .filter(score__gte=70, score__lt=90)
+                .exclude(id__in=[m.id for m in mastered_metrics])
+                .order_by('-score')[:3]
+            )
+            existing_ids = {r['skill']['id'] for r in recommendations}
+            for metric in growth_metrics:
+                if metric.skill.id not in existing_ids and len(recommendations) < limit:
+                    recommendations.append({
+                        'skill': {
+                            'id': metric.skill.id,
+                            'name': metric.skill.name,
+                            'slug': metric.skill.slug,
+                            'category': metric.skill.category.name,
+                        },
+                        'current_score': metric.score,
+                        'reason': f'Good at {metric.skill.name} ({metric.score:.0f}/100) — push to expert level',
+                        'priority': 'growth',
+                        'issue_count': metric.issue_count,
+                        'suggested_resources': self._get_advanced_resources(metric.skill.slug, primary_language),
+                        'improvement_tip': self._get_next_level_tip(metric.skill.slug, metric.score, primary_language),
+                        'user_level': user_level,
+                    })
+
         # Sort by priority and limit
-        priority_order = {'high': 0, 'medium': 1, 'low': 2}
-        recommendations.sort(key=lambda x: priority_order.get(x['priority'], 3))
+        priority_order = {'high': 0, 'medium': 1, 'low': 2, 'mastered': 3, 'growth': 4}
+        recommendations.sort(key=lambda x: priority_order.get(x['priority'], 5))
 
         return Response(recommendations[:limit])
     
@@ -313,3 +368,66 @@ class LearningRecommendationsView(APIView):
             return f'{base_tip} Focus on preventing similar issues in new code.'
         else:
             return base_tip
+
+    ADVANCED_DOCS = {
+        'clean_code': {
+            'python': [{'title': 'Python: Advanced Design Patterns', 'type': 'article', 'url': 'https://refactoring.guru/design-patterns/python'}],
+            'javascript': [{'title': 'JavaScript: Clean Architecture', 'type': 'article', 'url': 'https://refactoring.guru/design-patterns/typescript'}],
+            '_default': [{'title': 'Refactoring Guru: Design Patterns', 'type': 'article', 'url': 'https://refactoring.guru/design-patterns'}],
+        },
+        'code_structure': {
+            '_default': [{'title': 'Refactoring Guru: SOLID Principles', 'type': 'article', 'url': 'https://refactoring.guru/solid'}],
+        },
+        'error_handling': {
+            'python': [{'title': 'Python: Custom Exception Hierarchies', 'type': 'documentation', 'url': 'https://docs.python.org/3/tutorial/errors.html#user-defined-exceptions'}],
+            '_default': [{'title': 'Error Handling Patterns in Distributed Systems', 'type': 'article', 'url': 'https://refactoring.guru/design-patterns/chain-of-responsibility'}],
+        },
+        'input_validation': {
+            '_default': [{'title': 'OWASP: Advanced Input Validation & Security Testing', 'type': 'documentation', 'url': 'https://owasp.org/www-project-web-security-testing-guide/latest/4-Web_Application_Security_Testing/07-Input_Validation_Testing/'}],
+        },
+        'database_queries': {
+            '_default': [{'title': 'Advanced SQL: Query Optimization & Indexing', 'type': 'article', 'url': 'https://use-the-index-luke.com/'}],
+        },
+        'xss_csrf_prevention': {
+            '_default': [{'title': 'OWASP: Advanced Security Headers & CSP', 'type': 'documentation', 'url': 'https://cheatsheetseries.owasp.org/cheatsheets/Content_Security_Policy_Cheat_Sheet.html'}],
+        },
+        'accessibility': {
+            '_default': [{'title': 'WAI-ARIA: Advanced Accessible Patterns', 'type': 'documentation', 'url': 'https://www.w3.org/WAI/ARIA/apg/patterns/'}],
+        },
+        'api_design': {
+            '_default': [{'title': 'API Design: Versioning, Pagination & HATEOAS', 'type': 'article', 'url': 'https://restfulapi.net/hateoas/'}],
+        },
+    }
+
+    NEXT_LEVEL_TIPS = {
+        'clean_code': 'You write clean code consistently. Level up by applying design patterns and teaching others through code reviews.',
+        'code_structure': 'Your code structure is solid. Focus on architectural patterns — how modules communicate and system boundaries.',
+        'dry_principle': 'You avoid duplication well. Now focus on the right abstractions — over-DRY code can be harder to read than some repetition.',
+        'error_handling': 'Your error handling is strong. Advance to resilience patterns: retries, circuit breakers, graceful degradation.',
+        'input_validation': 'Validation is on point. Explore fuzz testing and security-first design to proactively find edge cases.',
+        'edge_cases': 'You handle edge cases well. Push further with property-based testing to discover cases you haven\'t thought of.',
+        'secrets_management': 'Secrets are managed well. Look into secret rotation, audit logging, and zero-trust architecture.',
+        'database_queries': 'Your queries are safe. Level up with query optimization, explain plans, and indexing strategies.',
+        'xss_csrf_prevention': 'Security fundamentals are solid. Advance to Content Security Policy, security headers, and penetration testing.',
+        'accessibility': 'Great accessibility practices. Push to WCAG AA/AAA compliance and screen reader testing.',
+        'responsive_design': 'Responsive design is strong. Explore container queries, progressive enhancement, and performance budgets.',
+        'comments_docs': 'Documentation is good. Consider architecture decision records (ADRs) and automated doc generation.',
+    }
+
+    def _get_advanced_resources(self, skill_slug, primary_language=None):
+        """Get advanced resources for a skill the developer has mastered."""
+        lang = (primary_language or '').lower()
+        adv_docs = self.ADVANCED_DOCS.get(skill_slug, {})
+        resources = adv_docs.get(lang) or adv_docs.get('_default') or []
+        if not resources:
+            # Fall back to regular resources
+            return self._get_resources_for_skill(skill_slug, primary_language)
+        return resources
+
+    def _get_next_level_tip(self, skill_slug, current_score, primary_language=None):
+        """Get a tip for pushing a good skill to expert level."""
+        tip = self.NEXT_LEVEL_TIPS.get(skill_slug)
+        if tip:
+            return tip
+        readable = skill_slug.replace('_', ' ').title()
+        return f'You\'re doing well at {readable} ({current_score:.0f}/100). Look for advanced patterns and teach this skill to solidify your expertise.'

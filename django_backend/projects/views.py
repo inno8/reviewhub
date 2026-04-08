@@ -265,6 +265,38 @@ GitLab Webhook Setup:
             return 'See provider documentation for webhook setup.'
 
 
+class ProjectWebhookRegisterView(APIView):
+    """Auto-register a webhook on the Git provider for this project."""
+
+    permission_classes = [permissions.IsAuthenticated]
+
+    def post(self, request, pk):
+        project = get_object_or_404(Project, pk=pk)
+        if not _user_can_access_project_for_link(request.user, project):
+            return Response({'error': 'Forbidden'}, status=status.HTTP_403_FORBIDDEN)
+
+        if not project.repo_url:
+            return Response(
+                {'error': 'Link a repository first.'},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+        if project.provider != 'github':
+            return Response(
+                {'error': 'Auto-registration is currently supported for GitHub only.'},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+        from batch.webhook_setup import register_github_webhook
+        result = register_github_webhook(project, request.user)
+
+        if result.get('success'):
+            project.webhook_active = True
+            project.save(update_fields=['webhook_active'])
+
+        return Response(result, status=status.HTTP_200_OK if result.get('success') else status.HTTP_400_BAD_REQUEST)
+
+
 class ProjectWebhookTestView(APIView):
     """Test webhook connectivity for a project."""
 

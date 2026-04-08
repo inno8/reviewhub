@@ -171,6 +171,8 @@ const webhookProjectId = ref<number | null>(null);
 const webhookTestLoading = ref(false);
 const webhookTestResult = ref<{ success: boolean; message: string } | null>(null);
 const webhookRepoUrl = ref('');
+const webhookRegisterLoading = ref(false);
+const webhookRegisterResult = ref<{ success: boolean; message: string } | null>(null);
 
 const webhookUrls = computed(() => {
   const base = window.location.origin;
@@ -505,6 +507,27 @@ async function testNewLlm() {
     showToast(msg, 'error');
   } finally {
     llmTestLoading.value = null;
+  }
+}
+
+async function registerWebhook() {
+  if (!webhookProjectId.value) { showToast('Select a project first', 'error'); return; }
+  webhookRegisterLoading.value = true;
+  webhookRegisterResult.value = null;
+  try {
+    const { data } = await api.webhooks.register(webhookProjectId.value);
+    webhookRegisterResult.value = {
+      success: data.success,
+      message: data.message || (data.success ? 'Webhook registered!' : 'Registration failed'),
+    };
+    if (data.success) showToast('Webhook registered on GitHub!', 'success');
+  } catch (e: any) {
+    webhookRegisterResult.value = {
+      success: false,
+      message: e?.response?.data?.message || e?.response?.data?.error || 'Failed to register webhook',
+    };
+  } finally {
+    webhookRegisterLoading.value = false;
   }
 }
 
@@ -1061,6 +1084,33 @@ const tabs = computed(() => {
                 <strong>Tip:</strong> For a stable URL, use <code class="bg-surface-container-highest px-1 rounded">ngrok http 8001 --domain your-name.ngrok-free.dev</code> with a free static domain.
                 Every push to your repo will automatically trigger a code review.
               </p>
+            </div>
+          </div>
+
+          <!-- Auto-register webhook -->
+          <div class="border-t border-outline-variant/10 pt-6">
+            <h3 class="text-sm font-bold text-on-surface mb-4">Auto-Register Webhook</h3>
+            <p class="text-sm text-outline mb-4">
+              Automatically create a GitHub webhook on your repository. Requires a GitHub Personal Access Token with <code class="bg-surface-container-highest px-1 rounded">admin:repo_hook</code> scope.
+            </p>
+            <div class="flex flex-wrap gap-3 items-end">
+              <div>
+                <label class="text-xs font-bold uppercase tracking-widest text-outline block mb-2">Project</label>
+                <select v-model="webhookProjectId"
+                  class="bg-surface-container-lowest border border-outline-variant/30 rounded-lg text-on-surface text-sm focus:ring-1 focus:ring-primary/50 py-3 px-4">
+                  <option :value="null" disabled>Select project...</option>
+                  <option v-for="p in projectsStore.projects" :key="p.id" :value="p.id">{{ p.displayName }}</option>
+                </select>
+              </div>
+              <button @click="registerWebhook" :disabled="webhookRegisterLoading || !webhookProjectId"
+                class="primary-gradient text-on-primary font-bold py-3 px-6 rounded-lg disabled:opacity-50 flex items-center gap-2">
+                <span v-if="webhookRegisterLoading" class="material-symbols-outlined text-sm animate-spin">progress_activity</span>
+                <span class="material-symbols-outlined text-sm">add_link</span>
+                Register Webhook
+              </button>
+            </div>
+            <div v-if="webhookRegisterResult" class="mt-4 p-3 rounded-lg" :class="webhookRegisterResult.success ? 'bg-primary/10 border border-primary/20' : 'bg-error/10 border border-error/20'">
+              <p class="text-sm" :class="webhookRegisterResult.success ? 'text-primary' : 'text-error'">{{ webhookRegisterResult.message }}</p>
             </div>
           </div>
 

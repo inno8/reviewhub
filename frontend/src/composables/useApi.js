@@ -176,6 +176,7 @@ export const api = {
     },
     webhooks: {
         info: (projectId) => client.get(`/projects/${projectId}/webhook/`),
+        register: (projectId) => client.post(`/projects/${projectId}/webhook/register/`),
         test: (projectId) => client.post(`/projects/${projectId}/webhook/test/`),
     },
     batch: {

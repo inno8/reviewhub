@@ -46,10 +46,16 @@ async function markAsRead(notification: any) {
     notification.read = true;
     
     // Navigate based on notification type
-    if (notification.data?.finding_id) {
+    if (notification.type === 'weekly_summary') {
+      router.push('/dashboard');
+    } else if (notification.type === 'batch_summary') {
+      router.push('/dashboard');
+    } else if (notification.data?.finding_id) {
       router.push(`/findings/${notification.data.finding_id}`);
-    } else if (notification.data?.skill_id) {
+    } else if (notification.data?.skill_id || notification.type === 'skill_improvement') {
       router.push('/skills');
+    } else if (notification.type === 'team_update') {
+      router.push('/dashboard');
     }
   } catch (error) {
     console.error('Failed to mark notification as read:', error);
@@ -205,13 +211,42 @@ onMounted(() => {
               {{ notification.message }}
             </p>
 
-            <!-- Additional Data -->
-            <div v-if="notification.data" class="flex flex-wrap gap-2 text-xs">
+            <!-- Weekly Digest Details -->
+            <div v-if="notification.type === 'weekly_summary' && notification.data" class="mt-2">
+              <div class="flex flex-wrap gap-3 text-xs mb-2">
+                <span class="px-2 py-1 bg-primary/10 text-primary rounded font-medium">
+                  {{ notification.data.eval_count }} commits
+                </span>
+                <span class="px-2 py-1 bg-surface-container-highest rounded font-medium"
+                  :class="notification.data.avg_score >= 70 ? 'text-success' : notification.data.avg_score >= 50 ? 'text-warning' : 'text-error'">
+                  {{ notification.data.avg_score }}/100 avg
+                </span>
+                <span v-if="notification.data.total_findings" class="px-2 py-1 bg-error/10 text-error rounded font-medium">
+                  {{ notification.data.total_findings }} issues
+                </span>
+                <span v-if="notification.data.fixed_count" class="px-2 py-1 bg-success/10 text-success rounded font-medium">
+                  {{ notification.data.fixed_count }} fixed
+                </span>
+                <span class="px-2 py-1 rounded font-medium"
+                  :class="notification.data.trend === 'improving' ? 'bg-success/10 text-success' : notification.data.trend === 'declining' ? 'bg-error/10 text-error' : 'bg-surface-container-highest text-on-surface-variant'">
+                  {{ notification.data.trend === 'improving' ? 'Improving' : notification.data.trend === 'declining' ? 'Declining' : 'Stable' }}
+                </span>
+              </div>
+              <div v-if="notification.data.actions?.length" class="flex flex-wrap gap-2 text-xs">
+                <span v-for="action in notification.data.actions" :key="action"
+                  class="px-2 py-1 bg-primary/5 text-primary/80 rounded border border-primary/10">
+                  {{ action }}
+                </span>
+              </div>
+            </div>
+
+            <!-- Additional Data (findings, team updates) -->
+            <div v-else-if="notification.data" class="flex flex-wrap gap-2 text-xs">
               <span
                 v-if="notification.data.file_path"
                 class="px-2 py-1 bg-surface-container-highest rounded text-on-surface-variant"
               >
-                📁 {{ notification.data.file_path }}
+                {{ notification.data.file_path }}
               </span>
               <span
                 v-if="notification.data.severity"

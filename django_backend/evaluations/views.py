@@ -214,16 +214,47 @@ class InternalEvaluationCreateView(APIView):
         if author:
             self._auto_resolve_patterns(author, project)
 
-        # Update DeveloperProfile level with composite calculation
+        # Update DeveloperProfile with composite calculation + history
         if author:
             try:
                 from skills.level_calculator import compute_level_for_user
                 from batch.models import DeveloperProfile
-                level_data = compute_level_for_user(author)
-                DeveloperProfile.objects.filter(user=author).update(
-                    level=level_data['level'],
-                    overall_score=level_data['composite_score'],
-                )
+                from django.utils import timezone as tz
+
+                profile = DeveloperProfile.objects.filter(user=author).first()
+                if profile:
+                    level_data = compute_level_for_user(author)
+                    new_score = level_data['composite_score']
+
+                    # Append to score_history
+                    history = list(profile.score_history or [])
+                    today = tz.now().strftime('%Y-%m-%d')
+                    if history and history[-1].get('date') == today:
+                        history[-1]['score'] = new_score
+                    else:
+                        history.append({'date': today, 'score': new_score})
+                    history = history[-90:]
+
+                    # Update strengths/weaknesses
+                    from skills.models import SkillMetric
+                    metrics = SkillMetric.objects.filter(user=author).select_related('skill').order_by('score')
+                    weaknesses = [m.skill.id for m in metrics if m.score < 50][:5]
+                    strengths = [m.skill.id for m in metrics.order_by('-score') if m.score > 75][:5]
+
+                    # Update counts
+                    total_findings = Finding.objects.filter(
+                        evaluation__in=Evaluation.objects.for_user(author)
+                    ).count()
+
+                    profile.level = level_data['level']
+                    profile.overall_score = new_score
+                    profile.score_history = history
+                    profile.strengths = strengths
+                    profile.weaknesses = weaknesses
+                    profile.total_findings = total_findings
+                    profile.last_commit_date = tz.now().date()
+                    profile.trend = profile.calculate_trend()
+                    profile.save()
             except Exception:
                 pass
 
@@ -575,8 +606,63 @@ class MarkFindingFixedView(APIView):
         
         commit_sha = request.data.get('commit_sha')
         finding.mark_fixed(commit_sha)
-        
+
+        # Recalculate DeveloperProfile after fix
+        author = finding.evaluation.author if finding.evaluation else None
+        if author:
+            self._update_developer_profile(author)
+
         return Response(FindingSerializer(finding).data)
+
+    @staticmethod
+    def _update_developer_profile(user):
+        """Recalculate DeveloperProfile level, score, and trend after a fix."""
+        try:
+            from skills.level_calculator import compute_level_for_user
+            from batch.models import DeveloperProfile
+            from django.utils import timezone
+
+            profile = DeveloperProfile.objects.filter(user=user).first()
+            if not profile:
+                return
+
+            level_data = compute_level_for_user(user)
+            new_score = level_data['composite_score']
+
+            # Append to score_history
+            history = list(profile.score_history or [])
+            today = timezone.now().strftime('%Y-%m-%d')
+            # Update today's entry if it exists, otherwise append
+            if history and history[-1].get('date') == today:
+                history[-1]['score'] = new_score
+            else:
+                history.append({'date': today, 'score': new_score})
+            # Keep last 90 entries
+            history = history[-90:]
+
+            # Update strengths/weaknesses from current skill metrics
+            from skills.models import SkillMetric
+            metrics = SkillMetric.objects.filter(user=user).select_related('skill').order_by('score')
+            weaknesses = [m.skill.id for m in metrics if m.score < 50][:5]
+            strengths = [m.skill.id for m in metrics.order_by('-score') if m.score > 75][:5]
+
+            # Update fix count
+            from evaluations.models import Finding, Evaluation
+            total_fixes = Finding.objects.filter(
+                evaluation__in=Evaluation.objects.for_user(user),
+                is_fixed=True,
+            ).count()
+
+            profile.level = level_data['level']
+            profile.overall_score = new_score
+            profile.score_history = history
+            profile.strengths = strengths
+            profile.weaknesses = weaknesses
+            profile.total_fixes = total_fixes
+            profile.trend = profile.calculate_trend()
+            profile.save()
+        except Exception:
+            pass
 
 
 class CheckUnderstandingView(APIView):
@@ -671,6 +757,18 @@ class CheckUnderstandingView(APIView):
                 'feedback': finding.understanding_feedback,
                 'deeper_explanation': llm_result.get('deeper_explanation', ''),
             })
+
+        # Recalculate DeveloperProfile after understanding checks
+        if results:
+            try:
+                first_finding = Finding.objects.select_related('evaluation__author').get(
+                    pk=results[0]['finding_id']
+                )
+                author = first_finding.evaluation.author if first_finding.evaluation else None
+                if author:
+                    MarkFindingFixedView._update_developer_profile(author)
+            except Exception:
+                pass
 
         return Response({'results': results})
 

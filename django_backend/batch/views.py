@@ -348,10 +348,18 @@ class BatchJobInternalUpdateView(APIView):
             except Exception as e:
                 print(f"Failed to build profile for job {job.id}: {e}")
 
-            # Activate webhook for future push-based analysis
+            # Auto-register webhook for future push-based analysis
             if job.project and not job.project.webhook_active:
-                job.project.webhook_active = True
-                job.project.save(update_fields=['webhook_active'])
+                from .webhook_setup import register_github_webhook
+                try:
+                    result = register_github_webhook(job.project, job.user)
+                    if result.get('success'):
+                        job.project.webhook_active = True
+                        job.project.save(update_fields=['webhook_active'])
+                    else:
+                        print(f"Webhook registration failed for project {job.project.id}: {result.get('message')}")
+                except Exception as e:
+                    print(f"Webhook registration error for project {job.project.id}: {e}")
 
         serializer = BatchJobSerializer(job)
         return Response(serializer.data)
