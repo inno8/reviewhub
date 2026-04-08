@@ -166,6 +166,23 @@ watch(
   { flush: 'post' }
 );
 
+// Dev profile (developer)
+const devProfileData = ref<any>(null);
+const devProfileLoading = ref(false);
+
+async function loadDevProfile() {
+  devProfileLoading.value = true;
+  try {
+    const { data } = await api.devProfile.calibration();
+    devProfileData.value = data;
+  } catch { devProfileData.value = null; }
+  finally { devProfileLoading.value = false; }
+}
+
+function formatProfileKey(k: string): string {
+  return k.replace(/_/g, ' ');
+}
+
 // Webhook config (developer)
 const webhookProjectId = ref<number | null>(null);
 const webhookTestLoading = ref(false);
@@ -273,6 +290,7 @@ onMounted(async () => {
     }
   } else {
     await loadGitConnections();
+    loadDevProfile();
   }
   if (!auth.isAdmin && projectsStore.projects.length) {
     webhookProjectId.value = projectsStore.selectedProjectId;
@@ -588,6 +606,7 @@ const tabs = computed(() => {
   ];
   if (auth.isAdmin) t.push({ id: 'llm', label: 'LLM Config', icon: 'smart_toy' });
   if (!auth.isAdmin) {
+    t.push({ id: 'dev-profile', label: 'Dev Profile', icon: 'psychology' });
     t.push({ id: 'git', label: 'Git account', icon: 'link' });
     t.push({ id: 'webhooks', label: 'Webhooks', icon: 'webhook' });
   }
@@ -781,6 +800,110 @@ const tabs = computed(() => {
             </label>
           </div>
           <button @click="saveNotifications" class="bg-surface-container-highest text-on-surface font-bold py-3 px-6 rounded-lg hover:bg-outline-variant transition-colors">Save Preferences</button>
+        </div>
+      </template>
+
+      <!-- Dev Profile Tab (Developer only) -->
+      <template v-if="activeTab === 'dev-profile' && !auth.isAdmin">
+        <div class="glass-panel rounded-xl p-6 mb-6">
+          <div class="flex items-center gap-3 mb-6">
+            <span class="material-symbols-outlined text-primary">psychology</span>
+            <div>
+              <h2 class="text-lg font-bold text-on-surface">Developer Profile</h2>
+              <p class="text-xs text-outline">Your questionnaire answers and code-derived insights</p>
+            </div>
+          </div>
+
+          <div v-if="devProfileLoading" class="flex items-center gap-3 py-8 text-outline">
+            <span class="material-symbols-outlined animate-spin text-2xl">progress_activity</span>
+            Loading profile...
+          </div>
+
+          <div v-else-if="!devProfileData" class="text-center py-8">
+            <span class="material-symbols-outlined text-5xl text-outline mb-3">person_off</span>
+            <p class="text-on-surface-variant text-sm mb-4">No profile yet. Complete the onboarding questionnaire to set up your profile.</p>
+            <router-link to="/dev-profile-setup" class="primary-gradient text-on-primary font-bold py-2 px-6 rounded-lg inline-block">
+              Set Up Profile
+            </router-link>
+          </div>
+
+          <template v-else>
+            <!-- Questionnaire summary -->
+            <div v-if="devProfileData.questionnaire" class="mb-6">
+              <h3 class="text-sm font-bold text-on-surface uppercase tracking-wider mb-3">What you told us</h3>
+              <div class="grid gap-4 sm:grid-cols-2">
+                <div class="p-4 rounded-xl bg-surface-container-low border border-outline-variant/10">
+                  <p class="text-xs text-outline uppercase tracking-wider mb-1">Role &amp; Experience</p>
+                  <p class="text-sm font-semibold capitalize">
+                    {{ formatProfileKey(devProfileData.questionnaire.job_role || '—') }} ·
+                    {{ devProfileData.questionnaire.experience_years ?? '—' }} yrs
+                  </p>
+                  <p class="text-sm text-on-surface-variant mt-1">
+                    {{ devProfileData.questionnaire.primary_language }}
+                    <span v-if="devProfileData.questionnaire.other_languages?.length">
+                      · also {{ devProfileData.questionnaire.other_languages.join(', ') }}
+                    </span>
+                  </p>
+                </div>
+                <div class="p-4 rounded-xl bg-surface-container-low border border-outline-variant/10">
+                  <p class="text-xs text-outline uppercase tracking-wider mb-1">Goals &amp; Learning</p>
+                  <p class="text-sm">
+                    <span class="font-medium capitalize">{{ formatProfileKey(devProfileData.questionnaire.current_goal || '—') }}</span>
+                    ·
+                    <span class="capitalize">{{ formatProfileKey(devProfileData.questionnaire.learning_style || '—') }}</span>
+                  </p>
+                  <p class="text-sm text-on-surface-variant mt-1 capitalize">
+                    Focus: {{ formatProfileKey(devProfileData.questionnaire.want_to_improve || '—') }}
+                  </p>
+                </div>
+              </div>
+            </div>
+
+            <!-- Code insights summary -->
+            <div v-if="devProfileData.evaluation_insights?.evaluation_count" class="mb-6">
+              <h3 class="text-sm font-bold text-on-surface uppercase tracking-wider mb-3">Code Insights</h3>
+              <div class="grid grid-cols-2 sm:grid-cols-4 gap-3">
+                <div class="p-3 rounded-lg bg-surface-container-low text-center">
+                  <p class="text-lg font-black">{{ devProfileData.evaluation_insights.evaluation_count }}</p>
+                  <p class="text-[10px] text-outline">Commits Analyzed</p>
+                </div>
+                <div class="p-3 rounded-lg bg-surface-container-low text-center">
+                  <p class="text-lg font-black">{{ devProfileData.evaluation_insights.total_findings }}</p>
+                  <p class="text-[10px] text-outline">Total Findings</p>
+                </div>
+                <div class="p-3 rounded-lg bg-surface-container-low text-center">
+                  <p class="text-lg font-black" :class="(devProfileData.evaluation_insights.avg_score || 0) >= 70 ? 'text-success' : (devProfileData.evaluation_insights.avg_score || 0) >= 50 ? 'text-warning' : 'text-error'">
+                    {{ Math.round(devProfileData.evaluation_insights.avg_score || 0) }}%
+                  </p>
+                  <p class="text-[10px] text-outline">Avg Score</p>
+                </div>
+                <div class="p-3 rounded-lg bg-surface-container-low text-center">
+                  <p class="text-lg font-black">{{ devProfileData.evaluation_insights.skills_count || 0 }}</p>
+                  <p class="text-[10px] text-outline">Skills Tracked</p>
+                </div>
+              </div>
+            </div>
+
+            <!-- Severity breakdown -->
+            <div v-if="devProfileData.evaluation_insights?.severity_distribution" class="mb-6">
+              <h3 class="text-sm font-bold text-on-surface uppercase tracking-wider mb-3">Severity Breakdown</h3>
+              <div class="flex gap-3">
+                <div v-for="(count, sev) in devProfileData.evaluation_insights.severity_distribution" :key="sev"
+                  class="px-3 py-2 rounded-lg text-sm font-medium"
+                  :class="sev === 'critical' || sev === 'error' ? 'bg-error/10 text-error' : sev === 'warning' ? 'bg-warning/10 text-warning' : 'bg-info/10 text-info'">
+                  {{ count }} {{ sev }}
+                </div>
+              </div>
+            </div>
+
+            <!-- Edit profile link -->
+            <div class="border-t border-outline-variant/10 pt-4">
+              <router-link to="/dev-profile-setup" class="text-primary text-sm font-semibold hover:underline flex items-center gap-1">
+                <span class="material-symbols-outlined text-sm">edit</span>
+                Edit Questionnaire
+              </router-link>
+            </div>
+          </template>
         </div>
       </template>
 
