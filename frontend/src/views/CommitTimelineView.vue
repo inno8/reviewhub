@@ -346,6 +346,21 @@ function nextPage() { if (page.value < totalPages.value) page.value++; }
         </div>
 
         <div class="flex items-center gap-3">
+          <!-- View toggle (first) -->
+          <button
+            @click="toggleView"
+            class="flex items-center gap-2 px-3 py-2 rounded-lg border transition-all"
+            :class="viewMode === 'chart'
+              ? 'bg-primary/15 border-primary/30 text-primary'
+              : 'bg-surface-container border-outline-variant/20 text-outline hover:text-on-surface'"
+            :title="viewMode === 'list' ? 'Switch to chart view' : 'Switch to list view'"
+          >
+            <span class="material-symbols-outlined text-sm">
+              {{ viewMode === 'list' ? 'show_chart' : 'view_list' }}
+            </span>
+            <span class="text-sm font-medium hidden sm:inline">{{ viewMode === 'list' ? 'Chart' : 'List' }}</span>
+          </button>
+
           <!-- Admin: developer filter -->
           <div v-if="authStore.isAdmin && adminUsers.length" class="flex items-center gap-2 px-3 py-2 bg-surface-container rounded-lg border border-outline-variant/20">
             <span class="material-symbols-outlined text-sm text-outline">person</span>
@@ -366,21 +381,6 @@ function nextPage() { if (page.value < totalPages.value) page.value++; }
               <option v-for="p in projectsStore.projects" :key="p.id" :value="p.id">{{ p.displayName }}</option>
             </select>
           </div>
-
-          <!-- View toggle -->
-          <button
-            @click="toggleView"
-            class="flex items-center gap-2 px-3 py-2 rounded-lg border transition-all"
-            :class="viewMode === 'chart'
-              ? 'bg-primary/15 border-primary/30 text-primary'
-              : 'bg-surface-container border-outline-variant/20 text-outline hover:text-on-surface'"
-            :title="viewMode === 'list' ? 'Switch to chart view' : 'Switch to list view'"
-          >
-            <span class="material-symbols-outlined text-sm">
-              {{ viewMode === 'list' ? 'show_chart' : 'view_list' }}
-            </span>
-            <span class="text-sm font-medium hidden sm:inline">{{ viewMode === 'list' ? 'Chart' : 'List' }}</span>
-          </button>
 
           <!-- Date filter badge -->
           <div v-if="dateFilter"
@@ -589,7 +589,7 @@ function nextPage() { if (page.value < totalPages.value) page.value++; }
                 <span class="flex items-center gap-1"><span class="w-2 h-2 rounded-full bg-error"></span> Needs work (&lt;50)</span>
               </div>
             </div>
-            <div class="relative h-80">
+            <div class="relative h-[500px]">
               <Line :data="chartConfig.data" :options="chartConfig.options" />
 
               <!-- Custom tooltip overlay -->
