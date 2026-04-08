@@ -42,7 +42,7 @@ const navItems = [
   { name: 'Skills', icon: 'school', path: '/skills' },
   { name: 'Recommendations', icon: 'route', path: '/recommendations', devOnly: true },
   { name: 'Insights', icon: 'analytics', path: '/insights' },
-  { name: 'Dev profile', icon: 'psychology', path: '/dev-profile/results', adminOnly: true },
+  { name: 'Dev Profile', icon: 'psychology', path: '/dev-profile/results', adminOnly: true },
   { name: 'Batch Analysis', icon: 'history', path: '/batch', devOnly: true },
   { name: 'Commit Timeline', icon: 'timeline', path: '/timeline' },
   { name: 'Team Management', icon: 'group', path: '/team', adminOnly: true },
@@ -574,6 +574,19 @@ function toggleAllBranches(selected: boolean) {
       >
         <span class="material-symbols-outlined">settings</span>
         <span>Settings</span>
+      </router-link>
+      <router-link
+        v-if="!auth.isAdmin"
+        to="/dev-profile/results"
+        :class="[
+          'rounded-lg mx-2 my-1 px-4 py-3 flex items-center gap-3 transition-transform active:translate-x-1 text-sm font-medium',
+          isActive('/dev-profile/results')
+            ? 'bg-surface-container text-primary'
+            : 'text-outline hover:bg-surface-container/50 hover:text-on-surface'
+        ]"
+      >
+        <span class="material-symbols-outlined">psychology</span>
+        <span>Dev Profile</span>
       </router-link>
       <a
         href="#"
