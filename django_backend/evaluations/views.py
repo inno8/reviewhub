@@ -52,19 +52,31 @@ class EvaluationListView(generics.ListAPIView):
 
         # Admins see every evaluation (for the commit timeline and file review)
         if getattr(user, 'role', None) == 'admin' or getattr(user, 'is_staff', False):
-            return Evaluation.objects.select_related('author', 'project')
+            qs = Evaluation.objects.select_related('author', 'project')
+        else:
+            # Developers see evaluations they authored (by FK or email identity) +
+            # evaluations belonging to projects they have access to
+            by_identity = Evaluation.objects.for_user(user).values_list('pk', flat=True)
+            by_project = Evaluation.objects.filter(
+                _user_can_access_project_q(user, "project")
+            ).values_list('pk', flat=True)
 
-        # Developers see evaluations they authored (by FK or email identity) +
-        # evaluations belonging to projects they have access to
-        by_identity = Evaluation.objects.for_user(user).values_list('pk', flat=True)
-        by_project = Evaluation.objects.filter(
-            _user_can_access_project_q(user, "project")
-        ).values_list('pk', flat=True)
+            all_ids = set(by_identity) | set(by_project)
+            qs = Evaluation.objects.select_related('author', 'project').filter(
+                pk__in=all_ids
+            )
 
-        all_ids = set(by_identity) | set(by_project)
-        return Evaluation.objects.select_related('author', 'project').filter(
-            pk__in=all_ids
-        )
+        # Date filter: ?date=YYYY-MM-DD
+        date_str = self.request.query_params.get('date')
+        if date_str:
+            from datetime import datetime
+            try:
+                dt = datetime.strptime(date_str, '%Y-%m-%d').date()
+                qs = qs.filter(created_at__date=dt)
+            except ValueError:
+                pass
+
+        return qs
 
 
 class EvaluationDetailView(generics.RetrieveAPIView):

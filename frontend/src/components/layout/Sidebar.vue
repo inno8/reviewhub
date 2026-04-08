@@ -137,25 +137,15 @@ function isSelected(day: number): boolean {
 
 async function selectDate(day: number) {
   const dateStr = formatDateStr(day);
-  
+
   if (selectedDate.value === dateStr) {
     selectedDate.value = null;
-    if (projectsStore.selectedProjectId) {
-      await findingsStore.fetchFindings({ projectId: projectsStore.selectedProjectId });
-    }
   } else {
     selectedDate.value = dateStr;
-    if (projectsStore.selectedProjectId) {
-      await findingsStore.fetchFindings({ 
-        projectId: projectsStore.selectedProjectId,
-        date: dateStr 
-      });
-    }
   }
-  
-  if (route.path !== '/') {
-    router.push('/');
-  }
+
+  // Navigate to commit timeline filtered by selected date
+  router.push({ path: '/timeline', query: selectedDate.value ? { date: selectedDate.value } : {} });
 }
 
 function prevMonth() {

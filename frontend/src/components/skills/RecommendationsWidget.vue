@@ -108,12 +108,12 @@ onMounted(() => {
       </p>
     </div>
 
-    <!-- Recommendations List -->
-    <div v-else class="space-y-4">
+    <!-- Recommendations Grid -->
+    <div v-else class="grid grid-cols-1 md:grid-cols-2 gap-4">
       <div
         v-for="recommendation in recommendations"
         :key="recommendation.skill.id"
-        class="bg-surface-container rounded-lg p-4 border border-outline-variant/20 hover:shadow-md transition-shadow"
+        class="bg-surface-container rounded-lg p-4 border border-outline-variant/20 hover:shadow-md transition-shadow flex flex-col"
       >
         <!-- Header -->
         <div class="flex items-start justify-between mb-3">

@@ -1,12 +1,13 @@
 <script setup lang="ts">
 import { ref, computed, onMounted, watch } from 'vue';
-import { useRouter } from 'vue-router';
+import { useRouter, useRoute } from 'vue-router';
 import AppShell from '@/components/layout/AppShell.vue';
 import { api } from '@/composables/useApi';
 import { useProjectsStore } from '@/stores/projects';
 import { useAuthStore } from '@/stores/auth';
 
 const router = useRouter();
+const route = useRoute();
 const projectsStore = useProjectsStore();
 const authStore = useAuthStore();
 
@@ -16,6 +17,7 @@ const page = ref(1);
 const pageSize = 20;
 const total = ref(0);
 const searchQuery = ref('');
+const dateFilter = ref<string | null>(null);
 
 // Admin user selector
 const adminUsers = ref<any[]>([]);
@@ -78,6 +80,7 @@ async function load() {
     const { data } = await api.evaluations.list({
       ...(projectId != null ? { projectId } : {}),
       ...(selectedAuthorId.value ? { author: selectedAuthorId.value } : {}),
+      ...(dateFilter.value ? { date: dateFilter.value } : {}),
       limit: pageSize,
       page: page.value,
     });
@@ -94,7 +97,18 @@ async function load() {
 onMounted(async () => {
   await projectsStore.fetchProjects();
   if (authStore.isAdmin) await loadAdminUsers();
+  // Read date filter from query param
+  if (route.query.date) {
+    dateFilter.value = String(route.query.date);
+  }
   await load();
+});
+
+// Watch for route query changes (e.g. calendar click while already on timeline)
+watch(() => route.query.date, (newDate) => {
+  dateFilter.value = newDate ? String(newDate) : null;
+  page.value = 1;
+  load();
 });
 
 watch(selectedAuthorId, () => { page.value = 1; load(); });
@@ -146,6 +160,17 @@ function nextPage() { if (page.value < totalPages.value) page.value++; }
             >
               <option v-for="p in projectsStore.projects" :key="p.id" :value="p.id">{{ p.displayName }}</option>
             </select>
+          </div>
+
+          <!-- Date filter badge -->
+          <div v-if="dateFilter"
+            class="flex items-center gap-2 px-3 py-2 bg-primary/10 rounded-lg border border-primary/20">
+            <span class="material-symbols-outlined text-sm text-primary">calendar_today</span>
+            <span class="text-sm text-primary font-medium">{{ dateFilter }}</span>
+            <button @click="dateFilter = null; router.replace({ query: {} }); page = 1; load();"
+              class="text-primary hover:text-error transition-colors">
+              <span class="material-symbols-outlined text-sm">close</span>
+            </button>
           </div>
 
           <div class="flex items-center gap-2 px-3 py-2 bg-surface-container rounded-lg border border-outline-variant/20">
