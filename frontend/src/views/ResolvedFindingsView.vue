@@ -15,8 +15,13 @@ const loading = ref(false);
 const selectedProject = ref('');
 const selectedUser = ref('');
 const users = ref<any[]>([]);
+const expandedId = ref<number | null>(null);
 
 const isAdmin = computed(() => authStore.user?.role === 'admin' || authStore.user?.role === 'ADMIN');
+
+function toggleExpand(id: number) {
+  expandedId.value = expandedId.value === id ? null : id;
+}
 
 async function loadFindings() {
   loading.value = true;
@@ -131,67 +136,113 @@ onMounted(async () => {
         <p class="text-sm text-outline mt-1">Complete Fix & Learn and mark issues as fixed to see them here.</p>
       </div>
 
-      <!-- Table -->
-      <div v-else class="bg-surface-container rounded-2xl border border-outline-variant/10 overflow-hidden">
-        <div class="overflow-x-auto">
-          <table class="w-full text-sm">
-            <thead>
-              <tr class="border-b border-outline-variant/10 text-left">
-                <th class="px-4 py-3 text-xs font-bold text-on-surface-variant uppercase tracking-wide">Finding</th>
-                <th class="px-4 py-3 text-xs font-bold text-on-surface-variant uppercase tracking-wide">Severity</th>
-                <th class="px-4 py-3 text-xs font-bold text-on-surface-variant uppercase tracking-wide">Understanding</th>
-                <th class="px-4 py-3 text-xs font-bold text-on-surface-variant uppercase tracking-wide">File</th>
-                <th class="px-4 py-3 text-xs font-bold text-on-surface-variant uppercase tracking-wide">Found</th>
-                <th class="px-4 py-3 text-xs font-bold text-on-surface-variant uppercase tracking-wide">Fixed</th>
-                <th class="px-4 py-3 text-xs font-bold text-on-surface-variant uppercase tracking-wide">Fix Commit</th>
-                <th v-if="isAdmin" class="px-4 py-3 text-xs font-bold text-on-surface-variant uppercase tracking-wide">Developer</th>
-                <th class="px-4 py-3 text-xs font-bold text-on-surface-variant uppercase tracking-wide">Project</th>
-                <th class="px-4 py-3"></th>
-              </tr>
-            </thead>
-            <tbody>
-              <tr v-for="f in findings" :key="f.id"
-                class="border-b border-outline-variant/5 hover:bg-surface-container-high/50 transition-colors cursor-pointer"
-                @click="goToReview(f)">
-                <td class="px-4 py-3">
-                  <p class="text-on-surface font-medium truncate max-w-[250px]">{{ f.title }}</p>
-                </td>
-                <td class="px-4 py-3">
-                  <span :class="severityColor(f.severity)" class="px-2 py-0.5 rounded-full text-xs font-bold uppercase">
-                    {{ f.severity }}
-                  </span>
-                </td>
-                <td class="px-4 py-3">
-                  <span :class="understandingBadge(f.understanding_level).class"
-                    class="px-2 py-0.5 rounded-full text-xs font-bold">
-                    {{ understandingBadge(f.understanding_level).label }}
-                  </span>
-                </td>
-                <td class="px-4 py-3 text-on-surface-variant font-mono text-xs truncate max-w-[180px]">
-                  {{ f.file_path }}
-                </td>
-                <td class="px-4 py-3 text-on-surface-variant text-xs whitespace-nowrap">
-                  {{ formatDate(f.evaluation_date) }}
-                </td>
-                <td class="px-4 py-3 text-green-400 text-xs whitespace-nowrap">
-                  {{ formatDate(f.fixed_at) }}
-                </td>
-                <td class="px-4 py-3 font-mono text-xs">
-                  <span v-if="f.fixed_in_commit" class="text-primary">{{ shortSha(f.fixed_in_commit) }}</span>
-                  <span v-else class="text-outline">-</span>
-                </td>
-                <td v-if="isAdmin" class="px-4 py-3 text-on-surface-variant text-xs">
-                  {{ f.author_name || f.author_email }}
-                </td>
-                <td class="px-4 py-3 text-on-surface-variant text-xs">
-                  {{ f.project_name }}
-                </td>
-                <td class="px-4 py-3">
-                  <span class="material-symbols-outlined text-sm text-outline">chevron_right</span>
-                </td>
-              </tr>
-            </tbody>
-          </table>
+      <!-- Cards list -->
+      <div v-else class="space-y-3">
+        <div v-for="f in findings" :key="f.id"
+          class="bg-surface-container rounded-xl border border-outline-variant/10 overflow-hidden transition-all"
+          :class="expandedId === f.id ? 'ring-1 ring-primary/30' : ''">
+
+          <!-- Summary row (always visible) -->
+          <div class="flex items-center gap-3 px-5 py-4 cursor-pointer hover:bg-surface-container-high/50 transition-colors"
+            @click="toggleExpand(f.id)">
+            <!-- Expand icon -->
+            <span class="material-symbols-outlined text-lg text-outline transition-transform"
+              :class="expandedId === f.id ? 'rotate-90' : ''">
+              chevron_right
+            </span>
+
+            <!-- Severity -->
+            <span :class="severityColor(f.severity)" class="px-2 py-0.5 rounded-full text-xs font-bold uppercase shrink-0">
+              {{ f.severity }}
+            </span>
+
+            <!-- Title -->
+            <p class="text-on-surface font-medium flex-1 truncate">{{ f.title }}</p>
+
+            <!-- Understanding badge -->
+            <span :class="understandingBadge(f.understanding_level).class"
+              class="px-2 py-0.5 rounded-full text-xs font-bold shrink-0">
+              {{ understandingBadge(f.understanding_level).label }}
+            </span>
+
+            <!-- Fix commit -->
+            <span v-if="f.fixed_in_commit" class="font-mono text-xs text-primary shrink-0">{{ shortSha(f.fixed_in_commit) }}</span>
+
+            <!-- Fixed date -->
+            <span class="text-xs text-green-400 shrink-0 whitespace-nowrap">{{ formatDate(f.fixed_at) }}</span>
+
+            <!-- Project / Author -->
+            <span class="text-xs text-on-surface-variant shrink-0 hidden sm:inline">{{ f.project_name }}</span>
+            <span v-if="isAdmin" class="text-xs text-outline shrink-0 hidden md:inline">{{ f.author_name }}</span>
+          </div>
+
+          <!-- Expanded detail panel -->
+          <div v-if="expandedId === f.id" class="border-t border-outline-variant/10 px-5 py-5 space-y-5 bg-surface/50">
+
+            <!-- Meta row -->
+            <div class="flex flex-wrap gap-x-6 gap-y-2 text-xs text-on-surface-variant">
+              <span><b class="text-on-surface">File:</b> {{ f.file_path }}:{{ f.line_start }}</span>
+              <span><b class="text-on-surface">Found:</b> {{ formatDate(f.evaluation_date) }} in commit {{ shortSha(f.commit_sha) }}</span>
+              <span><b class="text-on-surface">Fixed:</b> {{ formatDate(f.fixed_at) }}
+                <span v-if="f.fixed_in_commit"> in commit <span class="text-primary font-mono">{{ shortSha(f.fixed_in_commit) }}</span></span>
+              </span>
+              <span v-if="isAdmin"><b class="text-on-surface">Developer:</b> {{ f.author_name }} ({{ f.author_email }})</span>
+            </div>
+
+            <!-- Description -->
+            <div>
+              <h4 class="text-xs font-bold text-on-surface-variant uppercase tracking-wide mb-1.5">Issue Description</h4>
+              <p class="text-sm text-on-surface leading-relaxed">{{ f.description }}</p>
+            </div>
+
+            <!-- Code: Original vs Suggested -->
+            <div class="grid grid-cols-1 md:grid-cols-2 gap-3">
+              <div v-if="f.original_code">
+                <h4 class="text-xs font-bold text-red-400 uppercase tracking-wide mb-1.5">Original Code</h4>
+                <pre class="text-xs text-on-surface bg-red-500/5 border border-red-500/10 rounded-lg p-3 overflow-x-auto font-mono whitespace-pre-wrap">{{ f.original_code }}</pre>
+              </div>
+              <div v-if="f.suggested_code">
+                <h4 class="text-xs font-bold text-green-400 uppercase tracking-wide mb-1.5">Suggested Fix</h4>
+                <pre class="text-xs text-on-surface bg-green-500/5 border border-green-500/10 rounded-lg p-3 overflow-x-auto font-mono whitespace-pre-wrap">{{ f.suggested_code }}</pre>
+              </div>
+            </div>
+
+            <!-- Explanation from LLM -->
+            <div v-if="f.explanation">
+              <h4 class="text-xs font-bold text-blue-400 uppercase tracking-wide mb-1.5">Why This Matters</h4>
+              <p class="text-sm text-on-surface-variant leading-relaxed">{{ f.explanation }}</p>
+            </div>
+
+            <!-- Developer's understanding -->
+            <div v-if="f.developer_explanation" class="bg-surface-container rounded-lg border border-outline-variant/10 p-4 space-y-3">
+              <div class="flex items-center gap-2">
+                <span class="material-symbols-outlined text-sm" :class="{
+                  'text-green-400': f.understanding_level === 'got_it',
+                  'text-amber-400': f.understanding_level === 'partial',
+                  'text-red-400': f.understanding_level === 'not_yet',
+                }">school</span>
+                <h4 class="text-xs font-bold text-on-surface uppercase tracking-wide">Developer's Explanation</h4>
+                <span :class="understandingBadge(f.understanding_level).class"
+                  class="px-2 py-0.5 rounded-full text-xs font-bold ml-auto">
+                  {{ understandingBadge(f.understanding_level).label }}
+                </span>
+              </div>
+              <p class="text-sm text-on-surface leading-relaxed">{{ f.developer_explanation }}</p>
+              <div v-if="f.understanding_feedback" class="pt-2 border-t border-outline-variant/10">
+                <p class="text-xs font-bold text-on-surface-variant mb-1">AI Feedback:</p>
+                <p class="text-sm text-on-surface-variant">{{ f.understanding_feedback }}</p>
+              </div>
+            </div>
+
+            <!-- Actions -->
+            <div class="flex gap-3 pt-2">
+              <button @click="goToReview(f)"
+                class="flex items-center gap-1.5 px-4 py-2 bg-primary/10 text-primary text-sm font-bold rounded-lg hover:bg-primary/20 transition-all">
+                <span class="material-symbols-outlined text-sm">open_in_new</span>
+                View Full Review
+              </button>
+            </div>
+          </div>
         </div>
       </div>
     </div>
