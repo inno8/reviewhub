@@ -142,6 +142,13 @@ RULES YOU MUST FOLLOW:
 - Use severity "suggestion" or "info" when the code works but could be cleaner or more idiomatic. These still count as findings.
 - Do NOT invent non-existent code, but DO proactively spot things a senior developer would mention in a real code review (even positive observations phrased as "consider also…").
 
+CRITICAL RULES FOR original_code AND suggested_code:
+- "original_code" MUST be an EXACT copy of code from the diff (the added/changed lines). Do NOT paraphrase, truncate, or invent code that does not appear in the diff.
+- "suggested_code" MUST be a direct replacement for "original_code" — it must do the same thing but better. It must NOT be an unrelated suggestion or a comment about a different issue.
+- "line_start" and "line_end" MUST match the actual line numbers where "original_code" appears in the NEW file (lines marked with + in the diff).
+- Each finding must address ONE specific issue at the lines indicated. Do NOT mix suggestions for different issues into a single finding.
+- If your suggestion is about adding something new (e.g. logging, validation) rather than fixing existing code, include the surrounding original code as context in "original_code" and show the improved version with the addition in "suggested_code".
+
 Return ONLY the JSON object, no markdown formatting.'''
 
 
@@ -388,6 +395,9 @@ Be encouraging but honest. Return ONLY the JSON."""
             context_section=context_section,
         )
 
+        # Store diff for post-parse validation of findings
+        self._current_diff = diff
+
         if complexity:
             print(
                 f"[LLM] {file_path} | complexity={level} score={complexity.score} "
@@ -449,7 +459,7 @@ Be encouraging but honest. Return ONLY the JSON."""
                 content = data["choices"][0]["message"]["content"]
                 tokens = data.get("usage", {}).get("total_tokens", 0)
                 
-                return self._parse_response(content, tokens)
+                return self._parse_response(content, tokens, diff=getattr(self, '_current_diff', ''))
                 
         except Exception as e:
             print(f"OpenAI error: {e}")
@@ -489,7 +499,7 @@ Be encouraging but honest. Return ONLY the JSON."""
                 tokens = data.get("usage", {}).get("input_tokens", 0) + \
                          data.get("usage", {}).get("output_tokens", 0)
                 
-                return self._parse_response(content, tokens)
+                return self._parse_response(content, tokens, diff=getattr(self, '_current_diff', ''))
                 
         except Exception as e:
             print(f"Anthropic error: {e}")
@@ -573,7 +583,7 @@ Be encouraging but honest. Return ONLY the JSON."""
             int(meta.get("promptTokenCount", 0))
             + int(meta.get("candidatesTokenCount", 0))
         )
-        return self._parse_response(content, tokens)
+        return self._parse_response(content, tokens, diff=getattr(self, '_current_diff', ''))
     
     async def _call_openclaw(
         self,
@@ -729,7 +739,56 @@ Be encouraging but honest. Return ONLY the JSON."""
         """Convert a raw LLM severity string to a Severity enum value, with fallback."""
         return cls._SEVERITY_MAP.get((raw or "warning").lower().strip(), Severity.WARNING)
 
-    def _parse_response(self, content: str, tokens: int) -> Optional[EvaluationResult]:
+    @staticmethod
+    def _extract_diff_code(diff: str) -> str:
+        """Extract all code content from a unified diff for validation.
+
+        Returns a lowercased blob containing every added, removed, and
+        context line so that ``original_code`` can be checked against it.
+        """
+        lines: list[str] = []
+        for raw_line in diff.splitlines():
+            # Skip diff metadata
+            if raw_line.startswith(("diff --git", "index ", "---", "+++", "@@")):
+                continue
+            # Strip the leading +/- /space marker
+            if raw_line and raw_line[0] in ("+", "-", " "):
+                lines.append(raw_line[1:])
+            else:
+                lines.append(raw_line)
+        return "\n".join(lines).lower()
+
+    @staticmethod
+    def _validate_finding(finding: "FindingSchema", diff_code: str) -> bool:
+        """Check that the finding's original_code appears in the diff.
+
+        Normalises whitespace so that minor formatting differences
+        (trailing spaces, blank lines) don't cause false negatives.
+        """
+        orig = (finding.original_code or "").strip().lower()
+        if not orig:
+            return True  # no original_code to validate
+
+        # Direct substring check
+        if orig in diff_code:
+            return True
+
+        # Whitespace-collapsed check (handles indentation differences)
+        collapsed_orig = " ".join(orig.split())
+        collapsed_diff = " ".join(diff_code.split())
+        if collapsed_orig in collapsed_diff:
+            return True
+
+        # Line-by-line: at least one non-trivial line of original_code must appear
+        orig_lines = [l.strip() for l in orig.splitlines() if l.strip()]
+        if orig_lines:
+            matches = sum(1 for l in orig_lines if l in diff_code)
+            if matches >= max(1, len(orig_lines) // 2):
+                return True
+
+        return False
+
+    def _parse_response(self, content: str, tokens: int, diff: str = "") -> Optional[EvaluationResult]:
         """Parse LLM response into EvaluationResult."""
         try:
             # Clean up response (remove markdown if present)
@@ -747,13 +806,15 @@ Be encouraging but honest. Return ONLY the JSON."""
                 f"findings_in_response={len(raw_findings)}"
             )
 
+            diff_code = self._extract_diff_code(diff) if diff else ""
+
             # Parse findings — errors on individual items are caught and skipped
             # so one bad finding never discards the rest.
             findings = []
             for idx, f in enumerate(raw_findings):
                 try:
                     valid_skills = [s for s in f.get("skills_affected", []) if s in VALID_SKILLS]
-                    findings.append(FindingSchema(
+                    finding = FindingSchema(
                         title=f.get("title", "Unknown Issue"),
                         description=f.get("description", ""),
                         severity=self._parse_severity(f.get("severity")),
@@ -764,7 +825,26 @@ Be encouraging but honest. Return ONLY the JSON."""
                         suggested_code=f.get("suggested_code", ""),
                         explanation=f.get("explanation", ""),
                         skills_affected=valid_skills
-                    ))
+                    )
+
+                    # Validate that original_code exists in the diff
+                    if diff_code and not self._validate_finding(finding, diff_code):
+                        print(
+                            f"[LLM PARSE] Dropped finding #{idx} "
+                            f"'{finding.title}' — original_code not found in diff"
+                        )
+                        continue
+
+                    # Validate suggested_code is not identical to original_code
+                    if (finding.suggested_code.strip() and
+                            finding.suggested_code.strip() == finding.original_code.strip()):
+                        print(
+                            f"[LLM PARSE] Dropped finding #{idx} "
+                            f"'{finding.title}' — suggested_code identical to original"
+                        )
+                        continue
+
+                    findings.append(finding)
                 except Exception as finding_err:
                     print(f"[LLM PARSE] Skipped finding #{idx} due to error: {finding_err}")
 
