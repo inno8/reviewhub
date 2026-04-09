@@ -347,7 +347,6 @@ class InternalEvaluationCreateView(APIView):
                     history = history[-90:]
 
                     # Update strengths/weaknesses
-                    from skills.models import SkillMetric
                     metrics = SkillMetric.objects.filter(user=author).select_related('skill').order_by('score')
                     weaknesses = [m.skill.id for m in metrics if m.score < 50][:5]
                     strengths = [m.skill.id for m in metrics.order_by('-score') if m.score > 75][:5]
