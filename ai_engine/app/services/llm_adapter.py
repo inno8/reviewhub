@@ -986,6 +986,9 @@ Be encouraging but honest. Return ONLY the JSON."""
                 f"[LLM PARSE] overall_score={data.get('overall_score')} "
                 f"findings_in_response={len(raw_findings)}"
             )
+            # DEBUG: dump raw findings titles
+            for _i, _f in enumerate(raw_findings):
+                print(f"  [RAW #{_i}] title={_f.get('title','?')!r} sev={_f.get('severity','?')}")
 
             diff_code = self._extract_diff_code(diff) if diff else ""
 
