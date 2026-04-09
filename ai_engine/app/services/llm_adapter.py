@@ -504,13 +504,6 @@ Be encouraging but honest. Return ONLY the JSON."""
                 content = data["content"][0]["text"]
                 tokens = data.get("usage", {}).get("input_tokens", 0) + \
                          data.get("usage", {}).get("output_tokens", 0)
-                stop_reason = data.get("stop_reason", "unknown")
-                out_tokens = data.get("usage", {}).get("output_tokens", 0)
-                print(
-                    f"[ANTHROPIC] stop_reason={stop_reason} "
-                    f"output_tokens={out_tokens} "
-                    f"response_len={len(content)}"
-                )
 
                 return self._parse_response(content, tokens, diff=getattr(self, '_current_diff', ''))
                 
@@ -994,9 +987,6 @@ Be encouraging but honest. Return ONLY the JSON."""
                 f"findings_in_response={len(raw_findings)}"
             )
             # DEBUG: dump raw findings titles
-            for _i, _f in enumerate(raw_findings):
-                print(f"  [RAW #{_i}] title={_f.get('title','?')!r} sev={_f.get('severity','?')}")
-
             diff_code = self._extract_diff_code(diff) if diff else ""
 
             # Parse findings — errors on individual items are caught and skipped
