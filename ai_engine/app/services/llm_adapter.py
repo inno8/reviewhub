@@ -613,70 +613,228 @@ Be encouraging but honest. Return ONLY the JSON."""
         lines = diff.split('\n')
         added_lines = [l for l in lines if l.startswith('+') and not l.startswith('+++')]
         
+        import re
+
+        # ── Compute real line numbers from diff hunk headers ──
+        # Maps each added_line index → actual file line number
+        real_line_nums: list[int] = []
+        current_new_line = 1
+        for raw_line in lines:
+            if raw_line.startswith('@@'):
+                # Parse @@ -a,b +c,d @@ → c is the starting line in the new file
+                m = re.search(r'\+(\d+)', raw_line)
+                if m:
+                    current_new_line = int(m.group(1))
+                continue
+            if raw_line.startswith('+++') or raw_line.startswith('---'):
+                continue
+            if raw_line.startswith('+'):
+                real_line_nums.append(current_new_line)
+                current_new_line += 1
+            elif raw_line.startswith('-'):
+                pass  # removed line doesn't advance new-file counter
+            else:
+                current_new_line += 1  # context line
+
         # Check for common issues
         for i, line in enumerate(added_lines):
-            line_num = i + 1
-            
-            # Security: hardcoded secrets
-            if any(pattern in line.lower() for pattern in ['password=', 'api_key=', 'secret=', 'token=']):
-                if '=' in line and not line.strip().startswith('#'):
+            line_num = real_line_nums[i] if i < len(real_line_nums) else i + 1
+            code = line[1:]  # strip leading +
+            code_stripped = code.strip()
+            code_lower = code.lower()
+
+            # ── Security: hardcoded secrets ──
+            if any(p in code_lower for p in ['password=', 'password =', 'api_key=', 'api_key =',
+                                              'secret=', 'secret =', 'token=', 'token =',
+                                              'default_password', 'db_password']):
+                if '=' in code and not code_stripped.startswith('#') and not code_stripped.startswith('//'):
+                    # Try to extract variable name for better suggestion
+                    var_match = re.match(r'\s*(\w+)\s*=', code)
+                    var_name = var_match.group(1) if var_match else 'SECRET'
                     findings.append(FindingSchema(
                         title="Potential Hardcoded Secret",
-                        description="This line appears to contain a hardcoded credential or secret.",
+                        description="This line appears to contain a hardcoded credential or secret. Secrets should be loaded from environment variables or a dedicated secrets manager.",
                         severity=Severity.CRITICAL,
                         file_path=file_path,
                         line_start=line_num,
                         line_end=line_num,
-                        original_code=line[1:],
-                        suggested_code="# Use environment variables instead",
-                        explanation="Hardcoded secrets are a security risk. Use environment variables or a secrets manager.",
+                        original_code=code,
+                        suggested_code=f'{var_name} = os.environ.get("{var_name.upper()}")',
+                        explanation="Hardcoded secrets are a security risk — they end up in version control and can be leaked. Use os.environ.get() or a library like python-dotenv.",
                         skills_affected=["secrets_management", "auth_practices"]
                     ))
-            
-            # Code style: print statements in production code
-            if 'print(' in line and not any(ext in file_path for ext in ['test', 'debug', 'log']):
+
+            # ── Logging secrets: print() with secret/password/token values ──
+            if 'print(' in code and any(w in code_lower for w in ['password', 'secret', 'token', 'key', 'value']):
+                if not code_stripped.startswith('#'):
+                    findings.append(FindingSchema(
+                        title="Sensitive Data Logged to Console",
+                        description="This print statement may expose sensitive data (passwords, secrets, tokens) in logs or console output.",
+                        severity=Severity.CRITICAL,
+                        file_path=file_path,
+                        line_start=line_num,
+                        line_end=line_num,
+                        original_code=code,
+                        suggested_code=code.replace('print(', 'logger.debug(').rstrip(')') + '  # Redact sensitive values before logging',
+                        explanation="Never log secret values — they can end up in log files, CI output, or monitoring dashboards. Use a logger with appropriate levels and redact sensitive fields.",
+                        skills_affected=["secrets_management", "clean_code"]
+                    ))
+            # ── Code style: print statements in production code ──
+            elif 'print(' in code and not any(ext in file_path for ext in ['test', 'debug', 'log']):
+                if not code_stripped.startswith('#'):
+                    findings.append(FindingSchema(
+                        title="Debug Print Statement",
+                        description="Print statement found in production code. Use a logging framework instead.",
+                        severity=Severity.INFO,
+                        file_path=file_path,
+                        line_start=line_num,
+                        line_end=line_num,
+                        original_code=code,
+                        suggested_code=code.replace('print(', 'logging.info('),
+                        explanation="Use the logging module for better control over output levels, formatting, and destinations. import logging at the top of the file.",
+                        skills_affected=["clean_code", "error_handling"]
+                    ))
+
+            # ── Security: SQL injection via string concatenation ──
+            if ('.execute(' in code and
+                    ('+' in code or '.format(' in code or 'f"' in code or "f'" in code) and
+                    any(kw in code_lower for kw in ['select', 'insert', 'update', 'delete', 'where'])):
                 findings.append(FindingSchema(
-                    title="Debug Print Statement",
-                    description="Print statement found in production code.",
-                    severity=Severity.INFO,
+                    title="SQL Injection Vulnerability",
+                    description="SQL query uses string concatenation or formatting instead of parameterized queries. This allows attackers to inject malicious SQL.",
+                    severity=Severity.CRITICAL,
                     file_path=file_path,
                     line_start=line_num,
                     line_end=line_num,
-                    original_code=line[1:],
-                    suggested_code="# Use proper logging instead of print",
-                    explanation="Use a logging framework for better control over output levels and formatting.",
-                    skills_affected=["clean_code", "error_handling"]
+                    original_code=code,
+                    suggested_code='cursor.execute("SELECT * FROM table WHERE col = ?", (value,))',
+                    explanation="Always use parameterized queries (? placeholders with tuples) to prevent SQL injection. Never concatenate or format user input into SQL strings.",
+                    skills_affected=["input_validation", "database_queries"]
                 ))
-            
-            # Security: SQL without parameterization
-            if any(pattern in line.lower() for pattern in ['execute(f"', "execute(f'", '% (', '.format(']):
-                if 'select' in line.lower() or 'insert' in line.lower() or 'update' in line.lower():
-                    findings.append(FindingSchema(
-                        title="Potential SQL Injection",
-                        description="SQL query appears to use string formatting instead of parameterized queries.",
-                        severity=Severity.CRITICAL,
-                        file_path=file_path,
-                        line_start=line_num,
-                        line_end=line_num,
-                        original_code=line[1:],
-                        suggested_code="# Use parameterized queries: cursor.execute('SELECT * FROM users WHERE id = ?', (user_id,))",
-                        explanation="String formatting in SQL queries can lead to SQL injection attacks.",
-                        skills_affected=["input_validation", "database_queries"]
-                    ))
-            
-            # Error handling: bare except
-            if 'except:' in line or 'except Exception:' in line:
+
+            # ── Error handling: bare except ──
+            if re.match(r'\s*except\s*:', code):
                 findings.append(FindingSchema(
-                    title="Broad Exception Handling",
-                    description="Catching all exceptions can hide bugs and make debugging difficult.",
+                    title="Bare Except Clause",
+                    description="Catching all exceptions without specifying a type hides bugs, catches KeyboardInterrupt/SystemExit, and makes debugging nearly impossible.",
                     severity=Severity.WARNING,
                     file_path=file_path,
                     line_start=line_num,
                     line_end=line_num,
-                    original_code=line[1:],
-                    suggested_code="# Catch specific exceptions: except ValueError as e:",
-                    explanation="Be specific about which exceptions to catch to avoid masking unexpected errors.",
+                    original_code=code,
+                    suggested_code=code.replace('except:', 'except (ValueError, IOError) as e:'),
+                    explanation="Catch specific exceptions so unexpected errors propagate properly. At minimum use 'except Exception as e:' to avoid catching SystemExit and KeyboardInterrupt.",
                     skills_affected=["error_handling", "clean_code"]
+                ))
+
+            # ── Error handling: broad except Exception ──
+            if re.match(r'\s*except\s+Exception\s*:', code):
+                findings.append(FindingSchema(
+                    title="Overly Broad Exception Handler",
+                    description="Catching all Exception types makes it hard to distinguish expected errors from bugs.",
+                    severity=Severity.WARNING,
+                    file_path=file_path,
+                    line_start=line_num,
+                    line_end=line_num,
+                    original_code=code,
+                    suggested_code=code.replace('except Exception:', 'except (ValueError, KeyError) as e:'),
+                    explanation="Catch only the specific exceptions you expect. This makes error handling intentional and helps surface unexpected bugs.",
+                    skills_affected=["error_handling", "clean_code"]
+                ))
+
+            # ── Resource leak: open() without with ──
+            if re.search(r'(\w+)\s*=\s*open\(', code) and 'with ' not in code:
+                findings.append(FindingSchema(
+                    title="File Opened Without Context Manager",
+                    description="File opened with open() but not using a 'with' statement. The file handle may not be properly closed on exceptions.",
+                    severity=Severity.WARNING,
+                    file_path=file_path,
+                    line_start=line_num,
+                    line_end=line_num,
+                    original_code=code,
+                    suggested_code=code.replace(code_stripped, f'with {code_stripped.split("=")[1].strip()} as f:  # auto-closes'),
+                    explanation="Use 'with open(...) as f:' to ensure the file is always closed, even if an exception occurs.",
+                    skills_affected=["error_handling", "clean_code"]
+                ))
+
+            # ── Resource leak: sqlite3.connect without with ──
+            if 'sqlite3.connect(' in code and 'with ' not in code:
+                findings.append(FindingSchema(
+                    title="Database Connection Without Context Manager",
+                    description="Database connection opened without a 'with' statement or try/finally block. Connection may leak on exceptions.",
+                    severity=Severity.WARNING,
+                    file_path=file_path,
+                    line_start=line_num,
+                    line_end=line_num,
+                    original_code=code,
+                    suggested_code=code.replace(code_stripped, f'with sqlite3.connect({code.split("connect(")[1].split(")")[0]}) as conn:'),
+                    explanation="Use a context manager to ensure database connections are properly closed, even when exceptions occur.",
+                    skills_affected=["error_handling", "database_queries"]
+                ))
+
+            # ── Global mutable state: module-level connection/list/dict ──
+            if (re.match(r'[A-Za-z_]\w*\s*=\s*(sqlite3\.connect|{|\[)', code_stripped) and
+                    not code_stripped.startswith('def ') and not code_stripped.startswith('class ')):
+                if 'sqlite3.connect' in code:
+                    findings.append(FindingSchema(
+                        title="Global Database Connection",
+                        description="Module-level database connection is created at import time. This prevents proper connection lifecycle management and causes issues with threading.",
+                        severity=Severity.WARNING,
+                        file_path=file_path,
+                        line_start=line_num,
+                        line_end=line_num,
+                        original_code=code,
+                        suggested_code=f'def get_connection(db_path):\n    return sqlite3.connect(db_path)',
+                        explanation="Create database connections inside functions or use a connection pool. Global connections can't be properly closed and cause threading issues.",
+                        skills_affected=["architecture", "database_queries"]
+                    ))
+
+            # ── Mutable default argument ──
+            if re.match(r'\s*def\s+\w+\(.*=\s*(\[\]|\{\})\s*[,)]', code):
+                findings.append(FindingSchema(
+                    title="Mutable Default Argument",
+                    description="Using a mutable object (list or dict) as a default argument is a common Python bug — the default is shared across all calls.",
+                    severity=Severity.WARNING,
+                    file_path=file_path,
+                    line_start=line_num,
+                    line_end=line_num,
+                    original_code=code,
+                    suggested_code=re.sub(r'=\s*\[\]', '=None', re.sub(r'=\s*\{\}', '=None', code)),
+                    explanation="Use None as the default and create a new list/dict inside the function: 'if items is None: items = []'. Mutable defaults persist between calls.",
+                    skills_affected=["clean_code", "edge_cases"]
+                ))
+
+            # ── Missing input validation on function params ──
+            if re.match(r'\s*def\s+\w+\(', code) and 'self' not in code:
+                # Check if function has params but no type hints
+                params = re.findall(r'def\s+\w+\(([^)]+)\)', code)
+                if params and ':' not in params[0] and params[0].strip() != '':
+                    findings.append(FindingSchema(
+                        title="Missing Type Hints",
+                        description="Function parameters lack type annotations. Type hints improve readability, enable static analysis, and catch bugs early.",
+                        severity=Severity.SUGGESTION,
+                        file_path=file_path,
+                        line_start=line_num,
+                        line_end=line_num,
+                        original_code=code,
+                        suggested_code=code.replace('):', ') -> None:'),
+                        explanation="Add type hints to function parameters and return types. Use 'def func(name: str, count: int = 0) -> list:' style annotations.",
+                        skills_affected=["clean_code", "comments_docs"]
+                    ))
+
+            # ── import * ──
+            if re.match(r'\s*from\s+\S+\s+import\s+\*', code):
+                findings.append(FindingSchema(
+                    title="Wildcard Import",
+                    description="'from module import *' pollutes the namespace and makes it unclear where names come from.",
+                    severity=Severity.WARNING,
+                    file_path=file_path,
+                    line_start=line_num,
+                    line_end=line_num,
+                    original_code=code,
+                    suggested_code=code.replace('import *', 'import specific_name'),
+                    explanation="Import only the specific names you need: 'from module import func1, func2'. This makes dependencies explicit and prevents name collisions.",
+                    skills_affected=["clean_code", "code_structure"]
                 ))
         
         # Calculate score based on findings
