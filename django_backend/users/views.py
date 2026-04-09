@@ -43,12 +43,16 @@ class IsAdminRole(permissions.BasePermission):
         )
 
 
-class UserListView(generics.ListAPIView):
-    """List all users (admin only)."""
-    
+class UserListView(generics.ListCreateAPIView):
+    """List all users / create a new user (admin only)."""
+
     queryset = User.objects.all()
-    serializer_class = UserSerializer
     permission_classes = [IsAdminRole]
+
+    def get_serializer_class(self):
+        if self.request.method == 'POST':
+            return UserCreateSerializer
+        return UserSerializer
 
 
 class UserDetailView(generics.RetrieveUpdateAPIView):
