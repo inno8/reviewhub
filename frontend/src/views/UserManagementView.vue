@@ -135,7 +135,16 @@ async function saveUser() {
     await fetchData();
     isUserModalOpen.value = false;
   } catch (e: any) {
-    errorMessage.value = e?.response?.data?.error || e?.response?.data?.email?.[0] || 'Failed to save user.';
+    const data = e?.response?.data;
+    if (data && typeof data === 'object' && !data.error) {
+      // DRF field errors: { field: ["message", ...], ... }
+      const msgs = Object.entries(data)
+        .map(([field, errs]: [string, any]) => `${field}: ${Array.isArray(errs) ? errs.join(', ') : errs}`)
+        .join(' · ');
+      errorMessage.value = msgs || 'Failed to save user.';
+    } else {
+      errorMessage.value = data?.error || data?.detail || 'Failed to save user.';
+    }
   } finally {
     saving.value = false;
   }
