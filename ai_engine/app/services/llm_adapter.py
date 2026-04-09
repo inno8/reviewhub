@@ -41,10 +41,10 @@ PROVIDER_MODEL_TIERS: dict[str, dict[str, str]] = {
         "simple": "gpt-4o-mini",
         "medium": "gpt-4o-mini",
     },
-    # Claude 3.x Haiku IDs were retired; use Haiku 4.5 for simple/medium tiers.
+    # Use the org-configured model for all tiers — Haiku misses too many issues.
     "anthropic": {
-        "simple": "claude-haiku-4-5",
-        "medium": "claude-haiku-4-5",
+        "simple": None,
+        "medium": None,
     },
     "google": {
         "simple": "gemini-2.0-flash-lite",
@@ -54,8 +54,8 @@ PROVIDER_MODEL_TIERS: dict[str, dict[str, str]] = {
 
 # Routing parameters per complexity level
 _COMPLEXITY_PARAMS: dict[str, dict] = {
-    "simple":  {"max_tokens": 1024, "context_file_limit": 0},
-    "medium":  {"max_tokens": 2048, "context_file_limit": 3},
+    "simple":  {"max_tokens": 2048, "context_file_limit": 0},
+    "medium":  {"max_tokens": 3072, "context_file_limit": 3},
     "complex": {"max_tokens": 4096, "context_file_limit": 5},
 }
 
