@@ -724,14 +724,40 @@ async function copyFixToClipboard(finding: Finding) {
   }
 }
 
-async function markFixedAfterCopy(finding: Finding) {
+// ── Mark Fixed with commit SHA prompt ────────────────────────────────────
+const showFixCommitDialog = ref(false);
+const fixCommitSha = ref('');
+const fixCommitFinding = ref<Finding | null>(null);
+const fixCommitLoading = ref(false);
+
+function promptMarkFixed(finding: Finding) {
+  // Check understanding level
+  const ul = (finding as any).understandingLevel || (finding as any).understanding_level || '';
+  if (!ul || ul === 'not_yet') {
+    toastMessage.value = 'Please complete the Fix & Learn check first.';
+    return;
+  }
+  fixCommitFinding.value = finding;
+  fixCommitSha.value = '';
+  showFixCommitDialog.value = true;
+}
+
+async function confirmMarkFixed() {
+  if (!fixCommitFinding.value) return;
+  fixCommitLoading.value = true;
   try {
-    await api.findings.markFixed(finding.id, '');
-    const f = findings.value.find(x => x.id === finding.id);
-    if (f) (f as any).isFixed = true;
-    toastMessage.value = `"${finding.title}" marked as fixed. Push your changes to see the score improve!`;
-  } catch {
-    toastMessage.value = 'Failed to mark as fixed.';
+    await api.findings.markFixed(fixCommitFinding.value.id, fixCommitSha.value.trim());
+    const f = findings.value.find(x => x.id === fixCommitFinding.value!.id);
+    if (f) {
+      (f as any).isFixed = true;
+      (f as any).fixedInCommit = fixCommitSha.value.trim();
+    }
+    showFixCommitDialog.value = false;
+    toastMessage.value = `"${fixCommitFinding.value.title}" marked as fixed!`;
+  } catch (e: any) {
+    toastMessage.value = e?.response?.data?.error || 'Failed to mark as fixed.';
+  } finally {
+    fixCommitLoading.value = false;
   }
 }
 
@@ -1136,7 +1162,7 @@ function goBack() {
                       class="flex items-center gap-1 px-2 py-1 bg-primary/10 text-primary text-xs font-bold rounded hover:bg-primary/20 transition-all">
                       <span class="material-symbols-outlined text-xs">content_copy</span> Copy Fix
                     </button>
-                    <button @click="markFixedAfterCopy(f)"
+                    <button @click="promptMarkFixed(f)"
                       class="flex items-center gap-1 px-2 py-1 border border-green-500/30 text-green-400 text-xs rounded hover:bg-green-500/10 transition-all">
                       <span class="material-symbols-outlined text-xs">check</span> Fixed
                     </button>
@@ -1170,6 +1196,38 @@ function goBack() {
           </button>
           <button v-if="fixLearnStep === 'results'" @click="fixLearnStep = 'explain'" class="px-4 py-2 text-sm text-primary font-bold">
             ← Try Again
+          </button>
+        </div>
+      </div>
+    </div>
+  </Teleport>
+
+  <!-- Mark Fixed Dialog — prompts for commit SHA -->
+  <Teleport to="body">
+    <div v-if="showFixCommitDialog" class="fixed inset-0 z-[100] flex items-center justify-center bg-black/60 backdrop-blur-sm">
+      <div class="bg-surface-container w-full max-w-md rounded-2xl shadow-2xl border border-outline-variant/10">
+        <div class="px-6 py-4 border-b border-outline-variant/10">
+          <h3 class="text-lg font-bold text-on-surface">Mark as Fixed</h3>
+          <p class="text-sm text-on-surface-variant mt-1">{{ fixCommitFinding?.title }}</p>
+        </div>
+        <div class="px-6 py-5 space-y-4">
+          <div>
+            <label class="block text-sm font-medium text-on-surface mb-1.5">Commit SHA <span class="text-on-surface-variant font-normal">(optional)</span></label>
+            <input v-model="fixCommitSha" type="text" maxlength="40"
+              placeholder="e.g. a1b2c3d or full SHA"
+              class="w-full px-3 py-2 bg-surface rounded-lg border border-outline-variant/20 text-on-surface text-sm placeholder:text-outline focus:outline-none focus:ring-2 focus:ring-primary/50 font-mono" />
+            <p class="text-xs text-on-surface-variant mt-1">Enter the commit SHA that fixes this issue so it can be tracked.</p>
+          </div>
+        </div>
+        <div class="px-6 py-4 border-t border-outline-variant/10 flex justify-end gap-3">
+          <button @click="showFixCommitDialog = false" class="px-4 py-2 text-sm text-outline hover:text-on-surface">
+            Cancel
+          </button>
+          <button @click="confirmMarkFixed" :disabled="fixCommitLoading"
+            class="px-5 py-2 bg-green-600 hover:bg-green-500 text-white text-sm font-bold rounded-lg disabled:opacity-50 flex items-center gap-2 transition-all">
+            <span v-if="fixCommitLoading" class="material-symbols-outlined text-sm animate-spin">progress_activity</span>
+            <span class="material-symbols-outlined text-sm" v-else>check_circle</span>
+            Mark Fixed
           </button>
         </div>
       </div>

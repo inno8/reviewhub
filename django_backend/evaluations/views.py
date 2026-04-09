@@ -7,7 +7,7 @@ from urllib.parse import quote
 import requests
 from django.conf import settings
 from django.shortcuts import get_object_or_404
-from rest_framework import generics, permissions, status
+from rest_framework import generics, permissions, serializers, status
 from rest_framework.response import Response
 from rest_framework.views import APIView
 from django.db.models import Avg, Count, Q
@@ -602,6 +602,57 @@ class FindingListView(generics.ListAPIView):
         return queryset
 
 
+class ResolvedFindingsView(generics.ListAPIView):
+    """List resolved findings with evaluation context."""
+
+    permission_classes = [permissions.IsAuthenticated]
+
+    class ResolvedFindingSerializer(serializers.Serializer):
+        id = serializers.IntegerField()
+        title = serializers.CharField()
+        severity = serializers.CharField()
+        file_path = serializers.CharField()
+        line_start = serializers.IntegerField()
+        original_code = serializers.CharField()
+        suggested_code = serializers.CharField()
+        is_fixed = serializers.BooleanField()
+        fixed_at = serializers.DateTimeField()
+        fixed_in_commit = serializers.CharField()
+        understanding_level = serializers.CharField()
+        # Evaluation context
+        evaluation_id = serializers.IntegerField(source='evaluation.id')
+        commit_sha = serializers.CharField(source='evaluation.commit_sha')
+        commit_message = serializers.CharField(source='evaluation.commit_message')
+        evaluation_date = serializers.DateTimeField(source='evaluation.created_at')
+        project_id = serializers.IntegerField(source='evaluation.project_id')
+        project_name = serializers.CharField(source='evaluation.project.name')
+        author_name = serializers.CharField(source='evaluation.author_name')
+        author_email = serializers.CharField(source='evaluation.author_email')
+
+    serializer_class = ResolvedFindingSerializer
+
+    def get_queryset(self):
+        user = self.request.user
+        queryset = Finding.objects.filter(
+            is_fixed=True
+        ).select_related(
+            'evaluation__project'
+        ).filter(
+            _user_can_access_project_q(user, "evaluation__project")
+            | Q(evaluation__author=user)
+        ).distinct().order_by('-fixed_at')
+
+        project_id = self.request.query_params.get('project')
+        if project_id:
+            queryset = queryset.filter(evaluation__project_id=project_id)
+
+        user_id = self.request.query_params.get('user')
+        if user_id and (user.role == 'admin' or user.is_staff):
+            queryset = queryset.filter(evaluation__author_id=user_id)
+
+        return queryset
+
+
 class FindingDetailView(generics.RetrieveAPIView):
     """Get finding details."""
 
@@ -713,8 +764,15 @@ class MarkFindingFixedView(APIView):
                 {'error': 'Finding not found'},
                 status=status.HTTP_404_NOT_FOUND
             )
-        
-        commit_sha = request.data.get('commit_sha')
+
+        # Require understanding check before marking fixed
+        if not finding.understanding_level or finding.understanding_level == 'not_yet':
+            return Response(
+                {'error': 'Please complete the Fix & Learn check first.'},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+
+        commit_sha = request.data.get('commit_sha', '')
         finding.mark_fixed(commit_sha)
 
         # Recalculate DeveloperProfile after fix

@@ -15,6 +15,7 @@ import DevProfileSetupView from '@/views/DevProfileSetupView.vue';
 import DevProfileResultsView from '@/views/DevProfileResultsView.vue';
 import CommitTimelineView from '@/views/CommitTimelineView.vue';
 import RecommendationsView from '@/views/RecommendationsView.vue';
+import ResolvedFindingsView from '@/views/ResolvedFindingsView.vue';
 import { useAuthStore } from '@/stores/auth';
 const router = createRouter({
     history: createWebHistory(),
@@ -35,6 +36,7 @@ const router = createRouter({
         { path: '/settings', name: 'settings', component: SettingsView },
         { path: '/recommendations', name: 'recommendations', component: RecommendationsView },
         { path: '/timeline', name: 'timeline', component: CommitTimelineView },
+        { path: '/resolved', name: 'resolved', component: ResolvedFindingsView },
     ],
 });
 router.beforeEach(async (to) => {

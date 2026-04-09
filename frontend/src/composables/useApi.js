@@ -87,6 +87,7 @@ export const api = {
         getFileContent: (id) => client.get(`/evaluations/findings/${id}/file-content/`),
         markUnderstood: (_id) => Promise.resolve({ data: { markedUnderstood: true } }),
         checkUnderstanding: (findings) => client.post('/evaluations/findings/check-understanding/', { findings }),
+        resolved: (params = {}) => client.get('/evaluations/findings/resolved/', { params: djangoListParams(params) }),
         requestExplanation: (_id) => Promise.resolve({ data: { message: 'Not implemented' } }),
         applyFix: (_id) => Promise.resolve({ data: { prUrl: '', message: 'Not implemented' } }),
     },
