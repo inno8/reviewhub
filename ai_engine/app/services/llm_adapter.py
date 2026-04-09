@@ -54,9 +54,9 @@ PROVIDER_MODEL_TIERS: dict[str, dict[str, str]] = {
 
 # Routing parameters per complexity level
 _COMPLEXITY_PARAMS: dict[str, dict] = {
-    "simple":  {"max_tokens": 2048, "context_file_limit": 0},
-    "medium":  {"max_tokens": 3072, "context_file_limit": 3},
-    "complex": {"max_tokens": 4096, "context_file_limit": 5},
+    "simple":  {"max_tokens": 4096, "context_file_limit": 0},
+    "medium":  {"max_tokens": 4096, "context_file_limit": 3},
+    "complex": {"max_tokens": 8192, "context_file_limit": 5},
 }
 
 # Skill slugs for validation
@@ -504,7 +504,14 @@ Be encouraging but honest. Return ONLY the JSON."""
                 content = data["content"][0]["text"]
                 tokens = data.get("usage", {}).get("input_tokens", 0) + \
                          data.get("usage", {}).get("output_tokens", 0)
-                
+                stop_reason = data.get("stop_reason", "unknown")
+                out_tokens = data.get("usage", {}).get("output_tokens", 0)
+                print(
+                    f"[ANTHROPIC] stop_reason={stop_reason} "
+                    f"output_tokens={out_tokens} "
+                    f"response_len={len(content)}"
+                )
+
                 return self._parse_response(content, tokens, diff=getattr(self, '_current_diff', ''))
                 
         except Exception as e:
