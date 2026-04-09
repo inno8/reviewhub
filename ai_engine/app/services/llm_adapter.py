@@ -144,10 +144,16 @@ RULES YOU MUST FOLLOW:
 
 CRITICAL RULES FOR original_code AND suggested_code:
 - "original_code" MUST be an EXACT copy of code from the diff (the added/changed lines). Do NOT paraphrase, truncate, or invent code that does not appear in the diff.
-- "suggested_code" MUST be a direct replacement for "original_code" — it must do the same thing but better. It must NOT be an unrelated suggestion or a comment about a different issue.
+- "suggested_code" MUST be a working code replacement for "original_code" — it must do the same thing but better. It must NOT be just a comment, a generic placeholder like "# Use environment variables instead", or an unrelated suggestion. It must be REAL, RUNNABLE code.
 - "line_start" and "line_end" MUST match the actual line numbers where "original_code" appears in the NEW file (lines marked with + in the diff).
 - Each finding must address ONE specific issue at the lines indicated. Do NOT mix suggestions for different issues into a single finding.
 - If your suggestion is about adding something new (e.g. logging, validation) rather than fixing existing code, include the surrounding original code as context in "original_code" and show the improved version with the addition in "suggested_code".
+
+THOROUGHNESS RULES:
+- Report EVERY distinct issue you find — do NOT group multiple issues into one finding.
+- For security issues (SQL injection, hardcoded secrets, logging sensitive data), EACH occurrence must be a separate finding.
+- A file with 5 different problems must produce at least 5 findings, not 1 summary finding.
+- Common issues to check separately: SQL injection, bare except, hardcoded credentials, missing input validation, resource leaks (unclosed files/connections), logging secrets, mutable default args, missing type hints, missing docstrings.
 
 Return ONLY the JSON object, no markdown formatting.'''
 
@@ -760,10 +766,11 @@ Be encouraging but honest. Return ONLY the JSON."""
 
     @staticmethod
     def _validate_finding(finding: "FindingSchema", diff_code: str) -> bool:
-        """Check that the finding's original_code appears in the diff.
+        """Check that the finding's original_code relates to the diff.
 
-        Normalises whitespace so that minor formatting differences
-        (trailing spaces, blank lines) don't cause false negatives.
+        Uses a lenient approach: if any meaningful token from the
+        original_code appears in the diff, the finding is kept.
+        Only drops findings that are completely fabricated.
         """
         orig = (finding.original_code or "").strip().lower()
         if not orig:
@@ -779,11 +786,27 @@ Be encouraging but honest. Return ONLY the JSON."""
         if collapsed_orig in collapsed_diff:
             return True
 
-        # Line-by-line: at least one non-trivial line of original_code must appear
-        orig_lines = [l.strip() for l in orig.splitlines() if l.strip()]
+        # Line-by-line: ANY non-trivial line match is enough to keep the finding
+        orig_lines = [l.strip() for l in orig.splitlines() if len(l.strip()) > 5]
         if orig_lines:
-            matches = sum(1 for l in orig_lines if l in diff_code)
-            if matches >= max(1, len(orig_lines) // 2):
+            for line in orig_lines:
+                if line in diff_code:
+                    return True
+                # Also try whitespace-collapsed
+                if " ".join(line.split()) in collapsed_diff:
+                    return True
+
+        # Token-based fallback: check if meaningful identifiers from
+        # original_code appear in the diff (catches paraphrased code)
+        import re
+        identifiers = set(re.findall(r'[a-z_][a-z0-9_]{2,}', orig))
+        # Remove very common tokens that would match anything
+        common = {'self', 'none', 'true', 'false', 'return', 'import', 'from',
+                  'def', 'class', 'for', 'while', 'with', 'print', 'pass'}
+        identifiers -= common
+        if identifiers:
+            matches = sum(1 for ident in identifiers if ident in diff_code)
+            if matches >= max(1, len(identifiers) // 3):
                 return True
 
         return False
