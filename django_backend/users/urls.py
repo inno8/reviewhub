@@ -16,6 +16,7 @@ urlpatterns = [
     path('<int:pk>/', views.UserDetailView.as_view(), name='user-detail'),
     path('register/', views.RegisterView.as_view(), name='user-register'),
     path('by-email/', views.UserByEmailView.as_view(), name='user-by-email'),
+    path('org-llm-config/', views.OrgLLMConfigView.as_view(), name='org-llm-config'),
 
     # User categories (admin)
     path('categories/', views.UserCategoryListCreateView.as_view(), name='category-list'),

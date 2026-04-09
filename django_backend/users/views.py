@@ -177,6 +177,39 @@ class UserByEmailView(APIView):
             )
 
 
+class OrgLLMConfigView(APIView):
+    """Return the org's default LLM config for a given user (internal API for AI engine)."""
+
+    def get_permissions(self):
+        from reviewhub.permissions import IsInternalAPIKey
+        return [IsInternalAPIKey()]
+
+    def get(self, request):
+        from users.org_llm import get_org_llm_config
+
+        user_id = request.query_params.get('user_id')
+        email = request.query_params.get('email')
+
+        user = None
+        if user_id:
+            user = User.objects.filter(pk=user_id).first()
+        elif email:
+            user = User.objects.filter(email=email).first()
+
+        if not user:
+            return Response({'error': 'User not found'}, status=status.HTTP_404_NOT_FOUND)
+
+        cfg = get_org_llm_config(user)
+        if not cfg:
+            return Response({'error': 'No LLM configured for this user\'s org'}, status=status.HTTP_404_NOT_FOUND)
+
+        return Response({
+            'provider': cfg['provider'],
+            'api_key': cfg['api_key'],
+            'model': cfg['model'],
+        })
+
+
 class OnboardCheckEmailView(APIView):
     """Check if email exists and send OTP code for onboarding."""
     permission_classes = [permissions.AllowAny]

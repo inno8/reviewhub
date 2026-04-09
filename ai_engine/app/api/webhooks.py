@@ -141,7 +141,6 @@ async def process_commit(
 
     try:
         diff_extractor = DiffExtractor()
-        llm_adapter = LLMAdapter()
         django_client = DjangoClient()
 
         author_email = commit["author"].get("email", "unknown@example.com")
@@ -152,6 +151,24 @@ async def process_commit(
             member = await django_client.get_project_member_by_email(project_id, author_email)
             if member:
                 user = {"id": member.get("user")}
+
+        # ── 1b. Fetch org LLM config for this user ───────────────────────
+        llm_cfg = None
+        if user and user.get("id"):
+            llm_cfg = await django_client.get_org_llm_config(user_id=user["id"])
+        if not llm_cfg:
+            llm_cfg = await django_client.get_org_llm_config(email=author_email)
+
+        if llm_cfg:
+            print(f"[WEBHOOK] Using org LLM: provider={llm_cfg['provider']} model={llm_cfg['model']}", flush=True)
+            llm_adapter = LLMAdapter(
+                api_key=llm_cfg["api_key"],
+                provider_override=llm_cfg["provider"],
+                model_override=llm_cfg["model"],
+            )
+        else:
+            print("[WEBHOOK] No org LLM config found — using env/fallback", flush=True)
+            llm_adapter = LLMAdapter()
 
         # ── 2. Phase 5 – adaptive profile ─────────────────────────────────
         profile: dict = {}

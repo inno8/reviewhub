@@ -122,6 +122,34 @@ class DjangoClient:
             print(f"Django client error: {e}")
             return None
 
+    async def get_org_llm_config(self, user_id: int = None, email: str = None) -> Optional[dict]:
+        """Fetch the org's default LLM config for a user.
+
+        Returns dict with keys: provider, api_key, model — or None.
+        """
+        try:
+            params = {}
+            if user_id:
+                params["user_id"] = user_id
+            elif email:
+                params["email"] = email
+            else:
+                return None
+
+            async with httpx.AsyncClient() as client:
+                response = await client.get(
+                    f"{self.base_url}/api/users/org-llm-config/",
+                    params=params,
+                    headers=self._get_headers(),
+                    timeout=10.0,
+                )
+                if response.status_code == 200:
+                    return response.json()
+                return None
+        except Exception as e:
+            print(f"[DJANGO] get_org_llm_config error: {e}", flush=True)
+            return None
+
     async def get_user_skill_profile(self, user_id: int) -> Optional[dict]:
         """Get user's skill metrics for adaptive prompt enrichment."""
         try:
