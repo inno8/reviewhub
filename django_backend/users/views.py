@@ -54,6 +54,33 @@ class UserListView(generics.ListCreateAPIView):
             return UserCreateSerializer
         return UserSerializer
 
+    def perform_create(self, serializer):
+        """After creating a user, link them to the admin's org.
+
+        Adds the new user to the admin's first team (if any) and to
+        any UserCategory owned by the admin so that the org LLM config
+        resolves correctly for the new developer.
+        """
+        user = serializer.save()
+        admin = self.request.user
+
+        # Add to admin's team(s)
+        from users.models import Team, TeamMember
+        admin_teams = Team.objects.filter(
+            Q(owner=admin) |
+            Q(members__user=admin, members__role__in=['owner', 'admin'])
+        ).distinct()
+        for team in admin_teams:
+            TeamMember.objects.get_or_create(
+                team=team, user=user,
+                defaults={'role': 'member'},
+            )
+
+        # Add to admin's first category (if any exist)
+        categories = UserCategory.objects.filter(created_by=admin)
+        if categories.exists():
+            categories.first().members.add(user)
+
 
 class UserDetailView(generics.RetrieveUpdateAPIView):
     """Get/update a specific user."""
