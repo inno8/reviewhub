@@ -19,6 +19,10 @@ const props = defineProps<{
   category: SkillCategory;
 }>();
 
+const emit = defineEmits<{
+  'click-skill': [skillId: number];
+}>();
+
 function getSkillLevel(score: number): string {
   if (score >= 90) return 'Expert';
   if (score >= 75) return 'Advanced';
@@ -74,7 +78,8 @@ function getLevelColor(level: string): string {
       <div
         v-for="skill in category.skills"
         :key="skill.id"
-        class="space-y-2"
+        class="space-y-2 cursor-pointer hover:bg-surface-container-lowest rounded-lg p-1 -m-1 transition-colors"
+        @click="emit('click-skill', skill.id)"
       >
         <div class="flex justify-between text-sm">
           <span class="font-medium">{{ skill.displayName }}</span>

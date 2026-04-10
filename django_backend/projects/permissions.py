@@ -1,8 +1,37 @@
 """
 Project Permissions
 """
+from django.contrib.auth import get_user_model
 from rest_framework import permissions
 from .models import ProjectMember
+
+User = get_user_model()
+
+
+def _is_platform_admin(user):
+    """Global admin: staff/superuser or app role admin."""
+    if not user or not user.is_authenticated:
+        return False
+    if user.is_staff:
+        return True
+    return getattr(user, 'role', None) == User.Role.ADMIN
+
+
+class IsProjectMemberReadOrAdminWrite(permissions.BasePermission):
+    """
+    Project members may retrieve (GET). Only platform admins may update or delete.
+    """
+
+    def has_object_permission(self, request, view, obj):
+        if not request.user.is_authenticated:
+            return False
+        if request.method not in permissions.SAFE_METHODS:
+            return _is_platform_admin(request.user)
+        if _is_platform_admin(request.user):
+            return True
+        if obj.created_by == request.user:
+            return True
+        return ProjectMember.objects.filter(project=obj, user=request.user).exists()
 
 
 class IsProjectMember(permissions.BasePermission):

@@ -7,6 +7,7 @@ export interface AuthUser {
   username: string;
   email: string;
   role: 'ADMIN' | 'INTERN';
+  devProfileCompleted: boolean;
 }
 
 export const useAuthStore = defineStore('auth', () => {
@@ -38,6 +39,7 @@ export const useAuthStore = defineStore('auth', () => {
         username: userData.username,
         email: userData.email,
         role: mapRoleToFrontend(userData.role),
+        devProfileCompleted: !!userData.dev_profile_completed,
       };
     } finally {
       loading.value = false;
@@ -73,6 +75,7 @@ export const useAuthStore = defineStore('auth', () => {
         username: userData.username,
         email: userData.email,
         role: mapRoleToFrontend(userData.role),
+        devProfileCompleted: !!userData.dev_profile_completed,
       };
     } catch {
       // Token is invalid, clear it silently
@@ -107,8 +110,15 @@ export const useAuthStore = defineStore('auth', () => {
       username: userData.username,
       email: userData.email,
       role: mapRoleToFrontend(userData.role || 'INTERN'),
+      devProfileCompleted: !!userData.dev_profile_completed,
     };
   }
 
-  return { token, user, loading, initialized, isAuthenticated, isAdmin, login, logout, bootstrap, setTokens, setUser };
+  function markDevProfileCompleted() {
+    if (user.value) {
+      user.value = { ...user.value, devProfileCompleted: true };
+    }
+  }
+
+  return { token, user, loading, initialized, isAuthenticated, isAdmin, login, logout, bootstrap, setTokens, setUser, markDevProfileCompleted };
 });

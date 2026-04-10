@@ -34,7 +34,9 @@ function getPriorityColor(priority: string) {
   const colors: Record<string, string> = {
     high: 'text-error',
     medium: 'text-warning',
-    low: 'text-info'
+    low: 'text-info',
+    mastered: 'text-success',
+    growth: 'text-primary',
   };
   return colors[priority] || 'text-on-surface-variant';
 }
@@ -43,9 +45,33 @@ function getPriorityBg(priority: string) {
   const colors: Record<string, string> = {
     high: 'bg-error/10',
     medium: 'bg-warning/10',
-    low: 'bg-info/10'
+    low: 'bg-info/10',
+    mastered: 'bg-success/10',
+    growth: 'bg-primary/10',
   };
   return colors[priority] || 'bg-surface-container';
+}
+
+function getPriorityLabel(priority: string) {
+  const labels: Record<string, string> = {
+    high: 'high priority',
+    medium: 'medium priority',
+    low: 'low priority',
+    mastered: 'mastered',
+    growth: 'next level',
+  };
+  return labels[priority] || priority;
+}
+
+function getPriorityIcon(priority: string) {
+  const icons: Record<string, string> = {
+    high: 'error',
+    medium: 'warning',
+    low: 'info',
+    mastered: 'emoji_events',
+    growth: 'rocket_launch',
+  };
+  return icons[priority] || 'lightbulb';
 }
 
 function openResource(url: string) {
@@ -73,20 +99,21 @@ onMounted(() => {
 
     <!-- Empty State -->
     <div v-else-if="recommendations.length === 0" class="text-center py-8">
-      <span class="material-symbols-outlined text-6xl text-on-surface-variant mb-2">
-        sentiment_satisfied
+      <span class="material-symbols-outlined text-6xl text-success mb-2">
+        workspace_premium
       </span>
+      <p class="text-on-surface font-semibold mb-1">All skills looking strong!</p>
       <p class="text-on-surface-variant text-sm">
-        Great work! No skill improvements needed right now.
+        Keep pushing code — new recommendations will appear as you take on new challenges.
       </p>
     </div>
 
-    <!-- Recommendations List -->
-    <div v-else class="space-y-4">
+    <!-- Recommendations Grid -->
+    <div v-else class="grid grid-cols-1 md:grid-cols-2 gap-4">
       <div
         v-for="recommendation in recommendations"
         :key="recommendation.skill.id"
-        class="bg-surface-container rounded-lg p-4 border border-outline-variant/20 hover:shadow-md transition-shadow"
+        class="bg-surface-container rounded-lg p-4 border border-outline-variant/20 hover:shadow-md transition-shadow flex flex-col"
       >
         <!-- Header -->
         <div class="flex items-start justify-between mb-3">
@@ -97,12 +124,13 @@ onMounted(() => {
               </h3>
               <span
                 :class="[
-                  'px-2 py-0.5 text-xs font-medium rounded',
+                  'px-2 py-0.5 text-xs font-medium rounded flex items-center gap-1',
                   getPriorityBg(recommendation.priority),
                   getPriorityColor(recommendation.priority)
                 ]"
               >
-                {{ recommendation.priority }} priority
+                <span class="material-symbols-outlined text-xs">{{ getPriorityIcon(recommendation.priority) }}</span>
+                {{ getPriorityLabel(recommendation.priority) }}
               </span>
             </div>
             <p class="text-xs text-on-surface-variant">
@@ -129,10 +157,10 @@ onMounted(() => {
         </div>
 
         <!-- Reason -->
-        <div class="mb-3 p-3 bg-surface-container-highest rounded">
-          <p class="text-sm text-on-surface-variant">
+        <div class="mb-3 p-3 rounded" :class="recommendation.priority === 'mastered' ? 'bg-success/5 border border-success/20' : recommendation.priority === 'growth' ? 'bg-primary/5 border border-primary/20' : 'bg-surface-container-highest'">
+          <p class="text-sm" :class="recommendation.priority === 'mastered' ? 'text-success' : recommendation.priority === 'growth' ? 'text-primary' : 'text-on-surface-variant'">
             <span class="material-symbols-outlined text-base align-middle mr-1">
-              lightbulb
+              {{ getPriorityIcon(recommendation.priority) }}
             </span>
             {{ recommendation.reason }}
           </p>

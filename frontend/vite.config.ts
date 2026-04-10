@@ -8,5 +8,7 @@ export default defineConfig({
     alias: {
       '@': fileURLToPath(new URL('./src', import.meta.url)),
     },
+    // Prefer TypeScript over stale co-located .js artifacts (e.g. router/index.js shadowing index.ts)
+    extensions: ['.ts', '.tsx', '.vue', '.mts', '.js', '.jsx', '.mjs', '.json'],
   },
 });

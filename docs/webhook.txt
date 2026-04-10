@@ -1,0 +1,212 @@
+1. Should You Generate a Webhook URL Per User?
+
+❌ No — do NOT create one webhook URL per user
+
+✅ Best Practice
+
+Use ONE webhook endpoint for all users:
+
+https://yourapp.com/webhook/github
+Why?
+
+Because GitHub webhooks are:
+
+configured per repository, not per user
+
+meant to notify about repo events, not user-specific events
+
+So your system should:
+
+👉 Receive ALL events
+👉 Then internally decide which user it belongs to
+
+🧩 2. The Real Problem You Identified
+
+“Multiple users push to the same repo — how do we assign the commit correctly?”
+
+This is the core problem, and the solution is:
+
+✅ Map commits → users using GitHub identity
+
+🧠 3. How GitHub Identifies the Author
+
+In webhook payload:
+
+{
+  "commits": [
+    {
+      "id": "abc123",
+      "author": {
+        "name": "John Doe",
+        "email": "john@example.com"
+      }
+    }
+  ],
+  "sender": {
+    "login": "john123"
+  }
+}
+Key fields:
+
+commit.author.email ✅ (most reliable)
+
+sender.login (GitHub username)
+
+🧩 4. Your Solution: User Mapping Layer
+Store this in your DB:
+User {
+  id: 1,
+  github_username: "john123",
+  email: "john@example.com"
+}
+Then map like this:
+def identify_user(commit):
+
+    email = commit["author"]["email"]
+
+    user = find_user_by_email(email)
+
+    return user
+
+👉 Now you know who made the commit
+
+⚠️ Important Edge Case
+
+Sometimes:
+
+commit email ≠ GitHub account email
+
+Safer approach:
+
+Use BOTH:
+
+def identify_user(commit, payload):
+
+    email = commit["author"]["email"]
+    username = payload["sender"]["login"]
+
+    user = find_user(email=email) or find_user(username=username)
+
+    return user
+🧠 5. Final Flow (Multi-User Safe)
+GitHub webhook fires
+   ↓
+Receive payload
+   ↓
+For each commit:
+   ↓
+Identify user (email / username)
+   ↓
+IF user exists:
+    process_commit(commit, user)
+ELSE:
+    ignore or log
+
+👉 This guarantees:
+
+✅ Each user only gets THEIR commits analyzed
+
+🧩 6. What About Shared Repositories?
+Scenario:
+
+3 developers
+
+same repo
+
+all pushing code
+
+👉 Your system:
+
+receives ALL commits
+
+filters per user
+
+Example:
+Commit A → John → processed for John
+Commit B → Alice → processed for Alice
+Commit C → Unknown → ignored
+🧠 7. Do You Need Multiple Webhooks Per Repo?
+
+❌ No
+
+Even with multiple users:
+
+1 repo → 1 webhook
+
+your system handles user routing
+
+🧠 8. Optional (Better UX)
+Let users connect GitHub account
+
+Using:
+
+GitHub OAuth
+
+Then you get:
+
+{
+  "login": "john123",
+  "email": "john@example.com"
+}
+
+👉 This makes mapping much more reliable
+
+🧠 9. Advanced (Recommended Later)
+Repo → User linking
+RepoAccess {
+  repo_name: "org/project",
+  user_id: 1
+}
+
+👉 Only process commits for:
+
+users linked to that repo
+
+⚠️ 10. Security Consideration
+Prevent abuse:
+
+verify webhook signature (important)
+
+ignore unknown users
+
+optionally whitelist repos
+
+🔥 Key Insight
+
+Webhooks are repo-level triggers
+User separation is your backend responsibility
+
+🏁 Final Answer
+❓ Should you create webhook per user?
+
+❌ No — use one webhook endpoint
+
+❓ How to ensure correct user attribution?
+
+✅ Identify users via:
+
+commit email
+
+GitHub username (sender.login)
+
+❓ How to avoid mixing users?
+
+✅ Filter commits per user before processing
+
+💡 Strategic Insight
+
+This design is powerful because:
+
+scales to teams
+
+supports organizations
+
+works with shared repos
+
+keeps architecture simple
+
+🚀 Next Step
+
+I can now:
+
+👉 design your database schema for users + rep

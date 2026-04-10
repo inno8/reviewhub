@@ -40,13 +40,19 @@ class BatchJob(models.Model):
     branch = models.CharField(
         max_length=100,
         default='main',
-        help_text="Branch to analyze"
+        help_text='Branch to analyze, or "__all__" to process every active branch'
+    )
+    resolved_branches = models.JSONField(
+        default=list,
+        blank=True,
+        help_text='Branches the worker will process (set on create; from GitHub + optional author filter)',
     )
     
-    # Processing scope
-    target_email = models.EmailField(
+    # Processing scope (git log --author pattern; use GitHub username or name fragment)
+    target_github_username = models.CharField(
+        max_length=150,
         blank=True,
-        help_text="Filter commits by author email (empty = all)"
+        help_text="Filter commits by author (passed to git log --author); empty = all commits",
     )
     max_commits = models.PositiveIntegerField(
         default=500,

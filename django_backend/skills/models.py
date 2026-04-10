@@ -133,24 +133,43 @@ class SkillMetric(models.Model):
             return 100.0
         return (self.fixed_count / self.issue_count) * 100
     
-    def update_score(self, new_issues: int, impact: float = 5.0):
+    def update_score(self, new_issues: int = 0, impact: float = 5.0, observed_score: float = None):
         """
-        Update skill score based on new issues found.
-        
-        Args:
-            new_issues: Number of new issues found
-            impact: Points deducted per issue (default 5)
+        Update skill score using exponential moving average (EMA).
+
+        Two modes:
+          1. Issue-based: deduct points per issue (called from evaluation flow).
+          2. Score-based: blend observed_score from LLM into current score.
+
+        The learning rate decays with evaluation count so early evaluations
+        have more influence and the score stabilises over time.
         """
         from django.utils import timezone
-        
+
         self.previous_score = self.score
         self.issue_count += new_issues
-        
-        # Calculate new score (min 0, max 100)
-        self.score = max(0, min(100, 100 - (self.issue_count * impact)))
-        
-        # Update trend
-        if self.previous_score:
+
+        eval_count = self.issue_count + self.fixed_count + 1
+        learning_rate = max(0.05, 1.0 / eval_count)
+
+        if observed_score is not None:
+            # Blend observed score with current score
+            self.score = self.score * (1 - learning_rate) + observed_score * learning_rate
+        else:
+            # Deduction mode: compute an "observed" score from the penalty
+            penalty = new_issues * impact
+            instant_score = max(0, self.score - penalty)
+            self.score = self.score * (1 - learning_rate) + instant_score * learning_rate
+
+        # Fixes push the score up (reward)
+        if self.fixed_count > 0 and self.issue_count > 0:
+            fix_bonus = (self.fixed_count / self.issue_count) * 10 * learning_rate
+            self.score = min(100, self.score + fix_bonus)
+
+        self.score = max(0.0, min(100.0, round(self.score, 2)))
+
+        # Trend
+        if self.previous_score is not None:
             diff = self.score - self.previous_score
             if diff > 2:
                 self.trend = self.Trend.UP
@@ -158,10 +177,34 @@ class SkillMetric(models.Model):
                 self.trend = self.Trend.DOWN
             else:
                 self.trend = self.Trend.STABLE
-        
-        # Update timestamps
+
         if not self.first_evaluated_at:
             self.first_evaluated_at = timezone.now()
         self.last_evaluated_at = timezone.now()
-        
+
+        self.save()
+
+    def improve_score(self, fixed_issues: int = 1, recovery: float = 3.0):
+        """
+        Improve score when developer fixes an issue and demonstrates understanding.
+        Called from Finding.mark_fixed().
+        """
+        from django.utils import timezone
+
+        self.previous_score = self.score
+        self.fixed_count += fixed_issues
+        self.score = min(100.0, self.score + (fixed_issues * recovery))
+        self.score = round(self.score, 2)
+
+        # Update trend
+        if self.previous_score is not None:
+            diff = self.score - self.previous_score
+            if diff > 2:
+                self.trend = self.Trend.UP
+            elif diff < -2:
+                self.trend = self.Trend.DOWN
+            else:
+                self.trend = self.Trend.STABLE
+
+        self.last_evaluated_at = timezone.now()
         self.save()

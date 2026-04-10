@@ -1,3 +1,6 @@
+# Claude Code
+.claude/worktrees/
+
 # Python
 __pycache__/
 *.py[cod]
@@ -53,3 +56,4 @@ build/
 # Misc
 *.bak
 *.tmp
+/doc
