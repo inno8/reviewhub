@@ -13,7 +13,7 @@ def create_finding_notification(sender, instance, created, **kwargs):
     """
     if not created:
         return
-    
+
     # Only create notification if the evaluation has an author
     if not instance.evaluation.author:
         return

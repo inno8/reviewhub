@@ -225,7 +225,7 @@ class InternalEvaluationCreateView(APIView):
             email=data['author_email'],
             sender_login=data.get('sender_login', ''),
         )
-        
+
         # Fallback: use batch job owner as author if this is a batch evaluation
         if not author and data.get('batch_job_id'):
             from batch.models import BatchJob
@@ -240,7 +240,7 @@ class InternalEvaluationCreateView(APIView):
                 'Unmatched commit author %s (%s) for project %s',
                 data['author_name'], data['author_email'], project.id,
             )
-        
+
         from batch.models import BatchJob
 
         batch_job = None
@@ -290,7 +290,8 @@ class InternalEvaluationCreateView(APIView):
                 suggested_code=finding_data.get('suggested_code', ''),
                 explanation=finding_data.get('explanation', '')
             )
-            
+
+
             for skill_slug in finding_data.get('skills_affected', []):
                 try:
                     skill = Skill.objects.get(slug=skill_slug)
@@ -300,7 +301,8 @@ class InternalEvaluationCreateView(APIView):
                     FindingSkill.objects.create(
                         finding=finding, skill=skill, impact_score=impact
                     )
-                    
+
+
                     if author:
                         metric, _ = SkillMetric.objects.get_or_create(
                             user=author, project=project, skill=skill
@@ -321,7 +323,7 @@ class InternalEvaluationCreateView(APIView):
                             pattern.increment(finding)
                         else:
                             pattern.sample_findings.add(finding)
-                        
+
                 except Skill.DoesNotExist:
                     pass
 

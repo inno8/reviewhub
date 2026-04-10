@@ -563,7 +563,7 @@ class DashboardOverviewView(APIView):
         # Fixed count
         fixed_count = findings.filter(is_fixed=True).count()
         fix_rate = (fixed_count / total_findings * 100) if total_findings > 0 else 0
-        
+
         # Score trend (last 10 evaluations)
         recent_evals = evaluations.order_by('-created_at')[:10]
         score_trend = [
