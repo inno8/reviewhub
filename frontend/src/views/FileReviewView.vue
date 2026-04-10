@@ -24,6 +24,7 @@ import 'prismjs/components/prism-rust';
 import 'prismjs/components/prism-ruby';
 import 'prismjs/components/prism-csharp';
 import 'prismjs/components/prism-markdown';
+import 'prismjs/components/prism-markup-templating';
 import 'prismjs/components/prism-php';
 import 'prismjs/components/prism-swift';
 
