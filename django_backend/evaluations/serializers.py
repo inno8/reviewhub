@@ -57,6 +57,18 @@ class EvaluationSerializer(serializers.ModelSerializer):
         read_only_fields = ['id', 'created_at', 'evaluated_at']
 
 
+class PatternSerializer(serializers.ModelSerializer):
+    """Recurring issue pattern serializer."""
+
+    class Meta:
+        model = Pattern
+        fields = [
+            'id', 'pattern_type', 'pattern_key', 'frequency',
+            'first_seen', 'last_seen', 'is_resolved',
+        ]
+        read_only_fields = ['id', 'first_seen', 'last_seen']
+
+
 class EvaluationListSerializer(serializers.ModelSerializer):
     """Lightweight evaluation serializer for lists."""
     
