@@ -1,9 +1,26 @@
 """
 Manual analysis endpoints (for testing and direct API usage).
 """
+from typing import Optional
 from fastapi import APIRouter, HTTPException
+from pydantic import BaseModel
 from app.models.schemas import DiffAnalysisRequest, DiffAnalysisResponse, EvaluationResult
 from app.services.llm_adapter import LLMAdapter
+
+
+class UnderstandingRequest(BaseModel):
+    category: str
+    finding_titles: list[str]
+    finding_descriptions: list[str]
+    suggested_fixes: list[str]
+    developer_explanation: str
+    developer_level: str = "junior"
+
+
+class UnderstandingResponse(BaseModel):
+    level: str  # got_it / partial / not_yet
+    feedback: str
+    deeper_explanation: str = ""
 
 router = APIRouter()
 
@@ -84,3 +101,28 @@ diff --git a/example.py b/example.py
             "error": str(e),
             "traceback": traceback.format_exc()
         }
+
+
+@router.post("/understand", response_model=UnderstandingResponse)
+async def evaluate_understanding(request: UnderstandingRequest):
+    """
+    Fix & Learn: evaluate if a developer understands a code issue.
+    Returns understanding level (got_it/partial/not_yet) with feedback.
+    """
+    try:
+        llm_adapter = LLMAdapter()
+        result = await llm_adapter.evaluate_understanding(
+            category=request.category,
+            finding_titles=request.finding_titles,
+            finding_descriptions=request.finding_descriptions,
+            suggested_fixes=request.suggested_fixes,
+            developer_explanation=request.developer_explanation,
+            developer_level=request.developer_level,
+        )
+        return result
+    except Exception as e:
+        return UnderstandingResponse(
+            level="partial",
+            feedback=f"Could not evaluate: {str(e)}",
+            deeper_explanation="",
+        )

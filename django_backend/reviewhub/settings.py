@@ -163,3 +163,14 @@ if DEBUG:
 # FastAPI AI Engine
 # ═══════════════════════════════════════════════════════════════════════════════
 FASTAPI_URL = os.getenv('FASTAPI_URL', 'http://localhost:8001')
+# Optional server fallback for GitHub API (batch branch list). Users can store a PAT in Settings instead.
+GITHUB_TOKEN = os.getenv('GITHUB_TOKEN', '')
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# LLM settings UI — Google OAuth (Gemini) & post-OAuth redirect
+# ═══════════════════════════════════════════════════════════════════════════════
+FRONTEND_URL = os.getenv('FRONTEND_URL', 'http://localhost:5173').rstrip('/')
+# Public URL of this Django API (used in Google OAuth redirect_uri). Must match Google Console.
+BACKEND_PUBLIC_URL = os.getenv('BACKEND_PUBLIC_URL', 'http://localhost:8000').rstrip('/')
+GOOGLE_OAUTH_CLIENT_ID = os.getenv('GOOGLE_OAUTH_CLIENT_ID', '')
+GOOGLE_OAUTH_CLIENT_SECRET = os.getenv('GOOGLE_OAUTH_CLIENT_SECRET', '')

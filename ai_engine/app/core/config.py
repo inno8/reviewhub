@@ -12,8 +12,8 @@ class Settings(BaseSettings):
     # App
     DEBUG: bool = False
     
-    # Backend API
-    BACKEND_API_URL: str = "http://localhost:3000"
+    # Backend API (Django origin only; paths use /api/... in clients)
+    BACKEND_API_URL: str = "http://localhost:8000"
     BACKEND_API_KEY: Optional[str] = None  # For internal API calls
     
     # LLM Configuration

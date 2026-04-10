@@ -1,0 +1,79 @@
+{
+    "name": "reviewhub",
+    "displayName": "ReviewHub",
+    "status": "development",
+    "version": "v2",
+    "created": "2026-03-23T14:40:00.000Z",
+    "updated": "2026-03-29T12:48:00.000Z",
+    "stitch": "https://stitch.withgoogle.com/projects/1695881319703761493",
+    "logo": "horizontal-wordmark",
+    "template": "web-app",
+    "language": "en",
+    "description": "AI Coding Mentor — real-time code review with skill tracking, pattern detection, and personalized learning recommendations",
+    "branch": "feature/v2-ai-mentor",
+    "team": {
+      "agents": ["code", "designer", "devops"],
+      "people": [
+        {
+          "discordId": "1165824089278128138",
+          "discordUsername": "yanick_49517",
+          "role": "lead"
+        }
+      ]
+    },
+    "briefedAgents": [],
+    "tracker": {
+      "type": "github",
+      "github": {
+        "owner": "inno8",
+        "repo": "reviewhub"
+      }
+    },
+    "hosting": {
+      "provider": "digitalocean",
+      "type": "droplet"
+    },
+    "architecture": {
+      "note": "V2 DUAL-BACKEND ARCHITECTURE - Django + FastAPI. See ARCHITECTURE_V2.md for full details.",
+      "frontend": {
+        "framework": "Vue.js 3 + Vite + Tailwind",
+        "port": 5173,
+        "location": "frontend/"
+      },
+      "backend": {
+        "django": {
+          "port": 8000,
+          "role": "Product & Business Layer",
+          "features": ["Users", "Auth", "Projects", "Evaluations", "Findings", "Skills", "Patterns"],
+          "location": "backend/"
+        },
+        "fastapi": {
+          "port": 8001,
+          "role": "AI Engine",
+          "features": ["GitHub Webhooks", "Diff Extraction", "LLM Adapter", "Context Builder", "Skill Evaluator", "Pattern Detector", "FAISS Embeddings (Phase 4)"],
+          "location": "ai_engine/"
+        }
+      },
+      "database": {
+        "dev": "SQLite",
+        "prod": "PostgreSQL"
+      }
+    },
+    "techStack": {
+      "frontend": ["vue3", "vite", "tailwind", "pinia", "typescript"],
+      "backend": {
+        "django": ["python", "django-rest-framework", "postgresql"],
+        "fastapi": ["python", "fastapi", "uvicorn", "faiss"]
+      },
+      "integrations": ["github-webhooks", "openai-api", "anthropic-api", "openclaw-fallback", "telegram-bot"]
+    },
+    "phases": {
+      "1": { "name": "Foundation", "status": "complete" },
+      "2": { "name": "Core Dashboard", "status": "complete" },
+      "3": { "name": "Skills System", "status": "complete" },
+      "4": { "name": "Notifications & Recommendations", "status": "complete" },
+      "5": { "name": "Polish & QA", "status": "in-progress" },
+      "6": { "name": "Batch Commit Review", "status": "planned" }
+    }
+  }
+  

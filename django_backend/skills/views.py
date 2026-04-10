@@ -4,7 +4,8 @@ Skills API Views
 from rest_framework import generics, permissions, status
 from rest_framework.response import Response
 from rest_framework.views import APIView
-from django.db.models import Q
+from django.db.models import Q, Count
+from django.utils import timezone as tz
 
 from .models import SkillCategory, Skill, SkillMetric
 from .serializers import (
@@ -55,8 +56,12 @@ class UpdateSkillMetricsView(APIView):
     Update skill metrics (internal API from FastAPI).
     """
     
-    permission_classes = [permissions.AllowAny]  # TODO: Add API key auth
-    
+    permission_classes = []
+
+    def get_permissions(self):
+        from reviewhub.permissions import IsInternalAPIKey
+        return [IsInternalAPIKey()]
+
     def post(self, request):
         user_id = request.data.get('user_id')
         project_id = request.data.get('project_id')
@@ -90,54 +95,64 @@ class UpdateSkillMetricsView(APIView):
 
 
 class SkillTrendsView(APIView):
-    """
-    Get skill score trends over time.
-    """
-    
+    """Get skill score trends over time, with weekly historical data points."""
+
     permission_classes = [permissions.IsAuthenticated]
-    
+
     def get(self, request):
+        from evaluations.models import Evaluation, FindingSkill
+        from django.db.models import Count
+        from datetime import datetime, timedelta
+
         project_id = request.query_params.get('project')
         skill_slug = request.query_params.get('skill')
-        
-        # Get user's metrics
+        weeks = int(request.query_params.get('weeks', 8))
+
         metrics = SkillMetric.objects.filter(
             user=request.user
         ).select_related('skill')
-        
+
         if project_id:
             metrics = metrics.filter(project_id=project_id)
-        
         if skill_slug:
             metrics = metrics.filter(skill__slug=skill_slug)
-        
-        # Build trend data
+
+        end_date = tz.now()
+        start_date = end_date - timedelta(weeks=weeks)
+
+        # Fetch finding history grouped by week + skill
+        from evaluations.models import Evaluation
+
+        user_evals = Evaluation.objects.for_user(request.user).filter(created_at__gte=start_date)
+        if project_id:
+            user_evals = user_evals.filter(project_id=project_id)
+        finding_qs = FindingSkill.objects.filter(
+            finding__evaluation__in=user_evals,
+        ).select_related('skill', 'finding__evaluation')
+
+        # Build weekly buckets per skill
+        from collections import defaultdict
+        weekly: dict = defaultdict(lambda: defaultdict(int))
+        for fs in finding_qs:
+            week_start = (fs.finding.evaluation.created_at - timedelta(
+                days=fs.finding.evaluation.created_at.weekday()
+            )).strftime('%Y-%m-%d')
+            weekly[fs.skill.slug][week_start] += 1
+
         trends = []
         for metric in metrics:
-            # Get historical data points from evaluations
-            from evaluations.models import FindingSkill
-            from django.db.models import Count
-            from django.db.models.functions import TruncWeek
-
-            weekly_issues = (
-                FindingSkill.objects.filter(
-                    skill=metric.skill,
-                    finding__evaluation__author=request.user,
-                )
-                .annotate(week=TruncWeek('finding__evaluation__created_at'))
-                .values('week')
-                .annotate(count=Count('id'))
-                .order_by('week')
-            )[:12]
-
-            data_points = [
-                {"date": dp["week"].strftime("%Y-%m-%d"), "issues": dp["count"]}
-                for dp in weekly_issues
-                if dp["week"]
-            ]
+            slug = metric.skill.slug
+            week_buckets = weekly.get(slug, {})
+            # Build ordered data_points for the last N weeks
+            data_points = []
+            cur = start_date
+            while cur < end_date:
+                ws = cur.strftime('%Y-%m-%d')
+                data_points.append({'week': ws, 'issues': week_buckets.get(ws, 0)})
+                cur += timedelta(weeks=1)
 
             trends.append({
-                'skill_slug': metric.skill.slug,
+                'skill_slug': slug,
                 'skill_name': metric.skill.name,
                 'current_score': metric.score,
                 'trend': metric.trend,
@@ -145,8 +160,362 @@ class SkillTrendsView(APIView):
                 'fix_rate': metric.fix_rate,
                 'data_points': data_points,
             })
-        
+
         return Response(trends)
+
+
+# ─── Performance Insights ──────────────────────────────────────────────────
+
+class PerformanceStatsView(APIView):
+    """
+    Real performance summary for a given user + project.
+    Used by the Insights page (replaces mocked api.performance.get).
+    """
+
+    permission_classes = [permissions.IsAuthenticated]
+
+    def get(self, request, user_id):
+        from evaluations.models import Evaluation, Finding
+        from django.db.models import Avg
+
+        # Admins may query any user; developers can only query themselves.
+        if not (request.user.id == user_id or request.user.role == 'admin' or request.user.is_staff):
+            return Response({'error': 'Forbidden'}, status=403)
+
+        from users.models import User
+
+        try:
+            subject = User.objects.get(pk=user_id)
+        except User.DoesNotExist:
+            return Response({'error': 'User not found'}, status=status.HTTP_404_NOT_FOUND)
+
+        project_id = request.query_params.get('project')
+
+        evals = Evaluation.objects.for_user(subject)
+        if project_id:
+            evals = evals.filter(project_id=project_id)
+
+        commit_count = evals.count()
+        findings = Finding.objects.filter(evaluation__in=evals)
+        finding_count = findings.count()
+        fixed_count = findings.filter(is_fixed=True).count()
+        fix_rate = round((fixed_count / finding_count * 100) if finding_count else 0, 1)
+        avg_score = round(evals.aggregate(avg=Avg('overall_score'))['avg'] or 0, 1)
+        critical_issues = findings.filter(severity='critical').count()
+
+        # Review velocity: average days between evaluations
+        review_velocity = None
+        dates = list(evals.order_by('created_at').values_list('created_at', flat=True))
+        if len(dates) >= 2:
+            gaps = [(dates[i + 1] - dates[i]).days for i in range(len(dates) - 1)]
+            review_velocity = round(sum(gaps) / len(gaps), 1)
+
+        # Strengths / Growth from skill metrics
+        metrics_qs = SkillMetric.objects.filter(user_id=subject.id).select_related('skill__category')
+        if project_id:
+            metrics_qs = metrics_qs.filter(project_id=project_id)
+
+        from collections import defaultdict
+        cat_scores: dict = defaultdict(list)
+        for m in metrics_qs:
+            cat_scores[m.skill.category.name].append(m.score)
+
+        strengths = [c for c, scores in cat_scores.items() if scores and sum(scores) / len(scores) >= 75]
+        growth_areas = [c for c, scores in cat_scores.items() if scores and sum(scores) / len(scores) < 50]
+
+        # Severity distribution
+        severity_distribution = {
+            'critical': findings.filter(severity='critical').count(),
+            'warning': findings.filter(severity='warning').count(),
+            'info': findings.filter(severity='info').count(),
+            'suggestion': findings.filter(severity='suggestion').count(),
+        }
+
+        # Category breakdown (top skill issues)
+        from evaluations.models import FindingSkill
+        skill_counts = (
+            FindingSkill.objects.filter(finding__evaluation__in=evals)
+            .values('skill__id', 'skill__name', 'skill__slug')
+            .annotate(count=Count('id'))
+            .order_by('-count')[:10]
+        )
+        category_breakdown = [
+            {'id': s['skill__id'], 'name': s['skill__name'], 'slug': s['skill__slug'], 'count': s['count']}
+            for s in skill_counts
+        ]
+
+        # Score trend (last evaluations with dates)
+        recent_evals = evals.order_by('-created_at')[:20]
+        score_trend = [
+            {'date': e.created_at.strftime('%Y-%m-%d'), 'score': float(e.overall_score or 0)}
+            for e in reversed(recent_evals)
+            if e.overall_score is not None
+        ]
+
+        # Developer level (composite calculation)
+        from .level_calculator import compute_level_for_user
+        level_data = compute_level_for_user(subject, project_id=project_id)
+
+        # Progression data — per-commit scores chronologically
+        all_evals_ordered = evals.order_by('created_at').values_list(
+            'commit_sha', 'commit_message', 'overall_score', 'created_at'
+        )
+        progression = []
+        running_avg = 0
+        for i, (sha, msg, score, created) in enumerate(all_evals_ordered):
+            if score is None:
+                continue
+            running_avg = ((running_avg * i) + score) / (i + 1)
+            # Count findings for this eval
+            eval_findings = findings.filter(evaluation__commit_sha=sha).count()
+            progression.append({
+                'commit': sha[:7],
+                'message': (msg or '')[:50],
+                'score': float(score),
+                'runningAvg': round(running_avg, 1),
+                'findings': eval_findings,
+                'date': created.strftime('%Y-%m-%d'),
+            })
+
+        # Improvement metrics
+        improving = False
+        improvement_pct = 0
+        if len(progression) >= 3:
+            first_3_avg = sum(p['score'] for p in progression[:3]) / 3
+            last_3_avg = sum(p['score'] for p in progression[-3:]) / 3
+            improvement_pct = round(last_3_avg - first_3_avg, 1)
+            improving = improvement_pct > 0
+
+        return Response({
+            'commitCount': commit_count,
+            'findingCount': finding_count,
+            'fixRate': fix_rate,
+            'reviewVelocity': review_velocity,
+            'averageScore': avg_score,
+            'totalReviews': commit_count,
+            'criticalIssues': critical_issues,
+            'strengths': strengths,
+            'growthAreas': growth_areas,
+            'understandingRate': {
+                'total_checked': findings.exclude(understanding_level='').count(),
+                'got_it': findings.filter(understanding_level='got_it').count(),
+                'partial': findings.filter(understanding_level='partial').count(),
+                'not_yet': findings.filter(understanding_level='not_yet').count(),
+            },
+            'recommendations': [],
+            'severityDistribution': severity_distribution,
+            'categoryBreakdown': category_breakdown,
+            'scoreTrend': score_trend,
+            'level': level_data['level'],
+            'compositeScore': level_data['composite_score'],
+            'levelBreakdown': level_data['breakdown'],
+            'progression': progression,
+            'improving': improving,
+            'improvementPct': improvement_pct,
+        })
+
+
+class PerformanceTrendsView(APIView):
+    """
+    Finding counts grouped by skill category, bucketed by day or week.
+    Supports ?granularity=daily|weekly (default: daily) and ?days=N (default: 30).
+    Used by the Category Trends chart on the Insights page.
+    """
+
+    permission_classes = [permissions.IsAuthenticated]
+
+    def get(self, request, user_id):
+        from evaluations.models import Evaluation, FindingSkill
+        from datetime import datetime, timedelta
+        from collections import defaultdict
+
+        if not (request.user.id == user_id or request.user.role == 'admin' or request.user.is_staff):
+            return Response({'error': 'Forbidden'}, status=403)
+
+        from users.models import User
+
+        try:
+            subject = User.objects.get(pk=user_id)
+        except User.DoesNotExist:
+            return Response({'error': 'User not found'}, status=status.HTTP_404_NOT_FOUND)
+
+        project_id = request.query_params.get('project')
+        granularity = request.query_params.get('granularity', 'daily')
+        days = int(request.query_params.get('days', 30))
+        # Legacy support: weeks param converts to days
+        weeks = request.query_params.get('weeks')
+        if weeks:
+            days = int(weeks) * 7
+
+        end_date = tz.now()
+        start_date = end_date - timedelta(days=days)
+
+        evals = Evaluation.objects.for_user(subject).filter(created_at__gte=start_date)
+        if project_id:
+            evals = evals.filter(project_id=project_id)
+
+        finding_qs = FindingSkill.objects.filter(
+            finding__evaluation__in=evals,
+        ).select_related('skill__category', 'finding__evaluation')
+
+        buckets: dict = defaultdict(lambda: defaultdict(int))
+        for fs in finding_qs:
+            eval_date = fs.finding.evaluation.created_at
+            if granularity == 'weekly':
+                bucket_key = (eval_date - timedelta(days=eval_date.weekday())).strftime('%Y-%m-%d')
+            else:
+                bucket_key = eval_date.strftime('%Y-%m-%d')
+            cat = fs.skill.category.name.upper().replace(' ', '_')
+            buckets[bucket_key][cat] += 1
+
+        result = []
+        if granularity == 'weekly':
+            cur = start_date - timedelta(days=start_date.weekday())
+            end_monday = end_date - timedelta(days=end_date.weekday()) + timedelta(weeks=1)
+            while cur <= end_monday:
+                key = cur.strftime('%Y-%m-%d')
+                result.append({'date': key, 'categories': dict(buckets.get(key, {}))})
+                cur += timedelta(weeks=1)
+        else:
+            cur = start_date.replace(hour=0, minute=0, second=0, microsecond=0)
+            end_day = end_date.replace(hour=0, minute=0, second=0, microsecond=0)
+            while cur <= end_day:
+                key = cur.strftime('%Y-%m-%d')
+                result.append({'date': key, 'categories': dict(buckets.get(key, {}))})
+                cur += timedelta(days=1)
+
+        return Response(result)
+
+
+class SkillBreakdownView(APIView):
+    """
+    Detailed breakdown for a single skill: score, finding history, deductions, trend.
+    Replaces the client-side mock in api.skills.breakdown.
+    """
+
+    permission_classes = [permissions.IsAuthenticated]
+
+    def get(self, request, user_id, skill_id):
+        from evaluations.models import FindingSkill
+        from django.db.models import Avg
+        from datetime import datetime, timedelta
+
+        if not (request.user.id == user_id or request.user.role == 'admin' or request.user.is_staff):
+            return Response({'error': 'Forbidden'}, status=403)
+
+        from users.models import User
+        from evaluations.models import Evaluation
+
+        try:
+            subject = User.objects.get(pk=user_id)
+        except User.DoesNotExist:
+            return Response({'error': 'User not found'}, status=status.HTTP_404_NOT_FOUND)
+
+        project_id = request.query_params.get('project')
+
+        try:
+            skill = Skill.objects.select_related('category').get(id=skill_id)
+        except Skill.DoesNotExist:
+            return Response({'error': 'Skill not found'}, status=404)
+
+        user_evals = Evaluation.objects.for_user(subject)
+        if project_id:
+            user_evals = user_evals.filter(project_id=project_id)
+
+        # Current metric
+        metric_qs = SkillMetric.objects.filter(user_id=subject.id, skill=skill)
+        if project_id:
+            metric_qs = metric_qs.filter(project_id=project_id)
+        metric = metric_qs.first()
+
+        score = metric.score if metric else 100.0
+        # Compute level from score
+        if score >= 90: level = 4
+        elif score >= 75: level = 3
+        elif score >= 50: level = 2
+        elif score >= 25: level = 1
+        else: level = 0
+
+        # Findings for this skill
+        fs_qs = FindingSkill.objects.filter(
+            skill=skill,
+            finding__evaluation__in=user_evals,
+        ).select_related('finding', 'finding__evaluation')
+        if project_id:
+            fs_qs = fs_qs.filter(finding__evaluation__project_id=project_id)
+
+        findings_data = []
+        deductions = []
+        for fs in fs_qs.order_by('-finding__created_at')[:20]:
+            f = fs.finding
+            findings_data.append({
+                'id': f.id,
+                'title': f.title,
+                'severity': f.severity,
+                'file_path': f.file_path,
+                'line_start': f.line_start,
+                'is_fixed': f.is_fixed,
+                'created_at': f.created_at.isoformat() if f.created_at else None,
+            })
+            deductions.append({
+                'findingId': f.id,
+                'explanation': f.title + (f' — {f.description[:80]}' if f.description else ''),
+                'impact': round(-fs.impact_score, 1) if not f.is_fixed else round(fs.impact_score * 0.6, 1),
+                'keyword': f.severity,
+                'type': 'positive' if f.is_fixed else 'negative',
+                'filePath': f.file_path or '',
+                'date': f.created_at.isoformat() if f.created_at else '',
+            })
+
+        # Weekly trend (last 8 weeks)
+        weeks = 8
+        end_date = tz.now()
+        start_date = end_date - timedelta(weeks=weeks)
+        from collections import defaultdict
+        weekly_issues: dict = defaultdict(int)
+        for fs in fs_qs.filter(finding__evaluation__created_at__gte=start_date):
+            d = fs.finding.evaluation.created_at
+            ws = (d - timedelta(days=d.weekday())).strftime('%Y-%m-%d')
+            weekly_issues[ws] += 1
+
+        trend_points = []
+        cur = start_date
+        from datetime import timedelta as td
+        while cur < end_date:
+            ws = cur.strftime('%Y-%m-%d')
+            trend_points.append({'week': ws, 'issues': weekly_issues.get(ws, 0)})
+            cur += td(weeks=1)
+
+        # Tips: use low fix-rate patterns
+        tips = []
+        if score < 50:
+            tips.append(f"Your {skill.name} score is below 50. Focus on reviewing recent findings.")
+        if metric and metric.fix_rate < 30:
+            tips.append("Low fix rate — try resolving existing issues before the next push.")
+        if not tips:
+            tips.append("Keep pushing code and reviewing findings to improve this skill.")
+
+        return Response({
+            'skill': {
+                'id': skill.id,
+                'name': skill.name,
+                'displayName': skill.name,
+                'description': skill.description,
+                'category': {
+                    'id': skill.category.id,
+                    'name': skill.category.name,
+                    'displayName': skill.category.name,
+                    'icon': skill.category.icon or 'school',
+                },
+            },
+            'score': round(score, 1),
+            'level': level,
+            'baseScore': 100,
+            'deductions': deductions[:10],
+            'tips': tips,
+            'findings': findings_data,
+            'trend': trend_points,
+        })
 
 
 class DashboardOverviewView(APIView):
@@ -159,19 +528,27 @@ class DashboardOverviewView(APIView):
     
     def get(self, request):
         from evaluations.models import Evaluation, Finding
-        from django.db.models import Avg, Count
-        
+        from django.db.models import Avg
+        from users.models import User
+
         project_id = request.query_params.get('project')
-        
+
+        # Admin can view any user's data via ?user=<id>
+        target_user = request.user
+        user_id_param = request.query_params.get('user')
+        if user_id_param and (request.user.role == 'admin' or request.user.is_staff):
+            try:
+                target_user = User.objects.get(pk=user_id_param)
+            except User.DoesNotExist:
+                pass
+
         # Get user's evaluations
-        evaluations = Evaluation.objects.filter(author=request.user)
+        evaluations = Evaluation.objects.for_user(target_user)
         if project_id:
             evaluations = evaluations.filter(project_id=project_id)
         
         # Get user's findings
-        findings = Finding.objects.filter(evaluation__author=request.user)
-        if project_id:
-            findings = findings.filter(evaluation__project_id=project_id)
+        findings = Finding.objects.filter(evaluation__in=evaluations)
         
         # Calculate stats
         total_evaluations = evaluations.count()
@@ -200,7 +577,7 @@ class DashboardOverviewView(APIView):
 
         # Top 3 priority skills to improve (lowest scores)
         priority_metrics = SkillMetric.objects.filter(
-            user=request.user
+            user=target_user
         ).select_related('skill')
         if project_id:
             priority_metrics = priority_metrics.filter(project_id=project_id)
@@ -220,7 +597,7 @@ class DashboardOverviewView(APIView):
         profile_data = None
         try:
             from batch.models import DeveloperProfile
-            profile = DeveloperProfile.objects.get(user=request.user)
+            profile = DeveloperProfile.objects.get(user=target_user)
             profile_data = {
                 "level": profile.level,
                 "trend": profile.trend,
@@ -233,7 +610,7 @@ class DashboardOverviewView(APIView):
 
         # Pattern insights (top recurring patterns)
         from evaluations.models import Pattern
-        pattern_qs = Pattern.objects.filter(user=request.user, is_resolved=False)
+        pattern_qs = Pattern.objects.filter(user=target_user, is_resolved=False)
         if project_id:
             pattern_qs = pattern_qs.filter(project_id=project_id)
         top_patterns = pattern_qs.order_by('-frequency')[:5]
@@ -263,22 +640,35 @@ class DashboardOverviewView(APIView):
         })
 
 
+def _resolve_target_user(request):
+    """Admin can view any user's data via ?user=<id>."""
+    from users.models import User
+    user_id = request.query_params.get('user')
+    if user_id and (request.user.role == 'admin' or request.user.is_staff):
+        try:
+            return User.objects.get(pk=user_id)
+        except User.DoesNotExist:
+            pass
+    return request.user
+
+
 class DashboardSkillsView(APIView):
     """
     Get skill scores grouped by category for radar chart.
     Returns: categories with avg scores.
     """
-    
+
     permission_classes = [permissions.IsAuthenticated]
-    
+
     def get(self, request):
         from django.db.models import Avg
-        
+
         project_id = request.query_params.get('project')
-        
+        target_user = _resolve_target_user(request)
+
         # Get user's metrics grouped by category
         metrics = SkillMetric.objects.filter(
-            user=request.user
+            user=target_user
         ).select_related('skill', 'skill__category')
         
         if project_id:
@@ -305,6 +695,24 @@ class DashboardSkillsView(APIView):
                 'score': round(avg_score, 1),
                 'color': data['color']
             })
+
+        if not result:
+            # No SkillMetric rows (e.g. author was null at ingest); approximate from FindingSkill
+            from evaluations.models import Evaluation, FindingSkill
+
+            evals = Evaluation.objects.for_user(request.user)
+            if project_id:
+                evals = evals.filter(project_id=project_id)
+            cat_map: dict = {}
+            for row in FindingSkill.objects.filter(finding__evaluation__in=evals).select_related('skill__category'):
+                c = row.skill.category
+                name = c.name
+                if name not in cat_map:
+                    cat_map[name] = {'issues': 0, 'color': c.color}
+                cat_map[name]['issues'] += 1
+            for cat_name, data in cat_map.items():
+                pseudo = max(5.0, 100.0 - min(data['issues'] * 6.0, 85.0))
+                result.append({'category': cat_name, 'score': round(pseudo, 1), 'color': data['color']})
         
         return Response(result)
 
@@ -314,24 +722,24 @@ class DashboardProgressView(APIView):
     Get skill progress over time for line chart.
     Returns: time series data for skills.
     """
-    
+
     permission_classes = [permissions.IsAuthenticated]
-    
+
     def get(self, request):
         from evaluations.models import Evaluation
         from django.db.models import Avg
         from datetime import datetime, timedelta
-        
+
         project_id = request.query_params.get('project')
         weeks = int(request.query_params.get('weeks', 8))
-        
+        target_user = _resolve_target_user(request)
+
         # Get evaluations for the last N weeks
-        end_date = datetime.now()
+        end_date = tz.now()
         start_date = end_date - timedelta(weeks=weeks)
-        
-        evaluations = Evaluation.objects.filter(
-            author=request.user,
-            created_at__gte=start_date
+
+        evaluations = Evaluation.objects.for_user(target_user).filter(
+            created_at__gte=start_date,
         ).order_by('created_at')
         
         if project_id:
@@ -370,26 +778,27 @@ class DashboardRecentView(APIView):
     Get recent findings with skill tags.
     Returns: recent findings with associated skills.
     """
-    
+
     permission_classes = [permissions.IsAuthenticated]
-    
+
     def get(self, request):
         from evaluations.models import Finding
-        
+
         project_id = request.query_params.get('project')
         limit = int(request.query_params.get('limit', 10))
-        
-        # Build query - filter BEFORE slicing
-        queryset = Finding.objects.filter(
-            evaluation__author=request.user
-        ).select_related(
+        target_user = _resolve_target_user(request)
+
+        from evaluations.models import Evaluation
+
+        user_evals = Evaluation.objects.for_user(target_user)
+        if project_id:
+            user_evals = user_evals.filter(project_id=project_id)
+
+        queryset = Finding.objects.filter(evaluation__in=user_evals).select_related(
             'evaluation'
         ).prefetch_related(
             'skills'
         )
-        
-        if project_id:
-            queryset = queryset.filter(evaluation__project_id=project_id)
         
         # Apply ordering and limit AFTER all filters
         findings = queryset.order_by('-created_at')[:limit]
@@ -471,13 +880,425 @@ class UserSkillsView(APIView):
             
             for skill in category.skills.all().order_by('order'):
                 metric = metrics_map.get(skill.id)
+                score = metric.score if metric else 0
+                # Derive a simple 0-5 level from score (no DB field)
+                level = min(5, int(score / 20)) if score else 0
                 cat_data['skills'].append({
                     'id': skill.id,
                     'displayName': skill.name,
-                    'score': metric.score if metric else 0,
-                    'level': metric.level if metric else 0,
+                    'score': score,
+                    'level': level,
                 })
             
             result['categories'].append(cat_data)
-        
+
         return Response(result)
+
+
+class DeveloperHomeView(APIView):
+    """
+    Unified dashboard endpoint for the developer home page.
+    Returns everything needed in one call: metrics, skills, progression,
+    priorities, patterns, recent commits — across ALL projects.
+    """
+
+    permission_classes = [permissions.IsAuthenticated]
+
+    @staticmethod
+    def _calculate_streak(evals):
+        """Count consecutive recent commits with score >= 70 and no critical findings."""
+        streak = 0
+        for e in evals.order_by('-created_at')[:20]:
+            if e.overall_score and e.overall_score >= 70:
+                has_critical = e.findings.filter(severity='critical').exists()
+                if not has_critical:
+                    streak += 1
+                else:
+                    break
+            else:
+                break
+        return {
+            'count': streak,
+            'label': f'{streak} commit{"s" if streak != 1 else ""} without critical issues',
+            'active': streak >= 3,
+        }
+
+    def get(self, request):
+        from evaluations.models import Evaluation, Finding, FindingSkill, Pattern
+        from django.db.models import Avg
+        from collections import defaultdict
+
+        user = request.user
+        project_id = request.query_params.get('project')
+
+        # All evaluations for this user
+        evals = Evaluation.objects.for_user(user)
+        if project_id:
+            evals = evals.filter(project_id=project_id)
+
+        findings = Finding.objects.filter(evaluation__in=evals)
+
+        # ── Key Metrics ──
+        commit_count = evals.count()
+        finding_count = findings.count()
+        fixed_count = findings.filter(is_fixed=True).count()
+        avg_score = round(evals.aggregate(avg=Avg('overall_score'))['avg'] or 0, 1)
+
+        # Level (composite calculation)
+        from .level_calculator import compute_level_for_user
+        level_data = compute_level_for_user(user, project_id=project_id)
+        level = level_data['level']
+        trend_label = 'new'
+        try:
+            from batch.models import DeveloperProfile
+            profile = DeveloperProfile.objects.get(user=user)
+            trend_label = profile.trend
+        except Exception:
+            pass
+
+        # ── Improvement ──
+        ordered_evals = evals.order_by('created_at').values_list('overall_score', flat=True)
+        scores_list = [s for s in ordered_evals if s is not None]
+        improving = False
+        improvement_pct = 0
+        if len(scores_list) >= 3:
+            first_3 = sum(scores_list[:3]) / 3
+            last_3 = sum(scores_list[-3:]) / 3
+            improvement_pct = round(last_3 - first_3, 1)
+            improving = improvement_pct > 0
+
+        # ── Severity ──
+        severity = {
+            'critical': findings.filter(severity='critical').count(),
+            'warning': findings.filter(severity='warning').count(),
+            'info': findings.filter(severity='info').count(),
+            'suggestion': findings.filter(severity='suggestion').count(),
+        }
+
+        # ── Top 3 Priority Skills (weakest) ──
+        metrics = SkillMetric.objects.filter(user=user).select_related('skill')
+        if project_id:
+            metrics = metrics.filter(project_id=project_id)
+        priority_metrics = metrics.order_by('score')[:3]
+        priorities = [
+            {
+                'id': m.skill.id,
+                'skill': m.skill.name,
+                'slug': m.skill.slug,
+                'score': float(m.score),
+                'issues': m.issue_count,
+                'trend': m.trend,
+            }
+            for m in priority_metrics
+        ]
+
+        # ── Pattern Insights ──
+        pattern_qs = Pattern.objects.filter(user=user, is_resolved=False)
+        if project_id:
+            pattern_qs = pattern_qs.filter(project_id=project_id)
+        top_patterns = pattern_qs.order_by('-frequency')[:3]
+        patterns = [
+            {
+                'type': p.pattern_type,
+                'key': p.pattern_key,
+                'frequency': p.frequency,
+                'message': f"You have {p.frequency} recurring {p.pattern_type.replace('_', ' ')} issues",
+            }
+            for p in top_patterns
+        ]
+
+        # ── Recent Commits (last 5) ──
+        recent_evals = evals.order_by('-created_at')[:5]
+        recent_commits = [
+            {
+                'id': e.id,
+                'sha': e.commit_sha[:7],
+                'message': (e.commit_message or '')[:60],
+                'score': float(e.overall_score) if e.overall_score else None,
+                'findings': e.findings.count(),
+                'date': e.created_at.strftime('%Y-%m-%d %H:%M'),
+                'project': e.project.name if e.project else '',
+            }
+            for e in recent_evals
+        ]
+
+        # ── Skill Radar (category averages) ──
+        cat_scores = defaultdict(list)
+        for m in metrics:
+            cat_scores[m.skill.category.name].append(m.score)
+        radar = [
+            {'category': cat, 'score': round(sum(scores) / len(scores), 1)}
+            for cat, scores in cat_scores.items()
+            if scores
+        ]
+
+        # ── Progression Sparkline (last 10 scores) ──
+        last_10 = evals.order_by('-created_at').values_list('overall_score', flat=True)[:10]
+        sparkline = [float(s) for s in reversed(last_10) if s is not None]
+
+        # ── Category Breakdown (top issues) ──
+        skill_counts = (
+            FindingSkill.objects.filter(finding__evaluation__in=evals)
+            .values('skill__id', 'skill__name')
+            .annotate(count=Count('id'))
+            .order_by('-count')[:6]
+        )
+        top_issues = [
+            {'id': s['skill__id'], 'name': s['skill__name'], 'count': s['count']}
+            for s in skill_counts
+        ]
+
+        return Response({
+            # Key metrics
+            'avgScore': avg_score,
+            'level': level,
+            'compositeScore': level_data['composite_score'],
+            'levelBreakdown': level_data['breakdown'],
+            'trend': trend_label,
+            'improving': improving,
+            'improvementPct': improvement_pct,
+            'commitCount': commit_count,
+            'findingCount': finding_count,
+            'fixedCount': fixed_count,
+            'severity': severity,
+            # Action items
+            'priorities': priorities,
+            'patterns': patterns,
+            'patternsResolved': Pattern.objects.filter(user=user, is_resolved=True).count(),
+            'patternsActive': pattern_qs.count(),
+            # Pattern breakdown for chart — all patterns with frequency and status
+            'patternChart': [
+                {
+                    'name': p.pattern_type.replace('_', ' ').title(),
+                    'frequency': p.frequency,
+                    'resolved': p.is_resolved,
+                }
+                for p in Pattern.objects.filter(user=user).order_by('-frequency')[:10]
+            ],
+            'recentCommits': recent_commits,
+            # Visuals
+            'radar': radar,
+            'sparkline': sparkline,
+            'topIssues': top_issues,
+            # Streak: consecutive commits with score >= 70 and 0 critical findings
+            'streak': self._calculate_streak(evals),
+        })
+
+
+class AdminTeamOverviewView(APIView):
+    """
+    Admin-only: team-wide aggregate stats for the admin dashboard.
+    Returns team health, level distribution, attention flags, and leaderboard.
+    """
+
+    permission_classes = [permissions.IsAuthenticated]
+
+    def get(self, request):
+        if request.user.role != 'admin' and not request.user.is_staff:
+            return Response({'error': 'Admin only'}, status=403)
+
+        from evaluations.models import Evaluation, Finding, Pattern
+        from users.models import User
+        from django.db.models import Avg, Count
+        from .level_calculator import compute_level_for_user
+        from collections import Counter
+
+        developers = User.objects.filter(role='developer')
+
+        # Per-developer data
+        dev_data = []
+        level_counts = Counter()
+        all_scores = []
+
+        for dev in developers:
+            evals = Evaluation.objects.for_user(dev)
+            eval_count = evals.count()
+            if eval_count == 0:
+                continue
+
+            avg_score = evals.aggregate(avg=Avg('overall_score'))['avg'] or 0
+            findings = Finding.objects.filter(evaluation__in=evals)
+            finding_count = findings.count()
+            fixed_count = findings.filter(is_fixed=True).count()
+            fix_rate = round((fixed_count / finding_count * 100) if finding_count else 0, 1)
+
+            # Level
+            level_data = compute_level_for_user(dev)
+            level_counts[level_data['level']] += 1
+            all_scores.append(level_data['composite_score'])
+
+            # Improvement
+            scores_list = [s for s in evals.order_by('created_at').values_list('overall_score', flat=True) if s is not None]
+            improvement = 0
+            if len(scores_list) >= 3:
+                improvement = round(sum(scores_list[-3:]) / 3 - sum(scores_list[:3]) / 3, 1)
+
+            # Recent sparkline (last 5)
+            recent_scores = [float(s) for s in evals.order_by('-created_at').values_list('overall_score', flat=True)[:5] if s is not None]
+
+            # Active patterns
+            active_patterns = Pattern.objects.filter(user=dev, is_resolved=False).count()
+            resolved_patterns = Pattern.objects.filter(user=dev, is_resolved=True).count()
+
+            dev_data.append({
+                'id': dev.id,
+                'username': dev.username,
+                'email': dev.email,
+                'displayName': dev.display_name,
+                'level': level_data['level'],
+                'compositeScore': level_data['composite_score'],
+                'avgScore': round(avg_score, 1),
+                'improvement': improvement,
+                'commitCount': eval_count,
+                'findingCount': finding_count,
+                'fixRate': fix_rate,
+                'activePatterns': active_patterns,
+                'resolvedPatterns': resolved_patterns,
+                'sparkline': list(reversed(recent_scores)),
+            })
+
+        # Team aggregates
+        team_avg_score = round(sum(all_scores) / len(all_scores), 1) if all_scores else 0
+        total_findings = sum(d['findingCount'] for d in dev_data)
+        total_fixed = sum(int(d['findingCount'] * d['fixRate'] / 100) for d in dev_data)
+        team_fix_rate = round((total_fixed / total_findings * 100) if total_findings else 0, 1)
+
+        # Level distribution
+        level_distribution = {
+            'beginner': level_counts.get('beginner', 0),
+            'junior': level_counts.get('junior', 0),
+            'intermediate': level_counts.get('intermediate', 0),
+            'senior': level_counts.get('senior', 0),
+            'expert': level_counts.get('expert', 0),
+        }
+
+        # Developers who need attention
+        needs_attention = []
+        for d in dev_data:
+            reasons = []
+            if d['fixRate'] == 0 and d['findingCount'] > 5:
+                reasons.append(f"0% fix rate with {d['findingCount']} findings")
+            if d['improvement'] < -10:
+                reasons.append(f"Score declining ({d['improvement']}%)")
+            if d['activePatterns'] >= 5:
+                reasons.append(f"{d['activePatterns']} unresolved patterns")
+            if reasons:
+                needs_attention.append({
+                    'id': d['id'],
+                    'username': d['username'],
+                    'displayName': d['displayName'],
+                    'level': d['level'],
+                    'reasons': reasons,
+                })
+
+        # Top team patterns
+        team_patterns = (
+            Pattern.objects.filter(user__role='developer', is_resolved=False)
+            .values('pattern_type')
+            .annotate(total=Count('id'), total_freq=Count('frequency'))
+            .order_by('-total')[:5]
+        )
+
+        # Leaderboard
+        top_improvers = sorted(dev_data, key=lambda d: d['improvement'], reverse=True)[:3]
+        top_quality = sorted(dev_data, key=lambda d: d['avgScore'], reverse=True)[:3]
+        top_fixers = sorted(dev_data, key=lambda d: d['fixRate'], reverse=True)[:3]
+
+        return Response({
+            # Team health
+            'teamAvgScore': team_avg_score,
+            'teamFixRate': team_fix_rate,
+            'totalDevelopers': len(dev_data),
+            'totalFindings': total_findings,
+            'levelDistribution': level_distribution,
+
+            # Attention flags
+            'needsAttention': needs_attention,
+
+            # Team patterns
+            'teamPatterns': [
+                {'type': p['pattern_type'].replace('_', ' ').title(), 'count': p['total']}
+                for p in team_patterns
+            ],
+
+            # Leaderboard
+            'topImprovers': [
+                {'id': d['id'], 'name': d['displayName'], 'improvement': d['improvement'], 'level': d['level']}
+                for d in top_improvers if d['improvement'] > 0
+            ],
+            'topQuality': [
+                {'id': d['id'], 'name': d['displayName'], 'avgScore': d['avgScore'], 'level': d['level']}
+                for d in top_quality
+            ],
+            'topFixers': [
+                {'id': d['id'], 'name': d['displayName'], 'fixRate': d['fixRate'], 'level': d['level']}
+                for d in top_fixers if d['fixRate'] > 0
+            ],
+
+            # All developers with detailed data
+            'developers': sorted(dev_data, key=lambda d: d['compositeScore'], reverse=True),
+        })
+
+
+class AdminSkillMatrixView(APIView):
+    """
+    Admin-only: team skill matrix heatmap data.
+    Returns developers as rows, skill categories as columns, scores as values.
+    """
+
+    permission_classes = [permissions.IsAuthenticated]
+
+    def get(self, request):
+        if request.user.role != 'admin' and not request.user.is_staff:
+            return Response({'error': 'Admin only'}, status=403)
+
+        from users.models import User
+        from collections import defaultdict
+
+        developers = User.objects.filter(role='developer')
+        categories = SkillCategory.objects.prefetch_related('skills').order_by('order')
+
+        # Build category list
+        cat_names = [cat.name for cat in categories]
+
+        # Build matrix: developer → category → avg score
+        rows = []
+        for dev in developers:
+            metrics = SkillMetric.objects.filter(user=dev).select_related('skill__category')
+            if not metrics.exists():
+                continue
+
+            cat_scores = defaultdict(list)
+            for m in metrics:
+                cat_scores[m.skill.category.name].append(m.score)
+
+            scores = {}
+            for cat_name in cat_names:
+                s_list = cat_scores.get(cat_name, [])
+                scores[cat_name] = round(sum(s_list) / len(s_list), 1) if s_list else None
+
+            rows.append({
+                'id': dev.id,
+                'name': dev.display_name,
+                'email': dev.email,
+                'scores': scores,
+            })
+
+        # Team averages per category
+        team_avgs = {}
+        for cat_name in cat_names:
+            vals = [r['scores'][cat_name] for r in rows if r['scores'].get(cat_name) is not None]
+            team_avgs[cat_name] = round(sum(vals) / len(vals), 1) if vals else None
+
+        # Weakest categories (sorted by team avg ascending)
+        weakest = sorted(
+            [(cat, avg) for cat, avg in team_avgs.items() if avg is not None],
+            key=lambda x: x[1]
+        )[:3]
+
+        return Response({
+            'categories': cat_names,
+            'developers': rows,
+            'teamAverages': team_avgs,
+            'weakestCategories': [{'name': w[0], 'avg': w[1]} for w in weakest],
+        })

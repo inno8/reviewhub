@@ -1,0 +1,501 @@
+You don’t have prompts.
+You have code changes (diffs) + commit metadata.
+
+So your heuristic system becomes:
+
+✅ Diff-based classification instead of prompt-based classification
+
+🧠 1. What You’re Classifying
+
+Instead of:
+
+"user prompt"
+
+You classify:
+
+"commit complexity"
+Input signals you already have:
+
+diff (lines added/removed)
+
+files changed
+
+commit message
+
+file types
+
+frequency of commits
+
+history (from your learning system)
+
+🧩 2. Your Goal
+
+Decide:
+
+how deep to analyze
+
+which model to use
+
+how detailed feedback should be
+
+🧠 3. Heuristic Layers (Adapted to Your System)
+🟢 Layer 1 — Diff Size (MOST IMPORTANT)
+def classify_by_size(diff):
+    if diff.lines_changed < 10:
+        return "simple"
+    elif diff.lines_changed < 100:
+        return "medium"
+    else:
+        return "complex"
+Why this works:
+
+small diff → small change
+
+large diff → architectural change
+
+🟢 Layer 2 — Number of Files
+if diff.files_changed == 1:
+    simple
+elif diff.files_changed <= 3:
+    medium
+else:
+    complex
+
+👉 Multi-file = coordination complexity
+
+🟢 Layer 3 — File Type Heuristics
+if file.endswith(".md"):
+    simple
+elif file.endswith(".css"):
+    simple
+elif file.endswith(".py") or file.endswith(".js"):
+    medium/complex
+
+👉 Docs ≠ backend logic
+
+🟢 Layer 4 — Commit Message Keywords
+msg = commit.message.lower()
+
+if "fix typo" in msg:
+    simple
+elif "refactor" in msg:
+    complex
+elif "hotfix" in msg:
+    medium
+elif "feature" in msg:
+    complex
+
+👉 Developers tell you intent for free
+
+🟢 Layer 5 — Code Pattern Detection
+
+Look at diff content:
+
+if "try:" not in diff and "except" not in diff:
+    potential_issue = "missing_error_handling"
+
+👉 This feeds your learning system too
+
+🟡 Layer 6 — Historical Context (VERY POWERFUL)
+
+Use your learning system:
+
+if user.has_pattern("missing_edge_cases"):
+    increase_complexity_score()
+
+👉 Personalization affects classification
+
+🧠 4. Combine Everything (Scoring System)
+
+Instead of fixed rules, use scoring:
+
+def classify_commit(diff, commit, user):
+
+    score = 0
+
+    # size
+    score += diff.lines_changed / 50
+
+    # files
+    score += diff.files_changed * 2
+
+    # keywords
+    if "refactor" in commit.message:
+        score += 5
+
+    # history
+    if user.has_pattern("complex_struggles"):
+        score += 3
+
+    # final classification
+    if score < 5:
+        return "simple"
+    elif score < 15:
+        return "medium"
+    else:
+        return "complex"
+
+👉 Flexible
+👉 Easy to tune
+
+🧠 5. What This Classification Controls
+1. Model Selection
+if simple:
+    use cheap model
+elif complex:
+    use powerful model
+2. Depth of Analysis
+Simple:
+- quick feedback
+- no deep reasoning
+Complex:
+- architecture review
+- edge cases
+- performance
+3. Learning Algorithm Weight
+if complex:
+    learning_weight = 1.0
+else:
+    learning_weight = 0.3
+
+👉 Big commits influence skill more
+
+4. Feedback Style
+Beginner + simple:
+Explain everything
+Advanced + complex:
+High-level critique
+🧠 6. Batch Mode (Important Difference)
+
+In batch:
+
+you already have ALL commits
+
+👉 You can compare:
+
+if current_commit > previous_commit:
+    detect_improvement()
+
+👉 Add new heuristic:
+
+if score is increasing over time:
+    trend = "improving"
+🧠 7. Real Example
+Commit:
+"fix typo"
+1 file, 2 lines
+Result:
+simple → cheap model → light feedback
+Commit:
+"refactor payment system"
+8 files, 300 lines
+Result:
+complex → expensive model → deep analysis
+🧠 8. Why This Works
+
+Because:
+
+❗ Code structure already contains signals of complexity
+
+You don’t need:
+
+NLP
+
+heavy AI
+
+expensive classification
+
+🔥 9. Key Insight
+
+In your system:
+
+❗ The “prompt” = the diff
+
+So:
+
+Prompt classification → becomes → diff classification
+
+🏁 Final Answer
+
+You apply rule-based heuristics by analyzing commit data (diff size, number of files, commit message, file types, and user history) to classify each commit as simple, medium, or complex—without needing an LLM.
+
+
+IMPLEMENTATION
+now we’ll connect everything into one coherent system:
+
+✅ Commit classification (heuristics)
+✅ Learning algorithm (user modeling)
+✅ Batch processor (historical analysis)
+
+And most importantly:
+
+❗ This will plug into your existing system without breaking it
+
+🧠 1. Final Unified Pipeline (Big Picture)
+                ┌────────────────────┐
+                │   Input Layer      │
+                │ (Webhook / Batch)  │
+                └─────────┬──────────┘
+                          ↓
+                 Diff Extraction
+                          ↓
+                 🆕 Commit Classifier
+                          ↓
+                 🧠 Learning Engine
+                          ↓
+                 🤖 LLM (adaptive)
+                          ↓
+                 Store Results
+                          ↓
+                 🆕 Profile Builder
+                          ↓
+                 Output / Report
+
+👉 The new piece you’re adding is:
+
+Commit Classifier
+🧩 2. Where Classification Fits
+BEFORE (your current flow)
+process_commit(commit):
+    diff = get_diff(commit)
+    feedback = call_llm(diff)
+AFTER (new flow)
+process_commit(commit, user, mode="realtime"):
+
+    diff = get_diff(commit)
+
+    complexity = classify_commit(diff, commit, user)   # 🆕
+
+    evaluation = analyze_commit(diff, complexity)      # 🆕
+
+    update_learning(user, evaluation)
+
+    profile = build_user_profile(user)
+
+    feedback = generate_feedback(diff, profile, complexity)
+
+    store_results()
+
+    return feedback
+
+👉 You inserted classification at the top of the pipeline
+
+🧠 3. Commit Classifier (Concrete Implementation)
+File: services/classifier.py
+class CommitClassifier:
+
+    def classify(self, diff, commit, user):
+
+        score = 0
+
+        # 1. Diff size
+        score += diff.lines_changed / 50
+
+        # 2. Files changed
+        score += diff.files_changed * 2
+
+        # 3. Commit message
+        msg = commit.message.lower()
+
+        if "refactor" in msg:
+            score += 5
+        elif "feature" in msg:
+            score += 4
+        elif "fix" in msg:
+            score += 2
+
+        # 4. File types
+        for f in diff.files:
+            if f.endswith(".py") or f.endswith(".js"):
+                score += 1
+
+        # 5. User history (learning system)
+        if user.has_pattern("complex_struggles"):
+            score += 3
+
+        # Final classification
+        if score < 5:
+            return "simple"
+        elif score < 15:
+            return "medium"
+        else:
+            return "complex"
+
+👉 This is cheap, fast, deterministic
+
+🧠 4. Using Classification in Analysis
+Modify LLM call
+def analyze_commit(diff, complexity):
+
+    if complexity == "simple":
+        model = "cheap-model"
+        depth = "light"
+
+    elif complexity == "medium":
+        model = "balanced-model"
+        depth = "moderate"
+
+    else:
+        model = "powerful-model"
+        depth = "deep"
+
+    return call_llm(diff, model=model, depth=depth)
+
+👉 This is where you save cost
+
+🧠 5. Learning Algorithm Integration
+Modify update:
+def update_learning(user, evaluation, complexity):
+
+    weight = {
+        "simple": 0.3,
+        "medium": 0.7,
+        "complex": 1.0
+    }[complexity]
+
+    for skill, delta in evaluation.skills.items():
+        user.skills[skill] += weight * delta
+
+    for pattern in evaluation.patterns:
+        user.patterns[pattern] += weight
+
+👉 Complex commits matter more
+
+🧠 6. Feedback Adaptation
+def generate_feedback(diff, profile, complexity):
+
+    if complexity == "simple":
+        tone = "quick tips"
+    elif complexity == "medium":
+        tone = "structured review"
+    else:
+        tone = "deep critique"
+
+    return call_llm_with_profile(diff, profile, tone)
+
+👉 UX becomes smarter
+
+🧠 7. Batch Pipeline Integration
+Worker flow:
+def process_repo_job(job_id):
+
+    commits = fetch_commits(job.repo_url)
+
+    for commit in commits:
+
+        process_commit(
+            commit,
+            user=job.user,
+            mode="batch"
+        )
+
+    profile = build_user_profile(job.user)
+
+    generate_final_report(profile)
+
+👉 Classification runs for every commit
+
+🧠 8. Batch-Specific Optimization
+Skip trivial commits:
+if complexity == "simple" and mode == "batch":
+    continue
+
+👉 Huge performance gain
+
+Or sample:
+if complexity == "simple":
+    process 1 out of 5 commits
+🧠 9. Data Storage Update
+Extend evaluation:
+{
+  "commit_id": "...",
+  "complexity": "medium",
+  "score": 7,
+  "skills": {...},
+  "patterns": [...]
+}
+
+👉 You can now analyze:
+
+performance by complexity
+
+improvement over time
+
+🧠 10. Advanced: Trend Detection
+def detect_trend(user):
+
+    recent = get_last_scores(user)
+
+    if increasing(recent):
+        return "improving"
+    elif decreasing(recent):
+        return "regressing"
+
+👉 Use in final report
+
+🧠 11. Final Report (Batch Output)
+Developer Analysis:
+
+Level: Intermediate
+
+Strengths:
+- Code readability
+- Naming conventions
+
+Weaknesses:
+- Error handling
+- Edge cases
+
+Patterns:
+- Frequently misses boundary conditions
+
+Trend:
+- Improving in structure
+- Still weak in testing
+
+Recommendations:
+- Practice writing unit tests
+- Study error handling patterns
+
+👉 This is your product value
+
+🔥 12. Why This Architecture Is Strong
+You achieved:
+
+✅ Cost optimization (classification)
+
+✅ Personalization (learning)
+
+✅ Historical intelligence (batch)
+
+✅ Real-time feedback (webhook)
+
+Without:
+
+❌ retraining models
+
+❌ complex ML pipelines
+
+❌ breaking your system
+
+🏁 Final Integrated Flow
+Webhook OR Batch
+      ↓
+get_diff()
+      ↓
+classify_commit()        ← 🆕
+      ↓
+analyze_commit()         ← model routing
+      ↓
+update_learning()        ← weighted
+      ↓
+build_profile()
+      ↓
+generate_feedback()
+      ↓
+store_results()
+💡 Final Insight
+
+The classifier is the control system
+The learning algorithm is the memory
+The LLM is the reasoning engine

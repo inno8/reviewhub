@@ -34,19 +34,77 @@ class ProjectSerializer(serializers.ModelSerializer):
         return obj.members.count()
 
 
-class ProjectCreateSerializer(serializers.ModelSerializer):
-    """Serializer for creating projects."""
+class ProjectCreateSerializer(serializers.Serializer):
+    """Serializer for creating projects (simplified flow)."""
     
-    class Meta:
-        model = Project
-        fields = [
-            'name', 'description', 'provider', 'repo_url',
-            'repo_owner', 'repo_name', 'default_branch', 'team'
-        ]
+    name = serializers.CharField(max_length=100)
+    description = serializers.CharField(required=False, allow_blank=True, default='')
+    provider = serializers.ChoiceField(choices=Project.Provider.choices, default='github', required=False)
+    repo_url = serializers.URLField(required=False, allow_blank=True, default='')
+    repo_owner = serializers.CharField(required=False, allow_blank=True, default='')
+    repo_name = serializers.CharField(required=False, allow_blank=True, default='')
+    default_branch = serializers.CharField(required=False, default='main')
+    team = serializers.PrimaryKeyRelatedField(queryset=Project.objects.none(), required=False, allow_null=True)
+    member_ids = serializers.ListField(child=serializers.IntegerField(), required=False, default=list)
+    category_id = serializers.IntegerField(required=False, allow_null=True)
+    url = serializers.URLField(required=False, allow_blank=True)
     
     def create(self, validated_data):
+        from users.models import User, UserCategory
+        
+        member_ids = validated_data.pop('member_ids', [])
+        category_id = validated_data.pop('category_id', None)
+        legacy_url = validated_data.pop('url', '')
+        validated_data.pop('team', None)
+        
+        if legacy_url and not validated_data.get('repo_url'):
+            validated_data['repo_url'] = legacy_url
+        
+        repo_owner = validated_data.get('repo_owner', '') or ''
+        repo_name = validated_data.get('repo_name', '') or validated_data['name'].lower().replace(' ', '-')
+        
         validated_data['created_by'] = self.context['request'].user
-        return super().create(validated_data)
+        validated_data['repo_owner'] = repo_owner or self.context['request'].user.username
+        validated_data['repo_name'] = repo_name
+        
+        if not (validated_data.get('repo_url') or '').strip():
+            validated_data['repo_url'] = None
+
+        project = Project.objects.create(**validated_data)
+        
+        # Add creator as owner member
+        ProjectMember.objects.create(
+            project=project,
+            user=self.context['request'].user,
+            role='owner'
+        )
+        
+        # Add members from category
+        if category_id:
+            try:
+                category = UserCategory.objects.get(id=category_id)
+                for user in category.members.all():
+                    if user.id != self.context['request'].user.id:
+                        ProjectMember.objects.get_or_create(
+                            project=project, user=user,
+                            defaults={'role': 'developer'}
+                        )
+            except UserCategory.DoesNotExist:
+                pass
+        
+        # Add individual members
+        for uid in member_ids:
+            try:
+                user = User.objects.get(id=uid)
+                if user.id != self.context['request'].user.id:
+                    ProjectMember.objects.get_or_create(
+                        project=project, user=user,
+                        defaults={'role': 'developer'}
+                    )
+            except User.DoesNotExist:
+                pass
+        
+        return project
 
 
 class ProjectMemberSerializer(serializers.ModelSerializer):

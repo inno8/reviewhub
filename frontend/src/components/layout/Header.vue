@@ -222,11 +222,6 @@ onMounted(() => {
         </div>
       </div>
 
-      <!-- Settings -->
-      <button class="p-2 text-surface-container-highest hover:bg-surface-container transition-all duration-200 rounded-full active:scale-95">
-        <span class="material-symbols-outlined">settings</span>
-      </button>
-
       <!-- User Avatar -->
       <div class="relative group">
         <div class="h-8 w-8 rounded-full bg-surface-container-highest overflow-hidden border border-outline-variant/20 cursor-pointer">
