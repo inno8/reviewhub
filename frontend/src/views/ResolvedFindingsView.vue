@@ -6,7 +6,8 @@ import { api } from '@/composables/useApi';
 import { useProjectsStore } from '@/stores/projects';
 import { useAuthStore } from '@/stores/auth';
 import Prism from 'prismjs';
-import 'prismjs/themes/prism.css';
+// NOTE: We intentionally do NOT import prismjs/themes/prism.css (light theme).
+// Dark token colors are defined in <style> below to match VS Code Dark+.
 import 'prismjs/components/prism-python';
 import 'prismjs/components/prism-javascript';
 import 'prismjs/components/prism-typescript';

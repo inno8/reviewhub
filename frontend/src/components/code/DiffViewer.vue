@@ -111,7 +111,8 @@ import { ref, computed, onMounted, nextTick } from 'vue';
 import { api } from '@/composables/useApi';
 import type { Finding } from '@/stores/findings';
 import Prism from 'prismjs';
-import 'prismjs/themes/prism.css';
+// NOTE: We intentionally do NOT import prismjs/themes/prism.css (light theme).
+// Dark token colors are defined in <style> below to match VS Code Dark+.
 import 'prismjs/components/prism-markup';
 import 'prismjs/components/prism-css';
 import 'prismjs/components/prism-javascript';
@@ -290,4 +291,30 @@ code {
   font-size: 0.75rem;
   line-height: 1.5;
 }
+
+/* Prism tokens — VS Code Dark+ palette */
+.code-lines :deep(.token.keyword) { color: #c586c0 !important; }
+.code-lines :deep(.token.builtin) { color: #4ec9b0 !important; }
+.code-lines :deep(.token.string),
+.code-lines :deep(.token.attr-value) { color: #ce9178 !important; }
+.code-lines :deep(.token.function) { color: #dcdcaa !important; }
+.code-lines :deep(.token.number) { color: #b5cea8 !important; }
+.code-lines :deep(.token.boolean) { color: #569cd6 !important; }
+.code-lines :deep(.token.comment),
+.code-lines :deep(.token.prolog),
+.code-lines :deep(.token.doctype),
+.code-lines :deep(.token.cdata) { color: #6a9955 !important; font-style: italic; }
+.code-lines :deep(.token.operator) { color: #d4d4d4 !important; }
+.code-lines :deep(.token.punctuation) { color: #d4d4d4 !important; }
+.code-lines :deep(.token.class-name),
+.code-lines :deep(.token.constant) { color: #4ec9b0 !important; }
+.code-lines :deep(.token.property) { color: #9cdcfe !important; }
+.code-lines :deep(.token.parameter) { color: #9cdcfe !important; }
+.code-lines :deep(.token.decorator),
+.code-lines :deep(.token.attr-name) { color: #dcdcaa !important; }
+.code-lines :deep(.token.regex),
+.code-lines :deep(.token.important) { color: #d16969 !important; }
+.code-lines :deep(.token.tag) { color: #569cd6 !important; }
+.code-lines :deep(.token.triple-quoted-string),
+.code-lines :deep(.token.double-quoted-string) { color: #ce9178 !important; }
 </style>

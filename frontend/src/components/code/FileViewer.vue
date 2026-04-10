@@ -51,7 +51,8 @@ import { ref, onMounted, nextTick, computed } from 'vue';
 import { api } from '@/composables/useApi';
 import type { Finding } from '@/stores/findings';
 import Prism from 'prismjs';
-import 'prismjs/themes/prism.css';
+// NOTE: We intentionally do NOT import prismjs/themes/prism.css (light theme).
+// Dark token colors are defined in <style> below to match VS Code Dark+.
 import 'prismjs/components/prism-markup';
 import 'prismjs/components/prism-css';
 import 'prismjs/components/prism-javascript';
@@ -161,4 +162,30 @@ code {
   background: none;
   padding: 0;
 }
+
+/* Prism tokens — VS Code Dark+ palette */
+.code-viewer :deep(.token.keyword) { color: #c586c0 !important; }
+.code-viewer :deep(.token.builtin) { color: #4ec9b0 !important; }
+.code-viewer :deep(.token.string),
+.code-viewer :deep(.token.attr-value) { color: #ce9178 !important; }
+.code-viewer :deep(.token.function) { color: #dcdcaa !important; }
+.code-viewer :deep(.token.number) { color: #b5cea8 !important; }
+.code-viewer :deep(.token.boolean) { color: #569cd6 !important; }
+.code-viewer :deep(.token.comment),
+.code-viewer :deep(.token.prolog),
+.code-viewer :deep(.token.doctype),
+.code-viewer :deep(.token.cdata) { color: #6a9955 !important; font-style: italic; }
+.code-viewer :deep(.token.operator) { color: #d4d4d4 !important; }
+.code-viewer :deep(.token.punctuation) { color: #d4d4d4 !important; }
+.code-viewer :deep(.token.class-name),
+.code-viewer :deep(.token.constant) { color: #4ec9b0 !important; }
+.code-viewer :deep(.token.property) { color: #9cdcfe !important; }
+.code-viewer :deep(.token.parameter) { color: #9cdcfe !important; }
+.code-viewer :deep(.token.decorator),
+.code-viewer :deep(.token.attr-name) { color: #dcdcaa !important; }
+.code-viewer :deep(.token.regex),
+.code-viewer :deep(.token.important) { color: #d16969 !important; }
+.code-viewer :deep(.token.tag) { color: #569cd6 !important; }
+.code-viewer :deep(.token.triple-quoted-string),
+.code-viewer :deep(.token.double-quoted-string) { color: #ce9178 !important; }
 </style>
