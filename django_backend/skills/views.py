@@ -317,8 +317,9 @@ class PerformanceStatsView(APIView):
 
 class PerformanceTrendsView(APIView):
     """
-    Weekly finding counts grouped by skill category.
-    Used by the TrendChart on the Insights page.
+    Finding counts grouped by skill category, bucketed by day or week.
+    Supports ?granularity=daily|weekly (default: daily) and ?days=N (default: 30).
+    Used by the Category Trends chart on the Insights page.
     """
 
     permission_classes = [permissions.IsAuthenticated]
@@ -339,10 +340,15 @@ class PerformanceTrendsView(APIView):
             return Response({'error': 'User not found'}, status=status.HTTP_404_NOT_FOUND)
 
         project_id = request.query_params.get('project')
-        weeks = int(request.query_params.get('weeks', 8))
+        granularity = request.query_params.get('granularity', 'daily')
+        days = int(request.query_params.get('days', 30))
+        # Legacy support: weeks param converts to days
+        weeks = request.query_params.get('weeks')
+        if weeks:
+            days = int(weeks) * 7
 
         end_date = tz.now()
-        start_date = end_date - timedelta(weeks=weeks)
+        start_date = end_date - timedelta(days=days)
 
         evals = Evaluation.objects.for_user(subject).filter(created_at__gte=start_date)
         if project_id:
@@ -352,21 +358,31 @@ class PerformanceTrendsView(APIView):
             finding__evaluation__in=evals,
         ).select_related('skill__category', 'finding__evaluation')
 
-        weekly: dict = defaultdict(lambda: defaultdict(int))
+        buckets: dict = defaultdict(lambda: defaultdict(int))
         for fs in finding_qs:
             eval_date = fs.finding.evaluation.created_at
-            week_start = (eval_date - timedelta(days=eval_date.weekday())).strftime('%Y-%m-%d')
+            if granularity == 'weekly':
+                bucket_key = (eval_date - timedelta(days=eval_date.weekday())).strftime('%Y-%m-%d')
+            else:
+                bucket_key = eval_date.strftime('%Y-%m-%d')
             cat = fs.skill.category.name.upper().replace(' ', '_')
-            weekly[week_start][cat] += 1
+            buckets[bucket_key][cat] += 1
 
         result = []
-        # Align to Monday of start week
-        cur = start_date - timedelta(days=start_date.weekday())
-        end_monday = end_date - timedelta(days=end_date.weekday()) + timedelta(weeks=1)
-        while cur <= end_monday:
-            ws = cur.strftime('%Y-%m-%d')
-            result.append({'weekStart': ws, 'categories': dict(weekly.get(ws, {}))})
-            cur += timedelta(weeks=1)
+        if granularity == 'weekly':
+            cur = start_date - timedelta(days=start_date.weekday())
+            end_monday = end_date - timedelta(days=end_date.weekday()) + timedelta(weeks=1)
+            while cur <= end_monday:
+                key = cur.strftime('%Y-%m-%d')
+                result.append({'date': key, 'categories': dict(buckets.get(key, {}))})
+                cur += timedelta(weeks=1)
+        else:
+            cur = start_date.replace(hour=0, minute=0, second=0, microsecond=0)
+            end_day = end_date.replace(hour=0, minute=0, second=0, microsecond=0)
+            while cur <= end_day:
+                key = cur.strftime('%Y-%m-%d')
+                result.append({'date': key, 'categories': dict(buckets.get(key, {}))})
+                cur += timedelta(days=1)
 
         return Response(result)
 

@@ -70,7 +70,7 @@ export const api = {
         calendar: (projectId, month) => client.get('/evaluations/calendar/', { params: { project: projectId, month } }),
         trigger: (projectId, branches) => Promise.resolve({ data: { message: 'Use webhooks instead' } }),
         chart: (params = {}) => client.get('/evaluations/chart/', { params: djangoListParams(params) }),
-        patterns: (projectId) => client.get('/evaluations/patterns/', { params: projectId ? { project: projectId } : {} }),
+        patterns: (params = {}) => client.get('/evaluations/patterns/', { params: { ...(params.projectId ? { project: params.projectId } : {}), ...(params.userId ? { user: params.userId } : {}), ...(params.resolved !== undefined ? { resolved: params.resolved } : {}) } }),
         resolvePattern: (id, force = false) => client.post(`/evaluations/patterns/${id}/resolve/`, { force }),
     },
     reviews: {
@@ -130,6 +130,8 @@ export const api = {
                     ? { project: params.projectId }
                     : {}),
                 ...(params?.weeks != null ? { weeks: params.weeks } : {}),
+                ...(params?.days != null ? { days: params.days } : {}),
+                ...(params?.granularity ? { granularity: params.granularity } : {}),
             },
         }),
         recommendations: (userId, params) => Promise.resolve({ data: [] }),

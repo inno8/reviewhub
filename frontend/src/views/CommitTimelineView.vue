@@ -38,6 +38,42 @@ const dateFilter = ref<string | null>(null);
 const chartData = ref<any[]>([]);
 const chartLoading = ref(false);
 
+// Chart date navigation — defaults to today
+function localDateStr(d: Date): string {
+  const y = d.getFullYear();
+  const m = String(d.getMonth() + 1).padStart(2, '0');
+  const day = String(d.getDate()).padStart(2, '0');
+  return `${y}-${m}-${day}`;
+}
+
+const chartDate = ref(localDateStr(new Date()));
+
+function formatChartDate(iso: string): string {
+  const d = new Date(iso + 'T00:00:00');
+  return d.toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric', year: 'numeric' });
+}
+
+function isToday(iso: string): boolean {
+  return iso === localDateStr(new Date());
+}
+
+function chartPrevDay() {
+  const d = new Date(chartDate.value + 'T00:00:00');
+  d.setDate(d.getDate() - 1);
+  chartDate.value = localDateStr(d);
+}
+
+function chartNextDay() {
+  if (isToday(chartDate.value)) return;
+  const d = new Date(chartDate.value + 'T00:00:00');
+  d.setDate(d.getDate() + 1);
+  chartDate.value = localDateStr(d);
+}
+
+function chartGoToday() {
+  chartDate.value = localDateStr(new Date());
+}
+
 // Admin user selector
 const adminUsers = ref<any[]>([]);
 const selectedAuthorId = ref<number | null>(null);
@@ -154,6 +190,7 @@ async function loadChart() {
     const { data } = await api.evaluations.chart({
       ...(projectId != null ? { projectId } : {}),
       ...(selectedAuthorId.value ? { author: selectedAuthorId.value } : {}),
+      date: chartDate.value,
     });
     chartData.value = data;
   } catch (e) {
@@ -319,6 +356,10 @@ watch(() => projectsStore.selectedProjectId, () => {
 });
 
 watch(page, () => load());
+
+watch(chartDate, () => {
+  if (viewMode.value === 'chart') loadChart();
+});
 
 function openEvaluation(ev: any) {
   if (!ev.findings?.length && !ev.finding_count) return;
@@ -570,8 +611,25 @@ function nextPage() { if (page.value < totalPages.value) page.value++; }
 
         <div v-else-if="!chartData.length" class="flex flex-col items-center py-24 gap-4">
           <span class="material-symbols-outlined text-6xl text-outline">show_chart</span>
-          <h3 class="text-xl font-bold">No data to chart</h3>
-          <p class="text-outline text-sm">Push code and get evaluations to see your score progression.</p>
+          <h3 class="text-xl font-bold">No commits on {{ formatChartDate(chartDate) }}</h3>
+          <p class="text-outline text-sm">Try navigating to a different day or push code to see your score progression.</p>
+          <div class="flex items-center gap-2 mt-2">
+            <button @click="chartPrevDay"
+              class="flex items-center gap-1.5 px-3 py-2 rounded-lg bg-surface-container border border-outline-variant/20 text-sm text-outline hover:text-on-surface transition-all">
+              <span class="material-symbols-outlined text-sm">chevron_left</span>
+              Previous day
+            </button>
+            <button v-if="!isToday(chartDate)" @click="chartGoToday"
+              class="flex items-center gap-1.5 px-3 py-2 rounded-lg bg-primary/15 border border-primary/30 text-sm text-primary transition-all">
+              <span class="material-symbols-outlined text-sm">today</span>
+              Go to today
+            </button>
+            <button @click="chartNextDay" :disabled="isToday(chartDate)"
+              class="flex items-center gap-1.5 px-3 py-2 rounded-lg bg-surface-container border border-outline-variant/20 text-sm text-outline hover:text-on-surface transition-all disabled:opacity-30">
+              Next day
+              <span class="material-symbols-outlined text-sm">chevron_right</span>
+            </button>
+          </div>
         </div>
 
         <div v-else>
@@ -580,8 +638,35 @@ function nextPage() { if (page.value < totalPages.value) page.value++; }
             <div class="flex items-center justify-between mb-4">
               <div>
                 <h2 class="text-lg font-bold text-on-surface">Score Progression</h2>
-                <p class="text-xs text-outline">Last {{ chartData.length }} evaluated commits · hover for details</p>
+                <p class="text-xs text-outline">{{ chartData.length }} evaluated commit{{ chartData.length !== 1 ? 's' : '' }} on {{ formatChartDate(chartDate) }}</p>
               </div>
+
+              <!-- Day navigation -->
+              <div class="flex items-center gap-2">
+                <button @click="chartPrevDay"
+                  class="flex items-center justify-center w-8 h-8 rounded-lg bg-surface-container border border-outline-variant/20 text-outline hover:text-on-surface hover:border-primary/30 transition-all"
+                  title="Previous day">
+                  <span class="material-symbols-outlined text-sm">chevron_left</span>
+                </button>
+
+                <button @click="chartGoToday"
+                  class="flex items-center gap-1.5 px-3 py-1.5 rounded-lg border text-xs font-medium transition-all"
+                  :class="isToday(chartDate)
+                    ? 'bg-primary/15 border-primary/30 text-primary'
+                    : 'bg-surface-container border-outline-variant/20 text-outline hover:text-on-surface hover:border-primary/30'"
+                  title="Go to today">
+                  <span class="material-symbols-outlined text-sm">today</span>
+                  Today
+                </button>
+
+                <button @click="chartNextDay"
+                  :disabled="isToday(chartDate)"
+                  class="flex items-center justify-center w-8 h-8 rounded-lg bg-surface-container border border-outline-variant/20 text-outline hover:text-on-surface hover:border-primary/30 transition-all disabled:opacity-30 disabled:cursor-not-allowed"
+                  title="Next day">
+                  <span class="material-symbols-outlined text-sm">chevron_right</span>
+                </button>
+              </div>
+
               <!-- Legend -->
               <div class="flex items-center gap-4 text-xs text-outline">
                 <span class="flex items-center gap-1"><span class="w-2 h-2 rounded-full bg-emerald-500"></span> Good (70+)</span>

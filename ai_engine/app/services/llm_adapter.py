@@ -144,7 +144,9 @@ RULES YOU MUST FOLLOW:
 
 CRITICAL RULES FOR original_code AND suggested_code:
 - "original_code" MUST be an EXACT copy of code from the diff (the added/changed lines). Do NOT paraphrase, truncate, or invent code that does not appear in the diff.
-- "suggested_code" MUST be a working code replacement for "original_code" — it must do the same thing but better. It must NOT be just a comment, a generic placeholder like "# Use environment variables instead", or an unrelated suggestion. It must be REAL, RUNNABLE code.
+- "original_code" MUST be MINIMAL — include ONLY the lines directly related to the issue. Do NOT span multiple functions or include unrelated code. If the issue is a single variable assignment, original_code should be that line (plus at most 1-2 lines of immediate context), NOT the entire function or block around it.
+- "suggested_code" MUST be a DROP-IN REPLACEMENT for "original_code" — same scope, same boundaries. It must NOT remove, add, or restructure code outside the scope of the issue. If original_code is 3 lines, suggested_code should be approximately 3 lines (the fixed version). Never delete surrounding functions, classes, or unrelated code.
+- "suggested_code" MUST be REAL, RUNNABLE code — not a comment, a generic placeholder like "# Use environment variables instead", or an unrelated suggestion.
 - "line_start" and "line_end" MUST match the actual line numbers where "original_code" appears in the NEW file (lines marked with + in the diff).
 - Each finding must address ONE specific issue at the lines indicated. Do NOT mix suggestions for different issues into a single finding.
 - If your suggestion is about adding something new (e.g. logging, validation) rather than fixing existing code, include the surrounding original code as context in "original_code" and show the improved version with the addition in "suggested_code".

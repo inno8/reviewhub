@@ -141,7 +141,7 @@ async function loadPatterns() {
   patternsLoading.value = true;
   try {
     const projectId = projectsStore.selectedProjectId ?? undefined;
-    const { data } = await api.evaluations.patterns(projectId);
+    const { data } = await api.evaluations.patterns({ projectId });
     patterns.value = Array.isArray(data) ? data : (data.results || []);
   } catch { /* ignore */ } finally { patternsLoading.value = false; }
 }

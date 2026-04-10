@@ -3,6 +3,8 @@ import { computed, onMounted, ref, watch } from 'vue';
 import { useRoute } from 'vue-router';
 import AppShell from '@/components/layout/AppShell.vue';
 import TrendChart from '@/components/charts/TrendChart.vue';
+import CategoryTrendChart from '@/components/charts/CategoryTrendChart.vue';
+import RecurringErrorsPanel from '@/components/performance/RecurringErrorsPanel.vue';
 import SkillBreakdownDialog from '@/components/skills/SkillBreakdownDialog.vue';
 import { api } from '@/composables/useApi';
 import { useProjectsStore } from '@/stores/projects';
@@ -36,6 +38,8 @@ const loading = ref(false);
 const performance = ref<any>(null);
 const trends = ref<any[]>([]);
 const skillCategories = ref<SkillCategory[]>([]);
+const patterns = ref<any[]>([]);
+const rawCategories = ref<any[]>([]);
 
 const showUserList = computed(() => authStore.isAdmin && !selectedUserId.value);
 
@@ -86,10 +90,11 @@ function backToList() {
   performance.value = null;
   trends.value = [];
   skillCategories.value = [];
+  patterns.value = [];
 }
 
 async function loadAll() {
-  await Promise.all([loadPerformance(), loadTrends(), loadSkills()]);
+  await Promise.all([loadPerformance(), loadTrends(), loadSkills(), loadPatterns(), loadCategories()]);
 }
 
 async function loadPerformance() {
@@ -112,7 +117,7 @@ async function loadTrends() {
   if (!selectedUserId.value) return;
   try {
     // Insights page: aggregate across ALL projects
-    const { data } = await api.performance.trends(selectedUserId.value, { weeks: 8 });
+    const { data } = await api.performance.trends(selectedUserId.value, { days: 30, granularity: 'daily' });
     trends.value = data;
   } catch {
     trends.value = [];
@@ -131,12 +136,37 @@ async function loadSkills() {
   }
 }
 
-const CRITICAL_CATEGORIES = ['SECURITY', 'ARCHITECTURE'];
-function formatWeekLabel(d: string) { const date = new Date(d); const start = new Date(date.getFullYear(), 0, 1); return `W${Math.ceil(((date.getTime() - start.getTime()) / 86400000 + start.getDay() + 1) / 7)}`; }
-const criticalPoints = computed(() => trends.value.map(t => ({ label: formatWeekLabel(t.weekStart), value: CRITICAL_CATEGORIES.reduce((s: number, c: string) => s + (t.categories[c] || 0), 0) })));
-const minorPoints = computed(() => trends.value.map(t => ({ label: formatWeekLabel(t.weekStart), value: Object.entries(t.categories).filter(([c]) => !CRITICAL_CATEGORIES.includes(c)).reduce((s: number, [, v]) => s + (v as number), 0) })));
-const totalCritical = computed(() => criticalPoints.value.reduce((s, p) => s + p.value, 0));
-const totalMinor = computed(() => minorPoints.value.reduce((s, p) => s + p.value, 0));
+async function loadPatterns() {
+  if (!selectedUserId.value) return;
+  try {
+    const { data } = await api.evaluations.patterns({
+      userId: selectedUserId.value,
+      resolved: 'false',
+    });
+    patterns.value = Array.isArray(data) ? data : (data.results || []);
+  } catch {
+    patterns.value = [];
+  }
+}
+
+async function loadCategories() {
+  try {
+    const { data } = await api.skills.categories();
+    rawCategories.value = Array.isArray(data) ? data : (data.results || data || []);
+  } catch {
+    rawCategories.value = [];
+  }
+}
+
+const categoryColors = computed(() => {
+  const map: Record<string, string> = {};
+  for (const cat of rawCategories.value) {
+    const key = (cat.name || '').toUpperCase().replace(/ /g, '_').replace(/&/g, 'AND');
+    if (cat.color) map[key] = cat.color;
+  }
+  return map;
+});
+
 
 function formatCategory(c: string) { return c.split('_').map(p => p.charAt(0) + p.slice(1).toLowerCase()).join(' '); }
 function getSkillLevel(s: number) { if (s >= 90) return 'Expert'; if (s >= 75) return 'Advanced'; if (s >= 50) return 'Intermediate'; if (s >= 25) return 'Developing'; return 'Beginner'; }
@@ -452,17 +482,30 @@ function openSkillBreakdown(id: number) { breakdownSkillId.value = id; breakdown
           </div>
         </section>
 
-        <!-- Chart -->
-        <section class="mb-12">
+        <!-- Category Improvement Trends -->
+        <section v-if="trends.length" class="mb-12">
           <div class="bg-surface-container-low rounded-3xl p-8 border border-outline-variant/10">
-            <div class="flex justify-between items-center mb-4">
-              <div><h4 class="text-xl font-bold">Finding Trends</h4><p class="text-sm text-outline">Last 8 weeks</p></div>
-              <div class="flex gap-4">
-                <span class="flex items-center gap-2 text-xs font-bold"><span class="w-3 h-3 rounded-full bg-primary"></span>Critical ({{ totalCritical }})</span>
-                <span class="flex items-center gap-2 text-xs font-bold"><span class="w-3 h-3 rounded-full" style="background:#F78166"></span>Minor ({{ totalMinor }})</span>
+            <div class="flex justify-between items-start mb-6">
+              <div>
+                <h4 class="text-xl font-bold">Category Improvement Trends</h4>
+                <p class="text-sm text-outline mt-1">Daily findings per category over the last 30 days — decreasing lines mean improvement</p>
               </div>
             </div>
-            <TrendChart title="" :points="criticalPoints" :secondary-points="minorPoints" :width="800" :height="300" />
+            <CategoryTrendChart :trends="trends" :category-colors="categoryColors" :height="360" />
+          </div>
+        </section>
+
+        <!-- Recurring Errors -->
+        <section v-if="patterns.length" class="mb-12">
+          <div class="bg-surface-container-low rounded-3xl p-8 border border-outline-variant/10">
+            <div class="mb-6">
+              <h4 class="text-xl font-bold flex items-center gap-2">
+                <span class="material-symbols-outlined text-tertiary">repeat</span>
+                Recurring Errors
+              </h4>
+              <p class="text-sm text-outline mt-1">Patterns that keep appearing in your code — fix these to level up fastest</p>
+            </div>
+            <RecurringErrorsPanel :patterns="patterns" />
           </div>
         </section>
 

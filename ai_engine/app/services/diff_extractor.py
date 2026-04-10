@@ -29,7 +29,10 @@ class DiffExtractor:
         """Get local cache path for a repository."""
         # Convert URL to safe directory name
         # https://github.com/owner/repo.git -> owner_repo
-        parts = repo_url.rstrip("/").rstrip(".git").split("/")
+        url = repo_url.rstrip("/")
+        if url.endswith(".git"):
+            url = url[:-4]
+        parts = url.split("/")
         repo_name = f"{parts[-2]}_{parts[-1]}"
         return self.cache_dir / repo_name
     
@@ -38,10 +41,10 @@ class DiffExtractor:
         repo_path = self._get_repo_path(repo_url)
         
         if repo_path.exists():
-            # Fetch latest
+            # Fetch latest — use refspec to update local refs in bare repos
             await asyncio.to_thread(
                 subprocess.run,
-                ["git", "fetch", "--all"],
+                ["git", "fetch", "origin", "+refs/heads/*:refs/heads/*"],
                 cwd=repo_path,
                 capture_output=True,
                 check=True,

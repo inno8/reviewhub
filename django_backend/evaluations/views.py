@@ -113,6 +113,10 @@ class EvaluationChartView(APIView):
         if author_id:
             qs = qs.filter(author_id=author_id)
 
+        date_str = request.query_params.get('date')
+        if date_str:
+            qs = qs.filter(created_at__date=date_str)
+
         # Only completed evaluations with a score
         qs = qs.filter(status='completed', overall_score__isnull=False)
 
@@ -1051,7 +1055,12 @@ class PatternListView(generics.ListAPIView):
 
     def get_queryset(self):
         user = self.request.user
-        qs = Pattern.objects.filter(user=user)
+        is_admin = getattr(user, 'role', None) == 'admin' or getattr(user, 'is_staff', False)
+        target_user_id = self.request.query_params.get('user')
+        if is_admin and target_user_id:
+            qs = Pattern.objects.filter(user_id=target_user_id)
+        else:
+            qs = Pattern.objects.filter(user=user)
 
         project_id = self.request.query_params.get('project')
         if project_id:

@@ -5,6 +5,20 @@ import AppShell from '@/components/layout/AppShell.vue';
 import { api } from '@/composables/useApi';
 import { useProjectsStore } from '@/stores/projects';
 import { useAuthStore } from '@/stores/auth';
+import Prism from 'prismjs';
+import 'prismjs/themes/prism.css';
+import 'prismjs/components/prism-python';
+import 'prismjs/components/prism-javascript';
+import 'prismjs/components/prism-typescript';
+import 'prismjs/components/prism-go';
+import 'prismjs/components/prism-java';
+import 'prismjs/components/prism-bash';
+import 'prismjs/components/prism-sql';
+import 'prismjs/components/prism-markup';
+import 'prismjs/components/prism-css';
+import 'prismjs/components/prism-json';
+import 'prismjs/components/prism-ruby';
+import 'prismjs/components/prism-php';
 
 const router = useRouter();
 const projectsStore = useProjectsStore();
@@ -81,6 +95,27 @@ function formatDate(d: string) {
 
 function shortSha(sha: string) {
   return sha ? sha.substring(0, 7) : '-';
+}
+
+function detectLanguage(filePath: string): string {
+  if (!filePath) return 'python';
+  const ext = filePath.split('.').pop()?.toLowerCase() || '';
+  const map: Record<string, string> = {
+    py: 'python', js: 'javascript', ts: 'typescript', tsx: 'typescript',
+    go: 'go', java: 'java', rb: 'ruby', php: 'php', sh: 'bash',
+    sql: 'sql', html: 'markup', css: 'css', json: 'json', vue: 'markup',
+  };
+  return map[ext] || 'python';
+}
+
+function highlightCode(code: string, filePath: string): string {
+  if (!code) return '';
+  const lang = detectLanguage(filePath);
+  const grammar = Prism.languages[lang];
+  if (grammar) {
+    return Prism.highlight(code, grammar, lang);
+  }
+  return code.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
 }
 
 watch([selectedProject, selectedUser], () => loadFindings());
@@ -199,11 +234,11 @@ onMounted(async () => {
             <div class="grid grid-cols-1 md:grid-cols-2 gap-3">
               <div v-if="f.original_code">
                 <h4 class="text-xs font-bold text-red-400 uppercase tracking-wide mb-1.5">Original Code</h4>
-                <pre class="text-xs text-on-surface bg-red-500/5 border border-red-500/10 rounded-lg p-3 overflow-x-auto font-mono whitespace-pre-wrap">{{ f.original_code }}</pre>
+                <pre class="code-block code-block--original text-xs bg-red-500/5 border border-red-500/10 rounded-lg p-3 overflow-x-auto font-mono whitespace-pre-wrap"><code v-html="highlightCode(f.original_code, f.file_path)"></code></pre>
               </div>
               <div v-if="f.suggested_code">
                 <h4 class="text-xs font-bold text-green-400 uppercase tracking-wide mb-1.5">Suggested Fix</h4>
-                <pre class="text-xs text-on-surface bg-green-500/5 border border-green-500/10 rounded-lg p-3 overflow-x-auto font-mono whitespace-pre-wrap">{{ f.suggested_code }}</pre>
+                <pre class="code-block code-block--suggested text-xs bg-green-500/5 border border-green-500/10 rounded-lg p-3 overflow-x-auto font-mono whitespace-pre-wrap"><code v-html="highlightCode(f.suggested_code, f.file_path)"></code></pre>
               </div>
             </div>
 
@@ -248,3 +283,24 @@ onMounted(async () => {
     </div>
   </AppShell>
 </template>
+
+<style scoped>
+/* VS Code Dark+ inspired Prism token colors */
+.code-block :deep(.token.keyword) { color: #c586c0; }
+.code-block :deep(.token.builtin) { color: #4ec9b0; }
+.code-block :deep(.token.string),
+.code-block :deep(.token.attr-value) { color: #ce9178; }
+.code-block :deep(.token.function) { color: #dcdcaa; }
+.code-block :deep(.token.number) { color: #b5cea8; }
+.code-block :deep(.token.boolean) { color: #569cd6; }
+.code-block :deep(.token.comment) { color: #6a9955; font-style: italic; }
+.code-block :deep(.token.operator),
+.code-block :deep(.token.punctuation) { color: #d4d4d4; }
+.code-block :deep(.token.class-name),
+.code-block :deep(.token.constant) { color: #4ec9b0; }
+.code-block :deep(.token.property),
+.code-block :deep(.token.parameter) { color: #9cdcfe; }
+.code-block :deep(.token.decorator),
+.code-block :deep(.token.attr-name) { color: #dcdcaa; }
+.code-block :deep(.token.tag) { color: #569cd6; }
+</style>

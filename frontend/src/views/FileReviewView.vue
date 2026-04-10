@@ -6,7 +6,8 @@ import { useFindingsStore, type Finding } from '@/stores/findings';
 import { useAuthStore } from '@/stores/auth';
 import { api } from '@/composables/useApi';
 import Prism from 'prismjs';
-import 'prismjs/themes/prism.css';
+// NOTE: We intentionally do NOT import prismjs/themes/prism.css (light theme).
+// Dark token colors are defined in <style> below to match VS Code Dark+.
 import 'prismjs/components/prism-markup';
 import 'prismjs/components/prism-css';
 import 'prismjs/components/prism-javascript';
@@ -364,39 +365,57 @@ function highlightDiffSide(segments: InlineSeg[]): string {
   const raw = segments.map((s) => s.text).join('');
   const hasInlineChange = segments.some((s) => s.kind !== 'neutral');
 
-  if (!hasInlineChange) {
-    try {
-      const langKey = diffPrismLanguage.value;
-      const grammar = Prism.languages[langKey];
-      if (grammar) {
-        return Prism.highlight(raw || ' ', grammar, langKey);
-      }
-    } catch {
-      /* plain fallback */
+  // Always highlight the full line with Prism for correct tokenization
+  let fullHighlighted = escapeHtml(raw);
+  try {
+    const langKey = diffPrismLanguage.value;
+    const grammar = Prism.languages[langKey];
+    if (grammar && raw) {
+      fullHighlighted = Prism.highlight(raw, grammar, langKey);
     }
-    return escapeHtml(raw);
+  } catch {
+    /* plain fallback */
   }
 
-  return segments
-    .map((s) => {
-      if (s.kind === 'del') {
-        return `<span class="diff-seg-del">${escapeHtml(s.text)}</span>`;
-      }
-      if (s.kind === 'add') {
-        return `<span class="diff-seg-add">${escapeHtml(s.text)}</span>`;
-      }
+  // If no inline changes, return the full highlighted line
+  if (!hasInlineChange) {
+    return fullHighlighted;
+  }
+
+  // For lines with inline changes, we need to mark add/del segments.
+  // Strategy: highlight the full line for correct tokens, then overlay
+  // character-level diff markers using offset mapping.
+  let offset = 0;
+  const parts: string[] = [];
+  for (const s of segments) {
+    if (s.kind === 'neutral') {
+      // Highlight just this segment with Prism (may produce partial tokens,
+      // but neutral segments are usually whitespace or unchanged code)
+      let segHtml = escapeHtml(s.text);
       try {
         const langKey = diffPrismLanguage.value;
         const grammar = Prism.languages[langKey];
         if (grammar && s.text) {
-          return Prism.highlight(s.text, grammar, langKey);
+          segHtml = Prism.highlight(s.text, grammar, langKey);
         }
-      } catch {
-        /* fall through */
-      }
-      return escapeHtml(s.text);
-    })
-    .join('');
+      } catch { /* fallback */ }
+      parts.push(segHtml);
+    } else {
+      // For add/del segments, highlight then wrap with colored span
+      let segHtml = escapeHtml(s.text);
+      try {
+        const langKey = diffPrismLanguage.value;
+        const grammar = Prism.languages[langKey];
+        if (grammar && s.text) {
+          segHtml = Prism.highlight(s.text, grammar, langKey);
+        }
+      } catch { /* fallback */ }
+      const cls = s.kind === 'del' ? 'diff-seg-del' : 'diff-seg-add';
+      parts.push(`<span class="${cls}">${segHtml}</span>`);
+    }
+    offset += s.text.length;
+  }
+  return parts.join('');
 }
 
 /** Full file text with the selected finding’s suggested code patched in (for diff rh side). */
@@ -1282,32 +1301,31 @@ function goBack() {
   word-break: break-word;
 }
 
-/* Prism tokens: improve contrast on dark surface (prism.css is light-theme oriented) */
-.diff-table :deep(.token.keyword) {
-  color: #d73a49;
-}
-.diff-table :deep(.token.string) {
-  color: #032f62;
-}
-.diff-table :deep(.token.function) {
-  color: #6f42c1;
-}
-.diff-table :deep(.token.number) {
-  color: #005cc5;
-}
+/* Prism tokens — VS Code Dark+ palette (override light theme from prism.css) */
+.diff-table :deep(.token.keyword) { color: #c586c0 !important; }
+.diff-table :deep(.token.builtin) { color: #4ec9b0 !important; }
+.diff-table :deep(.token.string),
+.diff-table :deep(.token.attr-value) { color: #ce9178 !important; }
+.diff-table :deep(.token.function) { color: #dcdcaa !important; }
+.diff-table :deep(.token.number) { color: #b5cea8 !important; }
+.diff-table :deep(.token.boolean) { color: #569cd6 !important; }
 .diff-table :deep(.token.comment),
 .diff-table :deep(.token.prolog),
 .diff-table :deep(.token.doctype),
-.diff-table :deep(.token.cdata) {
-  color: #6a737d;
-}
-.diff-table :deep(.token.operator),
-.diff-table :deep(.token.punctuation) {
-  color: #24292e;
-}
-.diff-table :deep(.token.class-name) {
-  color: #6f42c1;
-}
+.diff-table :deep(.token.cdata) { color: #6a9955 !important; font-style: italic; }
+.diff-table :deep(.token.operator) { color: #d4d4d4 !important; }
+.diff-table :deep(.token.punctuation) { color: #d4d4d4 !important; }
+.diff-table :deep(.token.class-name),
+.diff-table :deep(.token.constant) { color: #4ec9b0 !important; }
+.diff-table :deep(.token.property) { color: #9cdcfe !important; }
+.diff-table :deep(.token.parameter) { color: #9cdcfe !important; }
+.diff-table :deep(.token.decorator),
+.diff-table :deep(.token.attr-name) { color: #dcdcaa !important; }
+.diff-table :deep(.token.regex),
+.diff-table :deep(.token.important) { color: #d16969 !important; }
+.diff-table :deep(.token.tag) { color: #569cd6 !important; }
+.diff-table :deep(.token.triple-quoted-string),
+.diff-table :deep(.token.double-quoted-string) { color: #ce9178 !important; }
 
 .diff-seg-del {
   background: rgba(248, 113, 113, 0.5);
