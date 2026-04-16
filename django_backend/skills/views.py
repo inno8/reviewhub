@@ -1,6 +1,8 @@
 """
 Skills API Views
 """
+from collections import defaultdict
+
 from rest_framework import generics, permissions, status
 from rest_framework.response import Response
 from rest_framework.views import APIView
@@ -1023,6 +1025,7 @@ class DeveloperHomeView(APIView):
         ]
 
         # ── Skill Radar (category averages) ──
+        # P1-7: Only include categories with actual data (don't show 0)
         cat_scores = defaultdict(list)
         for m in metrics:
             cat_scores[m.skill.category.name].append(m.score)
@@ -1031,6 +1034,17 @@ class DeveloperHomeView(APIView):
             for cat, scores in cat_scores.items()
             if scores
         ]
+
+        # P1-7: Fallback when no SkillMetric records — derive from FindingSkill
+        if not radar and finding_count > 0:
+            cat_map = defaultdict(lambda: {'issues': 0})
+            for row in FindingSkill.objects.filter(
+                finding__evaluation__in=evals
+            ).select_related('skill__category'):
+                cat_map[row.skill.category.name]['issues'] += 1
+            for cat_name, data in cat_map.items():
+                pseudo = max(5.0, 100.0 - min(data['issues'] * 6.0, 85.0))
+                radar.append({'category': cat_name, 'score': round(pseudo, 1)})
 
         # ── Progression Sparkline (last 10 scores) ──
         last_10 = evals.order_by('-created_at').values_list('overall_score', flat=True)[:10]
@@ -1301,4 +1315,174 @@ class AdminSkillMatrixView(APIView):
             'developers': rows,
             'teamAverages': team_avgs,
             'weakestCategories': [{'name': w[0], 'avg': w[1]} for w in weakest],
+        })
+
+
+# ═══════════════════════════════════════════════════════════════════════════
+# Phase 2: Organization Dashboard Views
+# ═══════════════════════════════════════════════════════════════════════════
+
+
+class OrgDashboardView(APIView):
+    """
+    P2-5: Organization dashboard — shows all students with skill overview.
+    Org admin sees: student name, level, trend, weakest skill, last active.
+    Also returns a skill heatmap (avg score per category across all students).
+    """
+    permission_classes = [permissions.IsAuthenticated]
+
+    def get(self, request):
+        from django.contrib.auth import get_user_model
+        from evaluations.models import Evaluation
+        from batch.models import DeveloperProfile
+
+        User = get_user_model()
+        user = request.user
+
+        if not user.organization:
+            return Response({'error': 'You must belong to an organization.'}, status=400)
+        if user.role not in ('admin',):
+            return Response({'error': 'Only org admins can access the dashboard.'}, status=403)
+
+        org = user.organization
+        students = User.objects.filter(
+            organization=org, role='developer'
+        ).order_by('first_name', 'username')
+
+        student_rows = []
+        cat_totals = defaultdict(list)
+
+        for student in students:
+            # Get profile data
+            profile = DeveloperProfile.objects.filter(user=student).first()
+            level = profile.level if profile else 'new'
+            trend = profile.trend if profile else 'new'
+            overall = profile.overall_score if profile else 0
+
+            # Weakest skill
+            weakest_metric = SkillMetric.objects.filter(
+                user=student
+            ).select_related('skill__category').order_by('score').first()
+            weakest_skill = weakest_metric.skill.category.name if weakest_metric else None
+
+            # Last active
+            last_eval = Evaluation.objects.for_user(student).order_by('-created_at').first()
+            last_active = last_eval.created_at.strftime('%Y-%m-%d') if last_eval else None
+
+            # Collect category scores for heatmap
+            for m in SkillMetric.objects.filter(user=student).select_related('skill__category'):
+                cat_totals[m.skill.category.name].append(m.score)
+
+            student_rows.append({
+                'id': student.id,
+                'name': student.display_name,
+                'email': student.email,
+                'level': level,
+                'overall_score': round(overall, 1),
+                'trend': trend,
+                'weakest_skill': weakest_skill,
+                'last_active': last_active,
+            })
+
+        # Skill heatmap — average score per category across all students
+        heatmap = [
+            {
+                'category': cat,
+                'avg_score': round(sum(scores) / len(scores), 1),
+                'student_count': len(scores),
+            }
+            for cat, scores in sorted(cat_totals.items(), key=lambda x: sum(x[1]) / len(x[1]))
+        ]
+
+        return Response({
+            'org_name': org.name,
+            'student_count': len(student_rows),
+            'students': student_rows,
+            'heatmap': heatmap,
+        })
+
+
+class OrgStudentDetailView(APIView):
+    """
+    P2-6: Org admin drills into a specific student.
+    Returns: radar chart, evaluation history, strengths, weaknesses.
+    Does NOT expose code or secrets — only scores and finding titles.
+    """
+    permission_classes = [permissions.IsAuthenticated]
+
+    def get(self, request, student_id):
+        from django.contrib.auth import get_user_model
+        from evaluations.models import Evaluation, Finding, FindingSkill
+        from batch.models import DeveloperProfile
+        from .level_calculator import compute_level_for_user
+
+        User = get_user_model()
+        user = request.user
+
+        if not user.organization:
+            return Response({'error': 'You must belong to an organization.'}, status=400)
+        if user.role not in ('admin',):
+            return Response({'error': 'Only org admins can access student details.'}, status=403)
+
+        try:
+            student = User.objects.get(id=student_id, organization=user.organization)
+        except User.DoesNotExist:
+            return Response({'error': 'Student not found in your organization.'}, status=404)
+
+        # Radar chart
+        metrics = SkillMetric.objects.filter(user=student).select_related('skill__category')
+        cat_scores = defaultdict(list)
+        for m in metrics:
+            cat_scores[m.skill.category.name].append(m.score)
+        radar = [
+            {'category': cat, 'score': round(sum(s) / len(s), 1)}
+            for cat, s in cat_scores.items() if s
+        ]
+
+        # Level
+        level_data = compute_level_for_user(student)
+
+        # Profile
+        profile = DeveloperProfile.objects.filter(user=student).first()
+
+        # Evaluation history (scores only, no code)
+        evals = Evaluation.objects.for_user(student).order_by('-created_at')[:20]
+        eval_history = [
+            {
+                'id': e.id,
+                'sha': e.commit_sha[:7],
+                'score': float(e.overall_score) if e.overall_score else None,
+                'finding_count': e.finding_count,
+                'date': e.created_at.strftime('%Y-%m-%d'),
+                'project': e.project.name if e.project else '',
+            }
+            for e in evals
+        ]
+
+        # Strengths / weaknesses (by category name, not code)
+        strengths = [
+            m.skill.category.name
+            for m in metrics.order_by('-score')[:3]
+            if m.score > 75
+        ]
+        weaknesses = [
+            m.skill.category.name
+            for m in metrics.order_by('score')[:3]
+            if m.score < 50
+        ]
+
+        return Response({
+            'student': {
+                'id': student.id,
+                'name': student.display_name,
+                'email': student.email,
+            },
+            'level': level_data['level'],
+            'composite_score': level_data['composite_score'],
+            'trend': profile.trend if profile else 'new',
+            'radar': radar,
+            'strengths': list(set(strengths)),
+            'weaknesses': list(set(weaknesses)),
+            'evaluation_history': eval_history,
+            'score_history': profile.score_history if profile else [],
         })

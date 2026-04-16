@@ -48,13 +48,18 @@ class ProjectListCreateView(generics.ListCreateAPIView):
     def get_queryset(self):
         """Return projects the user has access to."""
         user = self.request.user
-        
-        # Get projects where user is a member or creator
-        return Project.objects.filter(
+
+        q = (
             models.Q(created_by=user) |
             models.Q(members__user=user) |
             models.Q(team__members__user=user)
-        ).distinct()
+        )
+
+        # P2-7: Org admins can see all projects by org members
+        if user.role == 'admin' and user.organization_id:
+            q = q | models.Q(created_by__organization_id=user.organization_id)
+
+        return Project.objects.filter(q).distinct()
 
 
 class ProjectDetailView(generics.RetrieveUpdateDestroyAPIView):

@@ -331,48 +331,76 @@ class InternalEvaluationCreateView(APIView):
         if author:
             self._auto_resolve_patterns(author, project)
 
-        # Update DeveloperProfile with composite calculation + history
+        # P1-5 / P1-9: Also update SkillMetrics with evaluation overall_score
+        # so skills reflect quality, not just issue deductions.
+        if author and evaluation.overall_score is not None:
+            for skill_slug in set(
+                slug
+                for fd in data['findings']
+                for slug in fd.get('skills_affected', [])
+            ):
+                try:
+                    skill = Skill.objects.get(slug=skill_slug)
+                    metric = SkillMetric.objects.filter(
+                        user=author, project=project, skill=skill
+                    ).first()
+                    if metric:
+                        metric.update_score(observed_score=evaluation.overall_score)
+                except Skill.DoesNotExist:
+                    pass
+
+        # P1-4 / P1-9: Update DeveloperProfile — auto-create if missing
         if author:
             try:
                 from skills.level_calculator import compute_level_for_user
                 from batch.models import DeveloperProfile
                 from django.utils import timezone as tz
 
-                profile = DeveloperProfile.objects.filter(user=author).first()
-                if profile:
-                    level_data = compute_level_for_user(author)
-                    new_score = level_data['composite_score']
+                profile, _created = DeveloperProfile.objects.get_or_create(
+                    user=author,
+                    defaults={
+                        'level': 'beginner',
+                        'overall_score': 50.0,
+                    }
+                )
 
-                    # Append to score_history
-                    history = list(profile.score_history or [])
-                    today = tz.now().strftime('%Y-%m-%d')
-                    if history and history[-1].get('date') == today:
-                        history[-1]['score'] = new_score
-                    else:
-                        history.append({'date': today, 'score': new_score})
-                    history = history[-90:]
+                level_data = compute_level_for_user(author)
+                new_score = level_data['composite_score']
 
-                    # Update strengths/weaknesses
-                    metrics = SkillMetric.objects.filter(user=author).select_related('skill').order_by('score')
-                    weaknesses = [m.skill.id for m in metrics if m.score < 50][:5]
-                    strengths = [m.skill.id for m in metrics.order_by('-score') if m.score > 75][:5]
+                # Append to score_history
+                history = list(profile.score_history or [])
+                today = tz.now().strftime('%Y-%m-%d')
+                if history and history[-1].get('date') == today:
+                    history[-1]['score'] = new_score
+                else:
+                    history.append({'date': today, 'score': new_score})
+                history = history[-90:]
 
-                    # Update counts
-                    total_findings = Finding.objects.filter(
-                        evaluation__in=Evaluation.objects.for_user(author)
-                    ).count()
+                # Update strengths/weaknesses
+                metrics = SkillMetric.objects.filter(user=author).select_related('skill').order_by('score')
+                weaknesses = [m.skill.id for m in metrics if m.score < 50][:5]
+                strengths = [m.skill.id for m in metrics.order_by('-score') if m.score > 75][:5]
 
-                    profile.level = level_data['level']
-                    profile.overall_score = new_score
-                    profile.score_history = history
-                    profile.strengths = strengths
-                    profile.weaknesses = weaknesses
-                    profile.total_findings = total_findings
-                    profile.last_commit_date = tz.now().date()
-                    profile.trend = profile.calculate_trend()
-                    profile.save()
-            except Exception:
-                pass
+                # Update counts
+                total_findings = Finding.objects.filter(
+                    evaluation__in=Evaluation.objects.for_user(author)
+                ).count()
+
+                profile.level = level_data['level']
+                profile.overall_score = new_score
+                profile.score_history = history
+                profile.strengths = strengths
+                profile.weaknesses = weaknesses
+                profile.total_findings = total_findings
+                profile.commits_analyzed = Evaluation.objects.for_user(author).count()
+                profile.last_commit_date = tz.now().date()
+                profile.trend = profile.calculate_trend()
+                profile.save()
+            except Exception as e:
+                import logging
+                logging.getLogger(__name__).warning(
+                    'Failed to update DeveloperProfile for %s: %s', author.email, e
+                )
 
         # Admin alerts: notify admins if developer score drops significantly
         if author and evaluation.overall_score is not None:
@@ -899,27 +927,28 @@ class CheckUnderstandingView(APIView):
                 continue
 
             # Call FastAPI to evaluate understanding
-            import httpx
+            import json as _json
+            import urllib.request
             from django.conf import settings as django_settings
 
             fastapi_url = getattr(django_settings, 'FASTAPI_URL', 'http://localhost:8001')
             try:
-                resp = httpx.post(
+                payload = _json.dumps({
+                    'category': finding.title,
+                    'finding_titles': [finding.title],
+                    'finding_descriptions': [finding.description],
+                    'suggested_fixes': [finding.suggested_code or ''],
+                    'developer_explanation': explanation,
+                    'developer_level': 'junior',  # TODO: get from profile
+                }).encode()
+                req = urllib.request.Request(
                     f"{fastapi_url}/api/v1/analyze/understand",
-                    json={
-                        'category': finding.title,
-                        'finding_titles': [finding.title],
-                        'finding_descriptions': [finding.description],
-                        'suggested_fixes': [finding.suggested_code or ''],
-                        'developer_explanation': explanation,
-                        'developer_level': 'junior',  # TODO: get from profile
-                    },
-                    timeout=30,
+                    data=payload,
+                    headers={'Content-Type': 'application/json'},
+                    method='POST',
                 )
-                if resp.status_code == 200:
-                    llm_result = resp.json()
-                else:
-                    llm_result = {'level': 'partial', 'feedback': 'Could not evaluate — try again.', 'deeper_explanation': ''}
+                with urllib.request.urlopen(req, timeout=30) as resp:
+                    llm_result = _json.loads(resp.read())
             except Exception:
                 llm_result = {'level': 'partial', 'feedback': 'Evaluation service unavailable.', 'deeper_explanation': ''}
 
@@ -928,6 +957,11 @@ class CheckUnderstandingView(APIView):
             finding.understanding_level = llm_result.get('level', 'partial')
             finding.understanding_feedback = llm_result.get('feedback', '')
             finding.save(update_fields=['developer_explanation', 'understanding_level', 'understanding_feedback'])
+
+            # Auto-mark as fixed when developer demonstrates understanding
+            # (got_it or partial = they understood the problem, fix is implied)
+            if finding.understanding_level in ('got_it', 'partial') and not finding.is_fixed:
+                finding.mark_fixed()
 
             results.append({
                 'finding_id': finding_id,

@@ -29,6 +29,74 @@ def _get_fernet() -> Fernet:
     return Fernet(derived)
 
 
+class Organization(models.Model):
+    """
+    Organization (school, bootcamp, company) that owns projects and monitors developers.
+    The org admin invites students/developers and monitors their skill growth.
+    """
+    name = models.CharField(max_length=150, unique=True)
+    slug = models.SlugField(max_length=150, unique=True)
+    owner = models.ForeignKey(
+        'User',
+        on_delete=models.PROTECT,
+        related_name='owned_organizations',
+        null=True,  # Set after user is created during signup
+    )
+    settings = models.JSONField(default=dict, blank=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        db_table = 'organizations'
+
+    def __str__(self):
+        return self.name
+
+
+class Invitation(models.Model):
+    """Pending invitation for a user to join an organization."""
+
+    class Status(models.TextChoices):
+        PENDING = 'pending', 'Pending'
+        ACCEPTED = 'accepted', 'Accepted'
+        EXPIRED = 'expired', 'Expired'
+        CANCELLED = 'cancelled', 'Cancelled'
+
+    organization = models.ForeignKey(
+        Organization,
+        on_delete=models.CASCADE,
+        related_name='invitations',
+    )
+    email = models.EmailField()
+    role = models.CharField(max_length=20, default='developer')
+    token = models.CharField(max_length=64, unique=True)
+    status = models.CharField(
+        max_length=20,
+        choices=Status.choices,
+        default=Status.PENDING,
+    )
+    invited_by = models.ForeignKey(
+        'User',
+        on_delete=models.SET_NULL,
+        null=True,
+        related_name='sent_invitations',
+    )
+    expires_at = models.DateTimeField()
+    accepted_at = models.DateTimeField(null=True, blank=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        db_table = 'invitations'
+
+    def __str__(self):
+        return f"Invite {self.email} → {self.organization.name} ({self.status})"
+
+    @property
+    def is_expired(self):
+        from django.utils import timezone
+        return timezone.now() > self.expires_at
+
+
 class User(AbstractUser):
     """
     Custom User model with:
@@ -36,13 +104,20 @@ class User(AbstractUser):
     - Encrypted LLM API key storage
     - Role-based access
     """
-    
+
     class Role(models.TextChoices):
         ADMIN = 'admin', 'Admin'
         DEVELOPER = 'developer', 'Developer'
         VIEWER = 'viewer', 'Viewer'
-    
+
     email = models.EmailField(unique=True)
+    organization = models.ForeignKey(
+        Organization,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name='members',
+    )
     role = models.CharField(
         max_length=20,
         choices=Role.choices,
@@ -154,7 +229,7 @@ class User(AbstractUser):
         return self.username
 
     @property
-    def dev_profile_completed(self):
+    def has_dev_profile(self):
         """True when the developer has submitted the onboarding questionnaire."""
         return hasattr(self, 'dev_profile') and self.dev_profile is not None
 

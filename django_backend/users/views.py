@@ -20,7 +20,7 @@ from django.http import HttpResponseRedirect
 from django.views import View
 from urllib.parse import quote
 
-from .models import User, OnboardCode, UserCategory, LLMConfiguration, GitProviderConnection, UserDevProfile
+from .models import User, OnboardCode, UserCategory, LLMConfiguration, GitProviderConnection, UserDevProfile, Organization, Invitation
 from .serializers import (
     UserSerializer,
     UserCreateSerializer,
@@ -857,6 +857,9 @@ class AdaptiveProfileView(APIView):
         weaknesses: list[str] = []
         total_score = 0.0
         skill_count = 0
+        # G10: Per-category score aggregation
+        from collections import defaultdict
+        cat_score_totals = defaultdict(list)
 
         for m in metrics_qs:
             score = m.score
@@ -867,8 +870,18 @@ class AdaptiveProfileView(APIView):
                 strengths.append(slug)
             elif score <= WEAKNESS_THRESHOLD:
                 weaknesses.append(slug)
+            # G10: Aggregate by category
+            cat_name = m.skill.category.name if hasattr(m.skill, 'category') else 'Unknown'
+            cat_score_totals[cat_name].append(score)
 
         avg_score = (total_score / skill_count) if skill_count else 50.0
+
+        # G10: Compute per-category average scores
+        category_scores = {
+            cat: round(sum(scores) / len(scores), 1)
+            for cat, scores in cat_score_totals.items()
+            if scores
+        }
 
         # ── Evaluation count ─────────────────────────────────────────────────
         eval_qs = Evaluation.objects.filter(author=user)
@@ -956,6 +969,7 @@ class AdaptiveProfileView(APIView):
             "weaknesses": weaknesses,
             "frequent_patterns": frequent_patterns,
             "recommendations": recommendations[:5],
+            "category_scores": category_scores,  # G10: per-category levels
             **dev_profile_data,
         })
 
@@ -986,6 +1000,8 @@ class DevProfileView(APIView):
             return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
 
         profile = serializer.save(user=request.user)
+        request.user.dev_profile_completed = True
+        request.user.save(update_fields=['dev_profile_completed'])
         self._seed_skill_metrics(request.user, profile)
 
         return Response(UserDevProfileSerializer(profile).data, status=status.HTTP_200_OK)
@@ -1048,7 +1064,7 @@ class DevCalibrationSummaryView(APIView):
         from batch.models import BatchJob, DeveloperProfile
         from batch.serializers import DeveloperProfileSerializer, BatchJobListSerializer
         from evaluations.models import Evaluation, Finding, FindingSkill
-        from skills.models import Skill
+        from skills.models import Skill, SkillCategory
 
         # Admin can view any user's profile via ?user=<id>
         target_user = request.user
@@ -1104,25 +1120,29 @@ class DevCalibrationSummaryView(APIView):
             ):
                 severity_breakdown[row['severity']] = row['c']
 
-        skill_counts: dict[str, int] = {}
+        # Group issues by the 8 skill CATEGORIES, not individual skills
+        category_counts: dict[int, int] = {}
         if eval_ids:
             for fs in FindingSkill.objects.filter(
                 finding__evaluation_id__in=eval_ids
-            ).select_related('skill'):
-                slug = fs.skill.slug
-                skill_counts[slug] = skill_counts.get(slug, 0) + 1
+            ).select_related('skill__category'):
+                cat_id = fs.skill.category_id
+                category_counts[cat_id] = category_counts.get(cat_id, 0) + 1
 
+        # Compute score per category: fewer issues per evaluation = higher score
+        eval_count = max(agg['cnt'] or 1, 1)
         top_skill_issues = []
-        for slug, cnt in sorted(skill_counts.items(), key=lambda x: -x[1])[:10]:
+        for cat_id, cnt in sorted(category_counts.items(), key=lambda x: -x[1])[:8]:
             try:
-                sk = Skill.objects.get(slug=slug)
+                cat = SkillCategory.objects.get(pk=cat_id)
+                # Score based on issues per evaluation (0-5+ issues/eval → 100-15 score)
+                issues_per_eval = cnt / eval_count
+                score = round(max(15, 100 - issues_per_eval * 15), 1)
                 top_skill_issues.append(
-                    {'slug': slug, 'name': sk.name, 'issue_count': cnt}
+                    {'slug': cat.slug, 'name': cat.name, 'issue_count': cnt, 'score': score}
                 )
-            except Skill.DoesNotExist:
-                top_skill_issues.append(
-                    {'slug': slug, 'name': slug.replace('_', ' '), 'issue_count': cnt}
-                )
+            except SkillCategory.DoesNotExist:
+                pass
 
         evaluation_insights = {
             'evaluation_count': agg['cnt'] or 0,
@@ -1140,3 +1160,243 @@ class DevCalibrationSummaryView(APIView):
                 'evaluation_insights': evaluation_insights,
             }
         )
+
+
+# ═══════════════════════════════════════════════════════════════════════════
+# Phase 2: Organization Onboarding
+# ═══════════════════════════════════════════════════════════════════════════
+
+
+class OrgSignupView(APIView):
+    """
+    P2-2: Self-service organization signup.
+    Creates org + admin user + membership in one call.
+    Public endpoint (no auth required).
+    """
+    permission_classes = [permissions.AllowAny]
+
+    def post(self, request):
+        org_name = (request.data.get('org_name') or '').strip()
+        admin_email = (request.data.get('admin_email') or '').strip()
+        admin_password = request.data.get('admin_password', '')
+        admin_username = request.data.get('admin_username', '') or admin_email.split('@')[0]
+
+        errors = {}
+        if not org_name:
+            errors['org_name'] = 'Organization name is required.'
+        if not admin_email:
+            errors['admin_email'] = 'Admin email is required.'
+        if len(admin_password) < 8:
+            errors['admin_password'] = 'Password must be at least 8 characters.'
+        if errors:
+            return Response(errors, status=status.HTTP_400_BAD_REQUEST)
+
+        from django.utils.text import slugify
+        slug = slugify(org_name)[:150]
+
+        if Organization.objects.filter(slug=slug).exists():
+            return Response(
+                {'org_name': 'An organization with this name already exists.'},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+        if User.objects.filter(email__iexact=admin_email).exists():
+            return Response(
+                {'admin_email': 'A user with this email already exists.'},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+        # Create org (owner set after user creation)
+        org = Organization.objects.create(name=org_name, slug=slug)
+
+        # Create admin user
+        user = User.objects.create_user(
+            email=admin_email,
+            username=admin_username,
+            password=admin_password,
+            role='admin',
+            organization=org,
+        )
+        org.owner = user
+        org.save(update_fields=['owner'])
+
+        # Generate tokens
+        from rest_framework_simplejwt.tokens import RefreshToken
+        refresh = RefreshToken.for_user(user)
+
+        return Response({
+            'organization': {
+                'id': org.id,
+                'name': org.name,
+                'slug': org.slug,
+            },
+            'user': UserSerializer(user).data,
+            'tokens': {
+                'refresh': str(refresh),
+                'access': str(refresh.access_token),
+            },
+        }, status=status.HTTP_201_CREATED)
+
+
+class InviteStudentView(APIView):
+    """
+    P2-3: Invite a student/developer to join the organization.
+    Sends an invitation email with a unique token.
+    """
+    permission_classes = [permissions.IsAuthenticated]
+
+    def post(self, request):
+        if not request.user.organization:
+            return Response({'error': 'You must belong to an organization.'}, status=400)
+
+        if request.user.role not in ('admin',):
+            return Response({'error': 'Only admins can invite students.'}, status=403)
+
+        email = (request.data.get('email') or '').strip().lower()
+        role = request.data.get('role', 'developer')
+
+        if not email:
+            return Response({'email': 'Email is required.'}, status=400)
+
+        # Check for existing invitation
+        existing = Invitation.objects.filter(
+            organization=request.user.organization,
+            email__iexact=email,
+            status='pending',
+        ).first()
+        if existing:
+            return Response({'email': 'This email has already been invited.'}, status=400)
+
+        # Check if user already exists in org
+        if User.objects.filter(
+            email__iexact=email, organization=request.user.organization
+        ).exists():
+            return Response({'email': 'This user is already in your organization.'}, status=400)
+
+        # Create invitation
+        import secrets
+        token = secrets.token_urlsafe(32)
+        invitation = Invitation.objects.create(
+            organization=request.user.organization,
+            email=email,
+            role=role,
+            token=token,
+            invited_by=request.user,
+            expires_at=timezone.now() + timedelta(days=7),
+        )
+
+        # Send email
+        from .emails import send_invitation_email
+        send_invitation_email(
+            email=email,
+            org_name=request.user.organization.name,
+            token=token,
+            invited_by=request.user.display_name,
+        )
+
+        return Response({
+            'id': invitation.id,
+            'email': invitation.email,
+            'status': invitation.status,
+            'expires_at': invitation.expires_at.isoformat(),
+        }, status=status.HTTP_201_CREATED)
+
+
+class AcceptInviteView(APIView):
+    """
+    P2-3: Accept an invitation and create the user account.
+    Public endpoint (no auth required — user doesn't exist yet).
+    """
+    permission_classes = [permissions.AllowAny]
+
+    def post(self, request):
+        token = request.data.get('token', '')
+        password = request.data.get('password', '')
+        username = request.data.get('username', '')
+
+        if not token:
+            return Response({'token': 'Token is required.'}, status=400)
+        if len(password) < 8:
+            return Response({'password': 'Password must be at least 8 characters.'}, status=400)
+
+        try:
+            invitation = Invitation.objects.select_related('organization').get(
+                token=token, status='pending'
+            )
+        except Invitation.DoesNotExist:
+            return Response({'token': 'Invalid or expired invitation.'}, status=400)
+
+        if invitation.is_expired:
+            invitation.status = 'expired'
+            invitation.save(update_fields=['status'])
+            return Response({'token': 'This invitation has expired.'}, status=400)
+
+        # Check if user already exists (could have registered separately)
+        existing_user = User.objects.filter(email__iexact=invitation.email).first()
+        if existing_user:
+            # Assign to org if not already
+            existing_user.organization = invitation.organization
+            existing_user.save(update_fields=['organization'])
+            user = existing_user
+        else:
+            # Create new user
+            user = User.objects.create_user(
+                email=invitation.email,
+                username=username or invitation.email.split('@')[0],
+                password=password,
+                role=invitation.role,
+                organization=invitation.organization,
+            )
+
+        # Mark invitation as accepted
+        invitation.status = 'accepted'
+        invitation.accepted_at = timezone.now()
+        invitation.save(update_fields=['status', 'accepted_at'])
+
+        # Generate tokens
+        from rest_framework_simplejwt.tokens import RefreshToken
+        refresh = RefreshToken.for_user(user)
+
+        return Response({
+            'user': UserSerializer(user).data,
+            'organization': {
+                'id': invitation.organization.id,
+                'name': invitation.organization.name,
+            },
+            'tokens': {
+                'refresh': str(refresh),
+                'access': str(refresh.access_token),
+            },
+        }, status=status.HTTP_201_CREATED)
+
+
+class OrgMembersView(APIView):
+    """List all members of the current user's organization."""
+    permission_classes = [permissions.IsAuthenticated]
+
+    def get(self, request):
+        if not request.user.organization:
+            return Response({'error': 'You must belong to an organization.'}, status=400)
+
+        members = User.objects.filter(
+            organization=request.user.organization
+        ).values('id', 'email', 'username', 'first_name', 'last_name', 'role', 'created_at')
+
+        return Response(list(members))
+
+
+class OrgInvitationsView(APIView):
+    """List pending invitations for the current user's organization."""
+    permission_classes = [permissions.IsAuthenticated]
+
+    def get(self, request):
+        if not request.user.organization:
+            return Response({'error': 'You must belong to an organization.'}, status=400)
+
+        invitations = Invitation.objects.filter(
+            organization=request.user.organization
+        ).order_by('-created_at').values(
+            'id', 'email', 'role', 'status', 'expires_at', 'created_at'
+        )
+
+        return Response(list(invitations))

@@ -58,17 +58,13 @@ async def github_webhook(
     body = await request.body()
     
     # Verify signature (if secret is configured)
-    print(f"DEBUG: GITHUB_WEBHOOK_SECRET = {repr(settings.GITHUB_WEBHOOK_SECRET)}")
     if settings.GITHUB_WEBHOOK_SECRET:
-        print(f"DEBUG: Verifying signature...")
         if not verify_github_signature(
-            body, 
-            x_hub_signature_256 or "", 
+            body,
+            x_hub_signature_256 or "",
             settings.GITHUB_WEBHOOK_SECRET
         ):
             raise HTTPException(status_code=401, detail="Invalid signature")
-    else:
-        print("DEBUG: Skipping signature verification (no secret configured)")
     
     # Only process push events
     if x_github_event != "push":
@@ -170,17 +166,25 @@ async def process_commit(
             print("[WEBHOOK] No org LLM config found — using env/fallback", flush=True)
             llm_adapter = LLMAdapter()
 
-        # ── 2. Phase 5 – adaptive profile ─────────────────────────────────
+        # ── 2. Phase 5 – adaptive profile (G3: graceful degradation) ────────
         profile: dict = {}
+        context_partial = False
         if user and user.get("id"):
-            raw = await django_client.get_adaptive_profile(user["id"], project_id)
-            if raw and isinstance(raw, dict):
-                if raw.get("level"):
-                    profile = raw
-                elif raw.get("categories"):
-                    # Fallback shape from get_user_skill_profile
-                    eval_count = raw.get("evaluation_count", 0)
-                    profile = build_profile_from_skill_data(raw["categories"], eval_count)
+            try:
+                raw = await django_client.get_adaptive_profile(user["id"], project_id)
+                if raw and isinstance(raw, dict):
+                    if raw.get("level"):
+                        profile = raw
+                    elif raw.get("categories"):
+                        eval_count = raw.get("evaluation_count", 0)
+                        profile = build_profile_from_skill_data(raw["categories"], eval_count)
+            except Exception as exc:
+                import logging
+                logging.getLogger(__name__).warning(
+                    "G3: Profile fetch failed for user %s, continuing without personalization: %s",
+                    user.get("id"), exc,
+                )
+                context_partial = True
 
         # ── 3. Phase 3 – extract diff ──────────────────────────────────────
         diff_data = await diff_extractor.extract_commit_diff(
@@ -203,21 +207,38 @@ async def process_commit(
             f"score={complexity.score} reasons={complexity.reasons}"
         )
 
-        # Build import-based context from the cached repo
+        # G3: Import context with graceful degradation
         repo_path = diff_extractor._get_repo_path(repo_url)
-        context_builder = ContextBuilder(repo_path)
-        import_context = await context_builder.build(diff_data["files"])
+        import_context = []
+        try:
+            context_builder = ContextBuilder(repo_path)
+            import_context = await context_builder.build(diff_data["files"])
+        except Exception as exc:
+            import logging
+            logging.getLogger(__name__).warning("G3: Import context failed: %s", exc)
+            context_partial = True
 
-        # ── 4. Phase 4 – FAISS semantic context ───────────────────────────
+        # ── 4. Phase 4 – FAISS semantic context (G3 + G8: dedup) ──────────
         embedding_store = EmbeddingStore(project_id, settings.GIT_CACHE_DIR)
         semantic_chunks: list[dict] = []
-        for file_diff in diff_data["files"][:3]:
-            chunks = await embedding_store.search_by_diff(file_diff.get("diff", ""), top_k=3)
-            for chunk in chunks:
-                semantic_chunks.append({
-                    "path": f"[similar] {chunk['path']}:{chunk['start_line']}-{chunk['end_line']}",
-                    "content": chunk["text"],
-                })
+        seen_paths: set[str] = set()  # G8: deduplicate
+        try:
+            for file_diff in diff_data["files"][:3]:
+                chunks = await embedding_store.search_by_diff(file_diff.get("diff", ""), top_k=3)
+                for chunk in chunks:
+                    # G8: Skip duplicate chunks from same file region
+                    dedup_key = f"{chunk['path']}:{chunk['start_line']}"
+                    if dedup_key in seen_paths:
+                        continue
+                    seen_paths.add(dedup_key)
+                    semantic_chunks.append({
+                        "path": f"[similar] {chunk['path']}:{chunk['start_line']}-{chunk['end_line']}",
+                        "content": chunk["text"],
+                    })
+        except Exception as exc:
+            import logging
+            logging.getLogger(__name__).warning("G3: Semantic search failed: %s", exc)
+            context_partial = True
 
         # Merge context: profile + imports + semantic (deduplicate by path)
         # The complexity.context_file_limit cap is applied inside evaluate_diff
@@ -291,7 +312,37 @@ async def process_commit(
         )
 
     except Exception as e:
-        print(f"[ERROR] Error processing commit {commit['id'][:7]}: {str(e)}")
+        import logging
+        import traceback
+        logging.getLogger(__name__).error(
+            "Error processing commit %s: %s\n%s",
+            commit['id'][:7], str(e), traceback.format_exc()
+        )
+        # P3-5 / P3-6: Store error evaluation so failures are visible, not silent
+        try:
+            django_client = DjangoClient()
+            await django_client.create_evaluation({
+                "project_id": project_id,
+                "commit_sha": commit["id"],
+                "commit_message": commit.get("message", ""),
+                "commit_timestamp": commit.get("timestamp"),
+                "branch": branch,
+                "author_name": commit["author"].get("name", "Unknown"),
+                "author_email": commit["author"].get("email", ""),
+                "files_changed": 0,
+                "lines_added": 0,
+                "lines_removed": 0,
+                "overall_score": None,
+                "status": "failed",
+                "error_message": f"Processing error: {str(e)[:500]}",
+                "llm_model": "",
+                "llm_tokens_used": 0,
+                "processing_ms": 0,
+                "findings": [],
+                "sender_login": sender_login,
+            })
+        except Exception:
+            pass  # Last resort — at least we logged the error above
 
 
 @router.post("/gitlab/{project_id}", response_model=WebhookResponse)
@@ -304,8 +355,8 @@ async def gitlab_webhook(
     """Handle GitLab push webhook."""
     body = await request.body()
 
-    # Verify token
-    if settings.GITHUB_WEBHOOK_SECRET and x_gitlab_token != settings.GITHUB_WEBHOOK_SECRET:
+    # Verify token (use GITLAB_WEBHOOK_SECRET, not GITHUB)
+    if settings.GITLAB_WEBHOOK_SECRET and x_gitlab_token != settings.GITLAB_WEBHOOK_SECRET:
         raise HTTPException(status_code=401, detail="Invalid token")
 
     try:

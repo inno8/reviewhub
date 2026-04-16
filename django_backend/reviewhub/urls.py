@@ -2,11 +2,20 @@
 ReviewHub URL Configuration
 """
 from django.contrib import admin
+from django.http import JsonResponse
 from django.urls import path, include
 from rest_framework_simplejwt.views import TokenRefreshView
 from users.serializers import CustomTokenObtainPairSerializer
 from rest_framework_simplejwt.views import TokenObtainPairView
 from users.views import OnboardCheckEmailView, OnboardVerifyCodeView, OnboardSetPasswordView
+
+
+def custom_404(request, exception=None):
+    return JsonResponse({"detail": "Not found"}, status=404)
+
+
+def custom_500(request):
+    return JsonResponse({"detail": "Internal server error"}, status=500)
 
 
 class CustomTokenObtainPairView(TokenObtainPairView):
@@ -36,3 +45,6 @@ urlpatterns = [
     # Health check
     path('api/health/', lambda r: __import__('django.http', fromlist=['JsonResponse']).JsonResponse({'status': 'healthy'})),
 ]
+
+handler404 = custom_404
+handler500 = custom_500

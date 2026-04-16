@@ -28,7 +28,7 @@ class BatchJob(models.Model):
     )
     project = models.ForeignKey(
         'projects.Project',
-        on_delete=models.CASCADE,
+        on_delete=models.PROTECT,
         related_name='batch_jobs',
         null=True,
         blank=True,

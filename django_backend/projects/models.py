@@ -81,8 +81,11 @@ class Project(models.Model):
     @property
     def webhook_url(self):
         """Generate the webhook URL for this project."""
-        # Will be set based on deployment URL
-        base_url = settings.FASTAPI_URL.rstrip('/')
+        import os
+        base_url = (os.getenv('WEBHOOK_BASE_URL') or '').strip()
+        if not base_url:
+            base_url = settings.FASTAPI_URL
+        base_url = base_url.rstrip('/')
         return f"{base_url}/api/v1/webhook/{self.provider}/{self.id}"
     
     def regenerate_webhook_secret(self):

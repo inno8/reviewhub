@@ -173,14 +173,35 @@ const webhookTestResult = ref<{ success: boolean; message: string } | null>(null
 const webhookRepoUrl = ref('');
 const webhookRegisterLoading = ref(false);
 const webhookRegisterResult = ref<{ success: boolean; message: string } | null>(null);
+const webhookInfo = ref<{
+  webhook_url: string;
+  webhook_secret: string;
+  provider: string;
+  connected: boolean;
+  webhook_active: boolean;
+  instructions: string;
+} | null>(null);
+const webhookInfoLoading = ref(false);
+const webhookSecretVisible = ref(false);
 
-const webhookUrls = computed(() => {
-  const base = window.location.origin;
-  return {
-    github: `${base}/api/ai/webhooks/github`,
-    gitlab: `${base}/api/ai/webhooks/gitlab`,
-    bitbucket: `${base}/api/ai/webhooks/bitbucket`,
-  };
+async function fetchWebhookInfo(projectId: number) {
+  webhookInfoLoading.value = true;
+  webhookSecretVisible.value = false;
+  webhookRegisterResult.value = null;
+  webhookTestResult.value = null;
+  try {
+    const { data } = await api.webhooks.info(projectId);
+    webhookInfo.value = data;
+  } catch {
+    webhookInfo.value = null;
+  } finally {
+    webhookInfoLoading.value = false;
+  }
+}
+
+watch(webhookProjectId, (id) => {
+  if (id) fetchWebhookInfo(id);
+  else webhookInfo.value = null;
 });
 
 interface GitConnRow {
@@ -512,6 +533,13 @@ async function testNewLlm() {
 
 async function registerWebhook() {
   if (!webhookProjectId.value) { showToast('Select a project first', 'error'); return; }
+  if (!githubPat.value.configured) {
+    webhookRegisterResult.value = {
+      success: false,
+      message: 'Add a GitHub Personal Access Token first (above in Git Connections section). The token needs admin:repo_hook scope.',
+    };
+    return;
+  }
   webhookRegisterLoading.value = true;
   webhookRegisterResult.value = null;
   try {
@@ -520,7 +548,10 @@ async function registerWebhook() {
       success: data.success,
       message: data.message || (data.success ? 'Webhook registered!' : 'Registration failed'),
     };
-    if (data.success) showToast('Webhook registered on GitHub!', 'success');
+    if (data.success) {
+      showToast('Webhook registered on GitHub!', 'success');
+      fetchWebhookInfo(webhookProjectId.value);
+    }
   } catch (e: any) {
     webhookRegisterResult.value = {
       success: false,
@@ -1034,113 +1065,131 @@ const tabs = computed(() => {
           </div>
           <p class="text-sm text-on-surface-variant mb-6">Connect your repositories to receive automatic code reviews on every push.</p>
 
-          <!-- Webhook URLs -->
-          <div class="space-y-4 mb-8">
-            <div v-for="(url, provider) in webhookUrls" :key="provider"
-              class="p-4 bg-surface-container-lowest rounded-xl border border-outline-variant/10">
+          <!-- Step 1: Select project -->
+          <div class="mb-6">
+            <label class="text-xs font-bold uppercase tracking-widest text-outline block mb-2">Select Project</label>
+            <select v-model="webhookProjectId"
+              class="w-full max-w-md bg-surface-container-lowest border border-outline-variant/30 rounded-lg text-on-surface text-sm focus:ring-1 focus:ring-primary/50 py-3 px-4">
+              <option :value="null" disabled>Select a project...</option>
+              <option v-for="p in projectsStore.projects" :key="p.id" :value="p.id">{{ p.displayName }}</option>
+            </select>
+          </div>
+
+          <!-- Loading state -->
+          <div v-if="webhookInfoLoading" class="flex items-center gap-2 text-sm text-on-surface-variant py-8 justify-center">
+            <span class="material-symbols-outlined text-sm animate-spin">progress_activity</span>
+            Loading webhook info...
+          </div>
+
+          <!-- No project selected -->
+          <div v-else-if="!webhookProjectId" class="text-center py-8 text-on-surface-variant text-sm">
+            Select a project above to see its webhook setup details.
+          </div>
+
+          <!-- Project webhook info -->
+          <template v-else-if="webhookInfo">
+            <!-- Webhook URL -->
+            <div class="p-4 bg-surface-container-lowest rounded-xl border border-outline-variant/10 mb-4">
               <div class="flex items-center justify-between mb-2">
-                <span class="text-sm font-bold text-on-surface capitalize">{{ provider }}</span>
-                <button @click="copyToClipboard(url)" class="text-xs text-primary hover:underline flex items-center gap-1">
-                  <span class="material-symbols-outlined text-sm">content_copy</span> Copy URL
+                <span class="text-xs font-bold uppercase tracking-widest text-outline">Payload URL</span>
+                <button @click="copyToClipboard(webhookInfo.webhook_url)" class="text-xs text-primary hover:underline flex items-center gap-1">
+                  <span class="material-symbols-outlined text-sm">content_copy</span> Copy
                 </button>
               </div>
-              <code class="text-xs text-on-surface-variant bg-surface-container-highest px-3 py-1.5 rounded block select-all break-all">{{ url }}</code>
+              <code class="text-xs text-on-surface-variant bg-surface-container-highest px-3 py-1.5 rounded block select-all break-all">{{ webhookInfo.webhook_url }}</code>
             </div>
-          </div>
 
-          <!-- Setup Steps -->
-          <div class="bg-surface-container-lowest rounded-xl p-6 border border-outline-variant/10 mb-8">
-            <h3 class="text-sm font-bold text-on-surface mb-4">Quick Setup Guide</h3>
-            <ol class="space-y-3 text-sm text-on-surface-variant list-decimal list-inside">
-              <li>Go to your repository <strong class="text-on-surface">Settings → Webhooks</strong></li>
-              <li>Click <strong class="text-on-surface">"Add webhook"</strong></li>
-              <li>Paste the appropriate webhook URL from above as the <strong class="text-on-surface">Payload URL</strong></li>
-              <li>Set Content type to <code class="bg-surface-container-highest px-1 rounded">application/json</code></li>
-              <li>Select <strong class="text-on-surface">"Just the push event"</strong></li>
-              <li>Click <strong class="text-on-surface">"Add webhook"</strong> to save</li>
-            </ol>
-          </div>
-
-          <!-- Local Development with ngrok -->
-          <div class="bg-surface-container-lowest rounded-xl p-6 border border-outline-variant/10 mb-8">
-            <h3 class="text-sm font-bold text-on-surface mb-4 flex items-center gap-2">
-              <span class="material-symbols-outlined text-tertiary text-sm">lan</span>
-              Local Development (ngrok)
-            </h3>
-            <p class="text-sm text-on-surface-variant mb-4">
-              If your ReviewHub server runs locally, GitHub can't reach <code class="bg-surface-container-highest px-1 rounded">localhost</code>.
-              Use <strong>ngrok</strong> to create a public tunnel:
-            </p>
-            <ol class="space-y-3 text-sm text-on-surface-variant list-decimal list-inside mb-4">
-              <li>Install ngrok: <code class="bg-surface-container-highest px-1 rounded">npm install -g ngrok</code> or download from <a href="https://ngrok.com" target="_blank" class="text-primary">ngrok.com</a></li>
-              <li>Start tunnel: <code class="bg-surface-container-highest px-1 rounded">ngrok http 8001</code></li>
-              <li>Copy the <strong class="text-on-surface">https://</strong> URL (e.g. <code class="bg-surface-container-highest px-1 rounded">https://abc123.ngrok-free.dev</code>)</li>
-              <li>Set <code class="bg-surface-container-highest px-1 rounded">FASTAPI_URL=https://abc123.ngrok-free.dev</code> in your <code class="bg-surface-container-highest px-1 rounded">.env</code></li>
-              <li>Restart Django — webhook URLs will now use the public tunnel</li>
-              <li>Use the new webhook URL in your GitHub repository settings</li>
-            </ol>
-            <div class="p-3 bg-tertiary/5 rounded-lg border border-tertiary/20">
-              <p class="text-xs text-tertiary">
-                <strong>Tip:</strong> For a stable URL, use <code class="bg-surface-container-highest px-1 rounded">ngrok http 8001 --domain your-name.ngrok-free.dev</code> with a free static domain.
-                Every push to your repo will automatically trigger a code review.
-              </p>
-            </div>
-          </div>
-
-          <!-- Auto-register webhook -->
-          <div class="border-t border-outline-variant/10 pt-6">
-            <h3 class="text-sm font-bold text-on-surface mb-4">Auto-Register Webhook</h3>
-            <p class="text-sm text-outline mb-4">
-              Automatically create a GitHub webhook on your repository. Requires a GitHub Personal Access Token with <code class="bg-surface-container-highest px-1 rounded">admin:repo_hook</code> scope.
-            </p>
-            <div class="flex flex-wrap gap-3 items-end">
-              <div>
-                <label class="text-xs font-bold uppercase tracking-widest text-outline block mb-2">Project</label>
-                <select v-model="webhookProjectId"
-                  class="bg-surface-container-lowest border border-outline-variant/30 rounded-lg text-on-surface text-sm focus:ring-1 focus:ring-primary/50 py-3 px-4">
-                  <option :value="null" disabled>Select project...</option>
-                  <option v-for="p in projectsStore.projects" :key="p.id" :value="p.id">{{ p.displayName }}</option>
-                </select>
+            <!-- Webhook Secret -->
+            <div class="p-4 bg-surface-container-lowest rounded-xl border border-outline-variant/10 mb-6">
+              <div class="flex items-center justify-between mb-2">
+                <span class="text-xs font-bold uppercase tracking-widest text-outline">Secret</span>
+                <div class="flex items-center gap-2">
+                  <button @click="webhookSecretVisible = !webhookSecretVisible" class="text-xs text-on-surface-variant hover:text-on-surface flex items-center gap-1">
+                    <span class="material-symbols-outlined text-sm">{{ webhookSecretVisible ? 'visibility_off' : 'visibility' }}</span>
+                    {{ webhookSecretVisible ? 'Hide' : 'Reveal' }}
+                  </button>
+                  <button @click="copyToClipboard(webhookInfo.webhook_secret)" class="text-xs text-primary hover:underline flex items-center gap-1">
+                    <span class="material-symbols-outlined text-sm">content_copy</span> Copy
+                  </button>
+                </div>
               </div>
-              <button @click="registerWebhook" :disabled="webhookRegisterLoading || !webhookProjectId"
+              <code class="text-xs text-on-surface-variant bg-surface-container-highest px-3 py-1.5 rounded block select-all break-all">{{
+                webhookSecretVisible ? webhookInfo.webhook_secret : '••••••••••••••••••••••••••••••••'
+              }}</code>
+            </div>
+
+            <!-- Status badge -->
+            <div class="flex items-center gap-2 mb-6">
+              <span class="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-bold"
+                :class="webhookInfo.webhook_active
+                  ? 'bg-primary/10 text-primary border border-primary/20'
+                  : 'bg-on-surface-variant/10 text-on-surface-variant border border-outline-variant/20'">
+                <span class="w-2 h-2 rounded-full" :class="webhookInfo.webhook_active ? 'bg-primary' : 'bg-outline-variant'"></span>
+                {{ webhookInfo.webhook_active ? 'Active — receiving webhooks' : 'Not yet active' }}
+              </span>
+            </div>
+
+            <!-- Quick Setup Guide (provider-specific) -->
+            <div class="bg-surface-container-lowest rounded-xl p-6 border border-outline-variant/10 mb-6">
+              <h3 class="text-sm font-bold text-on-surface mb-4">Manual Setup</h3>
+              <ol class="space-y-3 text-sm text-on-surface-variant list-decimal list-inside">
+                <template v-if="webhookInfo.provider === 'github'">
+                  <li>Go to your repository <strong class="text-on-surface">Settings → Webhooks → Add webhook</strong></li>
+                  <li>Paste the <strong class="text-on-surface">Payload URL</strong> from above</li>
+                  <li>Set Content type to <code class="bg-surface-container-highest px-1 rounded">application/json</code></li>
+                  <li>Paste the <strong class="text-on-surface">Secret</strong> from above (click Reveal, then Copy)</li>
+                  <li>Select <strong class="text-on-surface">"Just the push event"</strong></li>
+                  <li>Click <strong class="text-on-surface">"Add webhook"</strong></li>
+                </template>
+                <template v-else-if="webhookInfo.provider === 'gitlab'">
+                  <li>Go to your project <strong class="text-on-surface">Settings → Webhooks</strong></li>
+                  <li>Paste the <strong class="text-on-surface">URL</strong> from above</li>
+                  <li>Paste the <strong class="text-on-surface">Secret token</strong> from above</li>
+                  <li>Check <strong class="text-on-surface">Push events</strong></li>
+                  <li>Click <strong class="text-on-surface">"Add webhook"</strong></li>
+                </template>
+                <template v-else>
+                  <li>Go to your repository webhook settings</li>
+                  <li>Use the Payload URL and Secret shown above</li>
+                  <li>Set the trigger to push events</li>
+                </template>
+              </ol>
+            </div>
+
+            <!-- Auto-register (GitHub only) -->
+            <div v-if="webhookInfo.provider === 'github'" class="border-t border-outline-variant/10 pt-6 mb-6">
+              <h3 class="text-sm font-bold text-on-surface mb-2">One-Click Setup</h3>
+              <p class="text-sm text-on-surface-variant mb-4">
+                Skip the manual steps — automatically register the webhook on GitHub.
+                <template v-if="!githubPat.configured">
+                  <br><span class="text-error">Requires a GitHub Personal Access Token with <code class="bg-surface-container-highest px-1 rounded">admin:repo_hook</code> scope. Add one in the Git Connections section above.</span>
+                </template>
+              </p>
+              <button @click="registerWebhook" :disabled="webhookRegisterLoading || !githubPat.configured"
                 class="primary-gradient text-on-primary font-bold py-3 px-6 rounded-lg disabled:opacity-50 flex items-center gap-2">
                 <span v-if="webhookRegisterLoading" class="material-symbols-outlined text-sm animate-spin">progress_activity</span>
                 <span class="material-symbols-outlined text-sm">add_link</span>
-                Register Webhook
+                Register Webhook on GitHub
               </button>
+              <div v-if="webhookRegisterResult" class="mt-4 p-3 rounded-lg" :class="webhookRegisterResult.success ? 'bg-primary/10 border border-primary/20' : 'bg-error/10 border border-error/20'">
+                <p class="text-sm" :class="webhookRegisterResult.success ? 'text-primary' : 'text-error'">{{ webhookRegisterResult.message }}</p>
+              </div>
             </div>
-            <div v-if="webhookRegisterResult" class="mt-4 p-3 rounded-lg" :class="webhookRegisterResult.success ? 'bg-primary/10 border border-primary/20' : 'bg-error/10 border border-error/20'">
-              <p class="text-sm" :class="webhookRegisterResult.success ? 'text-primary' : 'text-error'">{{ webhookRegisterResult.message }}</p>
-            </div>
-          </div>
 
-          <!-- Test webhook -->
-          <div class="border-t border-outline-variant/10 pt-6">
-            <h3 class="text-sm font-bold text-on-surface mb-4">Test Webhook Connection</h3>
-            <div class="flex flex-wrap gap-3 items-end">
-              <div>
-                <label class="text-xs font-bold uppercase tracking-widest text-outline block mb-2">Project</label>
-                <select v-model="webhookProjectId"
-                  class="bg-surface-container-lowest border border-outline-variant/30 rounded-lg text-on-surface text-sm focus:ring-1 focus:ring-primary/50 py-3 px-4">
-                  <option :value="null" disabled>Select project...</option>
-                  <option v-for="p in projectsStore.projects" :key="p.id" :value="p.id">{{ p.displayName }}</option>
-                </select>
-              </div>
-              <div>
-                <label class="text-xs font-bold uppercase tracking-widest text-outline block mb-2">Repo URL <span class="text-outline/60 normal-case font-normal">(optional)</span></label>
-                <input v-model="webhookRepoUrl" type="url" placeholder="https://github.com/user/repo"
-                  class="bg-surface-container-lowest border border-outline-variant/30 rounded-lg text-on-surface placeholder:text-outline/40 text-sm focus:ring-1 focus:ring-primary/50 py-3 px-4" />
-              </div>
-              <button @click="testWebhook" :disabled="webhookTestLoading || !webhookProjectId"
+            <!-- Test webhook -->
+            <div class="border-t border-outline-variant/10 pt-6">
+              <h3 class="text-sm font-bold text-on-surface mb-4">Test Connection</h3>
+              <button @click="testWebhook" :disabled="webhookTestLoading"
                 class="primary-gradient text-on-primary font-bold py-3 px-6 rounded-lg disabled:opacity-50 flex items-center gap-2">
                 <span v-if="webhookTestLoading" class="material-symbols-outlined text-sm animate-spin">progress_activity</span>
+                <span class="material-symbols-outlined text-sm">lan</span>
                 Test Connection
               </button>
+              <div v-if="webhookTestResult" class="mt-4 p-3 rounded-lg" :class="webhookTestResult.success ? 'bg-primary/10 border border-primary/20' : 'bg-error/10 border border-error/20'">
+                <p class="text-sm" :class="webhookTestResult.success ? 'text-primary' : 'text-error'">{{ webhookTestResult.message }}</p>
+              </div>
             </div>
-            <div v-if="webhookTestResult" class="mt-4 p-3 rounded-lg" :class="webhookTestResult.success ? 'bg-primary/10 border border-primary/20' : 'bg-error/10 border border-error/20'">
-              <p class="text-sm" :class="webhookTestResult.success ? 'text-primary' : 'text-error'">{{ webhookTestResult.message }}</p>
-            </div>
-          </div>
+          </template>
         </div>
       </template>
     </div>

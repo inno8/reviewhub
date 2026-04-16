@@ -155,18 +155,58 @@ def build_developer_history_section(profile: dict) -> str:
             f"Weak areas (pay extra attention here): {', '.join(weaknesses[:5])}"
         )
 
+    # G10: Per-category skill levels (if available in profile)
+    category_scores = profile.get("category_scores", {})
+    if category_scores:
+        cat_levels = []
+        for cat, score in sorted(category_scores.items(), key=lambda x: x[1]):
+            if score >= 75:
+                cat_level = "advanced"
+            elif score >= 50:
+                cat_level = "intermediate"
+            else:
+                cat_level = "beginner"
+            cat_levels.append(f"  {cat}: {cat_level} ({score:.0f}/100)")
+        lines.append("Per-category skill levels:")
+        lines.extend(cat_levels)
+
     if want_to_improve:
         lines.append(f"Self-reported improvement goal: {want_to_improve.replace('_', ' ')}")
 
     if frequent_patterns:
+        # G6: Sort patterns by recency-weighted score (recent patterns ranked higher)
+        import datetime
+        now = datetime.datetime.now(datetime.timezone.utc)
+
+        def _recency_score(p):
+            count = p.get("count", 0)
+            last_seen = p.get("last_seen", "")
+            days_ago = 30  # default if no date
+            if last_seen:
+                try:
+                    from dateutil.parser import parse as parse_date
+                    dt = parse_date(last_seen)
+                    if dt.tzinfo is None:
+                        dt = dt.replace(tzinfo=datetime.timezone.utc)
+                    days_ago = max(1, (now - dt).days)
+                except Exception:
+                    pass
+            # Higher score = more important: frequency * recency_weight
+            recency_weight = 30.0 / days_ago  # recent = higher weight
+            return count * recency_weight
+
+        sorted_patterns = sorted(frequent_patterns, key=_recency_score, reverse=True)
+
         pat_summaries = []
-        for p in frequent_patterns[:5]:
+        for p in sorted_patterns[:5]:
             key = p.get("pattern_key", "")
             count = p.get("count", 0)
-            # Strip trailing severity from key for readability: "error_handling:warning" → "error_handling"
             display = key.split(":")[0].replace("_", " ")
             rec = PATTERN_RECOMMENDATIONS.get(key.split(":")[0], "")
+            last_seen = p.get("last_seen", "")
             entry = f"  • {display} (seen {count}×)"
+            if last_seen:
+                entry += f" [last: {last_seen[:10]}]"
             if rec:
                 entry += f" — {rec}"
             pat_summaries.append(entry)

@@ -362,7 +362,7 @@ function goSkills() {
                 <SkillRadarChart
                   :data="data.evaluation_insights.top_skill_issues.slice(0, 8).map((s: any) => ({
                     category: s.name,
-                    score: Math.max(0, 100 - (s.issue_count * 10)),
+                    score: s.score ?? Math.max(5, 100 - (s.issue_count * 10)),
                   }))"
                 />
               </div>

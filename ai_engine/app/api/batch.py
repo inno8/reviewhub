@@ -221,8 +221,13 @@ def _git_commits_for_batch(
         "--format=%H|%an|%ae|%ad|%s",
         "--date=iso",
     )
-    if (author_pattern or "").strip():
-        git_log_cmd.extend(["--author", author_pattern.strip()])
+    # P4-12: Validate author pattern to prevent unexpected git behavior
+    clean_author = (author_pattern or "").strip()
+    if clean_author:
+        # Reject patterns with shell metacharacters as a defense-in-depth measure
+        import re
+        if re.match(r'^[\w\s@.\-]+$', clean_author):
+            git_log_cmd.extend(["--author", clean_author])
     if since_date:
         git_log_cmd.extend(["--since", since_date])
 

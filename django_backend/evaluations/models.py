@@ -138,7 +138,12 @@ class Evaluation(models.Model):
         blank=True,
         help_text="Raw heuristic score from CommitClassifier"
     )
-    
+    prompt_version = models.CharField(
+        max_length=32,
+        blank=True,
+        help_text="Hash/version of the LLM prompt used for this evaluation"
+    )
+
     # Timestamps
     created_at = models.DateTimeField(auto_now_add=True)
     evaluated_at = models.DateTimeField(null=True, blank=True)

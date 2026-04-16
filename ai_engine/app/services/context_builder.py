@@ -45,8 +45,9 @@ SKIP_EXTENSIONS = {
     ".lock", ".bin", ".pyc",
 }
 
-MAX_CONTEXT_FILES = 5
+MAX_CONTEXT_FILES = 8   # G2: increased to accommodate transitive imports
 MAX_FILE_BYTES = 8_000  # truncate large related files
+MAX_TRANSITIVE_DEPTH = 2  # G2: follow imports 1 level deep (direct + 1 transitive)
 
 
 class ContextBuilder:
@@ -68,14 +69,35 @@ class ContextBuilder:
         """
         Given a list of changed file dicts (with "path", "language", "diff"),
         return a list of related file contents to inject as context.
+        G2: follows transitive imports up to MAX_TRANSITIVE_DEPTH levels.
+        G9: includes sibling files for brand-new files with no imports.
         """
         related: set[str] = set()
+        changed_paths = {f["path"] for f in changed_files}
+
+        # Direct imports from changed files
         for f in changed_files:
             imports = self._extract_imports(f.get("diff", ""), f.get("language", ""))
-            related.update(self._resolve_paths(f["path"], imports))
+            resolved = self._resolve_paths(f["path"], imports)
+            related.update(resolved)
 
-        # Remove files that are already being reviewed
-        changed_paths = {f["path"] for f in changed_files}
+            # G9: For new files with no resolved imports, add sibling files
+            if not resolved and f.get("diff", "").startswith("new file"):
+                siblings = self._find_sibling_files(f["path"])
+                related.update(siblings[:3])
+
+        # G2: Transitive imports — follow imports of imported files (1 extra level)
+        if len(related) < MAX_CONTEXT_FILES:
+            transitive: set[str] = set()
+            for path in list(related)[:5]:  # limit transitive search to first 5
+                content = await self._read_file(path)
+                if content:
+                    lang = self._detect_language(path)
+                    imports = self._extract_imports_from_content(content, lang)
+                    transitive.update(self._resolve_paths(path, imports))
+            related.update(transitive)
+
+        # Remove changed files from context
         related -= changed_paths
 
         context: list[dict] = []
@@ -143,6 +165,49 @@ class ContextBuilder:
             return result.returncode == 0
         except Exception:
             return False
+
+    # ── G2: Transitive import helpers ──────────────────────────────────────
+
+    def _extract_imports_from_content(self, content: str, language: str) -> list[str]:
+        """Extract import module names from full file content (not just diff)."""
+        patterns = LANGUAGE_IMPORT_PATTERNS.get(language, [])
+        matches: set[str] = set()
+        for pattern in patterns:
+            for m in pattern.finditer(content):
+                matches.add(m.group(1))
+        return list(matches)
+
+    def _detect_language(self, path: str) -> str:
+        """Detect language from file extension."""
+        ext_map = {
+            '.py': 'python', '.js': 'javascript', '.ts': 'typescript',
+            '.tsx': 'typescript', '.jsx': 'javascript', '.vue': 'vue',
+            '.java': 'java', '.go': 'go', '.rs': 'rust',
+        }
+        ext = Path(path).suffix.lower()
+        return ext_map.get(ext, '')
+
+    # ── G9: Sibling file context for new files ─────────────────────────────
+
+    def _find_sibling_files(self, path: str) -> list[str]:
+        """Find files in the same directory as `path` for context on new files."""
+        parent = str(Path(path).parent)
+        try:
+            result = subprocess.run(
+                ["git", "ls-tree", "--name-only", f"HEAD:{parent}"],
+                cwd=self.repo_path,
+                capture_output=True, text=True,
+            )
+            if result.returncode != 0:
+                return []
+            siblings = []
+            for name in result.stdout.strip().splitlines():
+                full = f"{parent}/{name}" if parent != "." else name
+                if full != path and not any(full.endswith(ext) for ext in SKIP_EXTENSIONS):
+                    siblings.append(full)
+            return siblings
+        except Exception:
+            return []
 
     # ── File content retrieval ───────────────────────────────────────────────
 

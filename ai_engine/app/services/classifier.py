@@ -235,7 +235,37 @@ class CommitClassifier:
         if type_score > 0:
             reasons.append(f"source_files={int(type_score)} (+{type_score:.1f})")
 
-        # ── Layer 5: Security-sensitive paths ────────────────────────────
+        # ── Layer 5a (G4/G7): Diff quality — structural vs. cosmetic ─────
+        # Detect if the diff is mostly whitespace/formatting changes
+        structural_lines = 0
+        cosmetic_lines = 0
+        for fd in files:
+            diff_text = fd.get("diff", "")
+            for line in diff_text.splitlines():
+                if not line.startswith("+") or line.startswith("+++"):
+                    continue
+                stripped = line[1:].strip()
+                if not stripped or stripped.startswith("#") or stripped.startswith("//"):
+                    cosmetic_lines += 1
+                elif stripped in ("}", ")", "]", "{", "(", "[", "pass", "end"):
+                    cosmetic_lines += 1
+                else:
+                    structural_lines += 1
+
+        total_diff_lines = structural_lines + cosmetic_lines
+        if total_diff_lines > 0:
+            structural_ratio = structural_lines / total_diff_lines
+            if structural_ratio < 0.3 and total_lines > 20:
+                # Mostly cosmetic — reduce complexity score
+                penalty = -3.0
+                score += penalty
+                reasons.append(f"cosmetic_ratio={1-structural_ratio:.0%} ({penalty})")
+            elif structural_ratio > 0.8 and structural_lines > 30:
+                bonus = 2.0
+                score += bonus
+                reasons.append(f"structural_ratio={structural_ratio:.0%} (+{bonus})")
+
+        # ── Layer 6: Security-sensitive paths ─────────────────────────────
         security_hit = False
         for fd in files:
             path = (fd.get("path") or "").lower()

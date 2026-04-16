@@ -128,17 +128,14 @@ REST_FRAMEWORK = {
     ],
 }
 
-# Add BrowsableAPI in debug mode
-if DEBUG:
-    REST_FRAMEWORK['DEFAULT_RENDERER_CLASSES'].append(
-        'rest_framework.renderers.BrowsableAPIRenderer'
-    )
+# P4-14: BrowsableAPI removed — always use JSON-only renderer in all environments
 
 # ═══════════════════════════════════════════════════════════════════════════════
 # JWT Settings
+# P4-8: Access token default reduced from 60 to 15 min for production safety
 # ═══════════════════════════════════════════════════════════════════════════════
 SIMPLE_JWT = {
-    'ACCESS_TOKEN_LIFETIME': timedelta(minutes=int(os.getenv('JWT_ACCESS_TOKEN_LIFETIME_MINUTES', 60))),
+    'ACCESS_TOKEN_LIFETIME': timedelta(minutes=int(os.getenv('JWT_ACCESS_TOKEN_LIFETIME_MINUTES', 15))),
     'REFRESH_TOKEN_LIFETIME': timedelta(days=int(os.getenv('JWT_REFRESH_TOKEN_LIFETIME_DAYS', 7))),
     'ROTATE_REFRESH_TOKENS': True,
     'BLACKLIST_AFTER_ROTATION': True,
@@ -148,16 +145,24 @@ SIMPLE_JWT = {
 
 # ═══════════════════════════════════════════════════════════════════════════════
 # CORS Settings
+# P4-1: Always use explicit allowlist — never CORS_ALLOW_ALL_ORIGINS
 # ═══════════════════════════════════════════════════════════════════════════════
 CORS_ALLOWED_ORIGINS = os.getenv(
-    'CORS_ALLOWED_ORIGINS', 
+    'CORS_ALLOWED_ORIGINS',
     'http://localhost:5173,http://localhost:5174,http://127.0.0.1:5173,http://127.0.0.1:5174'
 ).split(',')
 CORS_ALLOW_CREDENTIALS = True
 
-# Allow all origins in DEBUG mode for easier development
-if DEBUG:
-    CORS_ALLOW_ALL_ORIGINS = True
+# ═══════════════════════════════════════════════════════════════════════════════
+# P4-22: Security headers
+# ═══════════════════════════════════════════════════════════════════════════════
+SECURE_CONTENT_TYPE_NOSNIFF = True
+X_FRAME_OPTIONS = 'DENY'
+SECURE_BROWSER_XSS_FILTER = True
+if not DEBUG:
+    SECURE_HSTS_SECONDS = 31536000
+    SECURE_HSTS_INCLUDE_SUBDOMAINS = True
+    SECURE_HSTS_PRELOAD = True
 
 # ═══════════════════════════════════════════════════════════════════════════════
 # FastAPI AI Engine
@@ -174,3 +179,21 @@ FRONTEND_URL = os.getenv('FRONTEND_URL', 'http://localhost:5173').rstrip('/')
 BACKEND_PUBLIC_URL = os.getenv('BACKEND_PUBLIC_URL', 'http://localhost:8000').rstrip('/')
 GOOGLE_OAUTH_CLIENT_ID = os.getenv('GOOGLE_OAUTH_CLIENT_ID', '')
 GOOGLE_OAUTH_CLIENT_SECRET = os.getenv('GOOGLE_OAUTH_CLIENT_SECRET', '')
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# Email configuration
+# Dev: local SMTP (mailhog/mailpit on port 1025)
+# Prod: Resend via SMTP relay (or custom backend)
+# Test: in-memory backend (django.core.mail.backends.locmem.EmailBackend)
+# ═══════════════════════════════════════════════════════════════════════════════
+EMAIL_BACKEND = os.getenv(
+    'EMAIL_BACKEND',
+    'django.core.mail.backends.smtp.EmailBackend',
+)
+EMAIL_HOST = os.getenv('EMAIL_HOST', 'localhost')
+EMAIL_PORT = int(os.getenv('EMAIL_PORT', '1025'))
+EMAIL_HOST_USER = os.getenv('EMAIL_HOST_USER', '')
+EMAIL_HOST_PASSWORD = os.getenv('EMAIL_HOST_PASSWORD', '')
+EMAIL_USE_TLS = os.getenv('EMAIL_USE_TLS', 'false').lower() == 'true'
+EMAIL_FROM = os.getenv('EMAIL_FROM', 'noreply@reviewhub.com')
+DEFAULT_FROM_EMAIL = EMAIL_FROM

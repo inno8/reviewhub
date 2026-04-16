@@ -122,6 +122,11 @@ class SkillMetric(models.Model):
     class Meta:
         db_table = 'skill_metrics'
         unique_together = ['user', 'project', 'skill']
+        indexes = [
+            models.Index(fields=['user', 'project']),
+            models.Index(fields=['skill', 'project']),
+            models.Index(fields=['user', 'score']),
+        ]
     
     def __str__(self):
         return f"{self.user.email} - {self.skill.name}: {self.score}"

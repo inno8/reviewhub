@@ -723,6 +723,15 @@ async function submitUnderstanding() {
           feedback: firstResult.feedback,
           deeper_explanation: firstResult.deeper_explanation || '',
         };
+        // Backend auto-marks got_it/partial findings as fixed — reflect locally
+        if (firstResult.level === 'got_it' || firstResult.level === 'partial') {
+          for (const f of g.findings) {
+            const local = findings.value.find(x => x.id === f.id);
+            if (local) {
+              (local as any).isFixed = true;
+            }
+          }
+        }
       }
     }
     fixLearnStep.value = 'results';

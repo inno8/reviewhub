@@ -54,4 +54,11 @@ urlpatterns = [
         views.DevCalibrationSummaryView.as_view(),
         name='user-dev-calibration',
     ),
+
+    # Organization onboarding (Phase 2)
+    path('org-signup/', views.OrgSignupView.as_view(), name='org-signup'),
+    path('invite/', views.InviteStudentView.as_view(), name='invite-student'),
+    path('accept-invite/', views.AcceptInviteView.as_view(), name='accept-invite'),
+    path('org/members/', views.OrgMembersView.as_view(), name='org-members'),
+    path('org/invitations/', views.OrgInvitationsView.as_view(), name='org-invitations'),
 ]

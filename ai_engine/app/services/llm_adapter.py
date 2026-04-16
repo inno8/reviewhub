@@ -144,12 +144,17 @@ RULES YOU MUST FOLLOW:
 
 CRITICAL RULES FOR original_code AND suggested_code:
 - "original_code" MUST be an EXACT copy of code from the diff (the added/changed lines). Do NOT paraphrase, truncate, or invent code that does not appear in the diff.
-- "original_code" MUST be MINIMAL — include ONLY the lines directly related to the issue. Do NOT span multiple functions or include unrelated code. If the issue is a single variable assignment, original_code should be that line (plus at most 1-2 lines of immediate context), NOT the entire function or block around it.
-- "suggested_code" MUST be a DROP-IN REPLACEMENT for "original_code" — same scope, same boundaries. It must NOT remove, add, or restructure code outside the scope of the issue. If original_code is 3 lines, suggested_code should be approximately 3 lines (the fixed version). Never delete surrounding functions, classes, or unrelated code.
+- "original_code" should include the problematic lines PLUS the enclosing function/method signature and enough surrounding context (typically 5-15 lines) that a junior developer can see exactly where the code sits.
+- "suggested_code" MUST be a COMPLETE, RUNNABLE replacement for the same scope as "original_code". It MUST include the same function signature, the fix applied, and the closing bracket/return. A junior developer should be able to copy-paste the entire suggested_code block and have it work.
 - "suggested_code" MUST be REAL, RUNNABLE code — not a comment, a generic placeholder like "# Use environment variables instead", or an unrelated suggestion.
+- If the fix requires adding an import, include the import line at the top of suggested_code with a comment "# Add this import at the top of the file".
 - "line_start" and "line_end" MUST match the actual line numbers where "original_code" appears in the NEW file (lines marked with + in the diff).
 - Each finding must address ONE specific issue at the lines indicated. Do NOT mix suggestions for different issues into a single finding.
 - If your suggestion is about adding something new (e.g. logging, validation) rather than fixing existing code, include the surrounding original code as context in "original_code" and show the improved version with the addition in "suggested_code".
+
+ANTI-OSCILLATION RULE:
+- Do NOT flag code that was explicitly added to fix a prior issue. If lines were changed to address a previous problem (e.g., adding a try/except that was previously missing), do NOT generate a new finding about the fix itself (e.g., "exception too broad"). Only flag genuine new problems.
+- Known-safe output patterns that are NOT debug prints: Rich library console.print() for user-facing terminal UI, Click echo() for CLI output, logging.* calls. Only flag bare print() statements that output sensitive data or debug information.
 
 THOROUGHNESS RULES:
 - Report EVERY distinct issue you find — do NOT group multiple issues into one finding.

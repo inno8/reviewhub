@@ -19,16 +19,8 @@ async def health_check():
 
 @router.get("/status")
 async def status():
-    """Detailed status check."""
-    from app.core.config import settings
-    
+    """Status check — returns operational state only (no infrastructure details)."""
     return {
         "status": "running",
         "timestamp": datetime.utcnow().isoformat(),
-        "config": {
-            "django_api": settings.DJANGO_API_URL,
-            "llm_provider": settings.LLM_PROVIDER or "openclaw",
-            "llm_model": settings.LLM_MODEL,
-            "openclaw_enabled": settings.OPENCLAW_ENABLED,
-        }
     }

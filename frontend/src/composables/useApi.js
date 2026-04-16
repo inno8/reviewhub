@@ -9,7 +9,7 @@ function djangoListParams(params) {
     return out;
 }
 const client = axios.create({
-    baseURL: import.meta.env.VITE_API_URL || 'http://localhost:3000/api',
+    baseURL: import.meta.env.VITE_API_URL || '/api',
     headers: { 'Content-Type': 'application/json' },
 });
 client.interceptors.request.use((config) => {

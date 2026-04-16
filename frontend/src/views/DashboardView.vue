@@ -183,7 +183,7 @@ watch(
 function selectDevProject(projectId: number) {
   devSelectedProject.value = projectId;
   projectsStore.setSelectedProject(projectId);
-  findingsStore.fetchFindings({ projectId });
+  findingsStore.fetchFindings({ projectId, is_fixed: false });
   loadDevOverview(projectId);
 }
 
@@ -204,13 +204,13 @@ function backToProjects() {
 
 watch(() => projectsStore.selectedProjectId, async (newId) => {
   if (newId && !authStore.isAdmin && devSelectedProject.value) {
-    await findingsStore.fetchFindings({ projectId: newId });
+    await findingsStore.fetchFindings({ projectId: newId, is_fixed: false });
   }
 });
 
 function clearDateFilter() {
   selectedDate.value = null;
-  if (projectsStore.selectedProjectId) findingsStore.fetchFindings({ projectId: projectsStore.selectedProjectId });
+  if (projectsStore.selectedProjectId) findingsStore.fetchFindings({ projectId: projectsStore.selectedProjectId, is_fixed: false });
 }
 
 const authors = computed(() => {

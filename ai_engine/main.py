@@ -37,8 +37,8 @@ app.add_middleware(
     CORSMiddleware,
     allow_origins=settings.CORS_ORIGINS,
     allow_credentials=True,
-    allow_methods=["*"],
-    allow_headers=["*"],
+    allow_methods=["GET", "POST", "OPTIONS"],
+    allow_headers=["Content-Type", "Authorization", "X-GitHub-Event", "X-Hub-Signature-256", "X-Gitlab-Token"],
 )
 
 # Include routers
