@@ -319,14 +319,39 @@ class GradingSessionViewSet(
         # read the session state. We'll re-lock to write the result back.
         submission = session.submission
         student = submission.student
-        # Concatenate diffs from all SessionEvaluations. For v1 we stub with
-        # the submission head (the webhook path will populate this properly).
-        # The actual diff assembly lives in webhook ingest, not the ViewSet.
-        diff_parts = []
-        for se in session.session_evaluations.select_related("evaluation").all():
-            ev = se.evaluation
-            diff_parts.append(getattr(ev, "diff", "") or "")
-        combined_diff = "\n".join(p for p in diff_parts if p)
+
+        # Fetch the PR diff LIVE from GitHub at grade-time so the teacher
+        # sees the current state, not a stale push-evaluation snapshot.
+        # Intentionally decouples grading from the push-evaluation chain
+        # (see grading/services/github_fetcher.py docstring).
+        from .services import github_fetcher
+        from .exceptions import GitHubAuthExpired, GitHubError, PRClosedError
+
+        combined_diff = ""
+        try:
+            owner, repo = submission.repo_full_name.split("/", 1)
+            teacher_pat = getattr(request.user, "github_personal_access_token", None)
+            combined_diff = github_fetcher.fetch_pr_diff(
+                owner=owner,
+                repo=repo,
+                pr_number=submission.pr_number,
+                token=teacher_pat,
+            )
+        except PRClosedError as e:
+            with transaction.atomic():
+                s = GradingSession.objects.select_for_update().get(pk=session.id)
+                s.state = GradingSession.State.FAILED
+                s.save(update_fields=["state", "updated_at"])
+            return Response(
+                {"error": "pr_closed", "message": str(e)},
+                status=status.HTTP_409_CONFLICT,
+            )
+        except (GitHubAuthExpired, GitHubError, ValueError) as e:
+            # Fallback: if we can't fetch from GitHub, try stored evaluations.
+            log.warning("generate_draft: live fetch failed, falling back: %s", e)
+            for se in session.session_evaluations.select_related("evaluation").all():
+                ev = se.evaluation
+                combined_diff += (getattr(ev, "diff", "") or "") + "\n"
 
         input_ = rubric_grader.GraderInput(
             diff=combined_diff,
