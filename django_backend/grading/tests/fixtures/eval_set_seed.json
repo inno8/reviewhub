@@ -1,0 +1,102 @@
+{
+  "description": "Seed fixtures for the Nakijken Copilot rubric-accuracy eval. The founder replaces these with 20 real intern PRs + ground-truth scores during May dogfood. Ground truth = the founder's own manual grading.",
+  "version": "v0.1-seed",
+  "generated": "2026-04-17",
+  "rubric": {
+    "id": "mbo4-seed",
+    "name": "MBO-4 ICT Seed Rubric",
+    "criteria": [
+      {
+        "id": "readability",
+        "name": "Readability",
+        "weight": 0.25,
+        "levels": [
+          {"score": 1, "description": "Cannot understand without author"},
+          {"score": 2, "description": "Variable/function names are cryptic"},
+          {"score": 3, "description": "Clear with minor issues"},
+          {"score": 4, "description": "Clear, idiomatic, professional"}
+        ]
+      },
+      {
+        "id": "error_handling",
+        "name": "Error handling",
+        "weight": 0.25,
+        "levels": [
+          {"score": 1, "description": "No error handling"},
+          {"score": 2, "description": "Bare except / generic catch"},
+          {"score": 3, "description": "Specific exceptions, logs context"},
+          {"score": 4, "description": "Thorough, tested, user-facing messages"}
+        ]
+      },
+      {
+        "id": "testing",
+        "name": "Testing",
+        "weight": 0.25,
+        "levels": [
+          {"score": 1, "description": "No tests"},
+          {"score": 2, "description": "Happy-path only"},
+          {"score": 3, "description": "Happy + failure paths"},
+          {"score": 4, "description": "Happy + failure + edge cases"}
+        ]
+      },
+      {
+        "id": "code_craft",
+        "name": "Code craft",
+        "weight": 0.25,
+        "levels": [
+          {"score": 1, "description": "Works but sloppy"},
+          {"score": 2, "description": "Functional, little refinement"},
+          {"score": 3, "description": "Thoughtful, DRY, idiomatic"},
+          {"score": 4, "description": "Exemplary, instructive for peers"}
+        ]
+      }
+    ],
+    "calibration": {
+      "tone": "constructive",
+      "language": "en",
+      "depth": "detailed",
+      "example_comments": []
+    }
+  },
+  "cases": [
+    {
+      "id": "seed-01",
+      "label": "Junior — no tests, bare except",
+      "diff_file": "diffs/seed-01.diff",
+      "ground_truth_scores": {
+        "readability":    {"score": 3, "evidence": "function names are fine"},
+        "error_handling": {"score": 2, "evidence": "bare except: clause in api_call()"},
+        "testing":        {"score": 1, "evidence": "no tests added"},
+        "code_craft":     {"score": 2, "evidence": "works but duplicate logic"}
+      }
+    },
+    {
+      "id": "seed-02",
+      "label": "Junior — clean refactor with tests",
+      "diff_file": "diffs/seed-02.diff",
+      "ground_truth_scores": {
+        "readability":    {"score": 4, "evidence": "self-documenting names"},
+        "error_handling": {"score": 3, "evidence": "specific exception classes"},
+        "testing":        {"score": 3, "evidence": "covers happy + 2 failure cases"},
+        "code_craft":     {"score": 4, "evidence": "extracted helper, DRY"}
+      }
+    },
+    {
+      "id": "seed-03",
+      "label": "Starter assignment — minimal effort",
+      "diff_file": "diffs/seed-03.diff",
+      "ground_truth_scores": {
+        "readability":    {"score": 2, "evidence": "one-letter variable names"},
+        "error_handling": {"score": 1, "evidence": "no error handling at all"},
+        "testing":        {"score": 1, "evidence": "no tests"},
+        "code_craft":     {"score": 2, "evidence": "works for the demo path only"}
+      }
+    }
+  ],
+  "notes": [
+    "Replace `cases` with 20 real intern PRs during May dogfood (see reviewhub-dogfood-kickoff scheduled task).",
+    "Store actual diff content in the adjacent diffs/ directory (one .diff file per case).",
+    "Ground truth is the founder's own manual grading, captured BEFORE running the AI grader on that PR.",
+    "Do NOT commit student PII to the eval set. Redact student names + emails before storing the .diff files."
+  ]
+}

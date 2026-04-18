@@ -1,0 +1,66 @@
+diff --git a/app/order_service.py b/app/order_service.py
+index 3333333..4444444 100644
+--- a/app/order_service.py
++++ b/app/order_service.py
+@@ -1,22 +1,38 @@
+ import logging
+-import requests
++from typing import Optional
+
+-def get_order(order_id):
+-    url = f"https://api.example.com/orders/{order_id}"
+-    try:
+-        r = requests.get(url)
+-        return r.json()
+-    except Exception as e:
+-        print(e)
+-        return None
++from app.api_client import HTTPClient, HTTPError, HTTPTimeout
++
++logger = logging.getLogger(__name__)
++
++
++def get_order(order_id: int, client: HTTPClient) -> Optional[dict]:
++    """Fetch one order from the upstream API.
++
++    Returns None if the order does not exist. Raises HTTPError for any
++    other upstream failure so callers can decide whether to retry.
++    """
++    try:
++        return client.get_json(f"/orders/{order_id}")
++    except HTTPTimeout:
++        logger.warning("order %s fetch timed out", order_id)
++        raise
++    except HTTPError as e:
++        if e.status == 404:
++            return None
++        raise
+diff --git a/tests/test_order_service.py b/tests/test_order_service.py
+new file mode 100644
+index 0000000..5555555
+--- /dev/null
++++ b/tests/test_order_service.py
+@@ -0,0 +1,24 @@
++import pytest
++from unittest.mock import MagicMock
++from app.order_service import get_order
++from app.api_client import HTTPError, HTTPTimeout
++
++
++def test_returns_order_dict_on_success():
++    client = MagicMock()
++    client.get_json.return_value = {"id": 1, "total": 42.50}
++    assert get_order(1, client) == {"id": 1, "total": 42.50}
++
++
++def test_returns_none_on_404():
++    client = MagicMock()
++    client.get_json.side_effect = HTTPError(status=404)
++    assert get_order(1, client) is None
++
++
++def test_raises_on_timeout():
++    client = MagicMock()
++    client.get_json.side_effect = HTTPTimeout()
++    with pytest.raises(HTTPTimeout):
++        get_order(1, client)
