@@ -426,12 +426,17 @@ class GradingSessionViewSet(
     @action(detail=True, methods=["post"], url_path="send")
     def send(self, request, pk=None):
         """
-        Post approved comments to GitHub. Implemented in v1 as a stub that
-        sets state to SENDING and returns. Real GitHub posting with the
-        concurrency bundle lands in grading/services/github_poster.py (Day 7-8).
+        Post approved comments to GitHub. Real implementation (Day 7-8):
+        transitions state → SENDING under select_for_update, calls
+        github_poster.post_all_or_nothing() OUTSIDE the transaction
+        (network I/O under row-lock is the anti-pattern), and writes the
+        final state back in a short closing transaction.
 
-        The concurrency guards (select_for_update, client_mutation_id,
-        transaction-per-comment) are set up at the model layer and ready.
+        Idempotency:
+          - State is SENDING before the I/O → a concurrent click sees
+            SENDING and returns 202 without re-posting.
+          - Each comment's client_mutation_id is checked against
+            PostedComment → duplicates skip silently.
         """
         try:
             with transaction.atomic():
@@ -466,20 +471,97 @@ class GradingSessionViewSet(
         except GradingSession.DoesNotExist:
             raise Http404
 
-        # v1 stub: github_poster.post_all_or_nothing() not yet implemented.
-        # Day 7-8 fills this in with the concurrency bundle.
+        # Network I/O happens OUTSIDE the transaction. The state flip above
+        # already serves as the concurrency lock (SENDING → other tabs see
+        # SENDING and bail). Each PostedComment row is written in its own
+        # short tx inside post_all_or_nothing.
+        from .services import github_poster
+        from .exceptions import (
+            GitHubAuthExpired,
+            GitHubError,
+            PartialPostError,
+            PRClosedError,
+        )
+
+        teacher_pat = getattr(request.user, "github_personal_access_token", None)
+        try:
+            result = github_poster.post_all_or_nothing(session, teacher_pat=teacher_pat)
+        except PartialPostError as e:
+            with transaction.atomic():
+                s = GradingSession.objects.select_for_update().get(pk=session.id)
+                s.state = GradingSession.State.PARTIAL
+                s.partial_post_error = {
+                    "error_class": type(e.inner).__name__,
+                    "message": str(e.inner)[:500],
+                    "failed_at_comment_idx": e.failed_at,
+                    "posted_ids_so_far": e.posted_ids,
+                }
+                s.save(update_fields=["state", "partial_post_error", "updated_at"])
+            return Response(
+                {
+                    "error": "partial_post",
+                    "state": s.state,
+                    "failed_at_comment_idx": e.failed_at,
+                    "posted_so_far": len(e.posted_ids),
+                    "message": "Some comments posted; click Resume to continue.",
+                },
+                status=status.HTTP_207_MULTI_STATUS,
+            )
+        except PRClosedError as e:
+            with transaction.atomic():
+                s = GradingSession.objects.select_for_update().get(pk=session.id)
+                s.state = GradingSession.State.FAILED
+                s.partial_post_error = {"error_class": "PRClosedError", "message": str(e)}
+                s.save(update_fields=["state", "partial_post_error", "updated_at"])
+            return Response(
+                {"error": "pr_closed", "message": str(e)},
+                status=status.HTTP_409_CONFLICT,
+            )
+        except GitHubAuthExpired as e:
+            with transaction.atomic():
+                s = GradingSession.objects.select_for_update().get(pk=session.id)
+                s.state = GradingSession.State.DRAFTED
+                s.partial_post_error = {"error_class": "GitHubAuthExpired", "message": str(e)}
+                s.save(update_fields=["state", "partial_post_error", "updated_at"])
+            return Response(
+                {"error": "github_auth", "message": "Re-authorize GitHub in Settings"},
+                status=status.HTTP_401_UNAUTHORIZED,
+            )
+        except GitHubError as e:
+            with transaction.atomic():
+                s = GradingSession.objects.select_for_update().get(pk=session.id)
+                s.state = GradingSession.State.FAILED
+                s.partial_post_error = {"error_class": "GitHubError", "message": str(e)}
+                s.save(update_fields=["state", "partial_post_error", "updated_at"])
+            return Response(
+                {"error": "github_failed", "message": str(e)},
+                status=status.HTTP_502_BAD_GATEWAY,
+            )
+
+        # All comments (and summary) posted cleanly.
+        with transaction.atomic():
+            s = GradingSession.objects.select_for_update().get(pk=session.id)
+            s.state = GradingSession.State.POSTED
+            s.posted_at = timezone.now()
+            s.partial_post_error = None
+            s.save(update_fields=["state", "posted_at", "partial_post_error", "updated_at"])
+
         return Response(
             {
-                "state": session.state,
-                "message": "Send initiated (github_poster stub; Day 7-8).",
-                "session_id": session.id,
+                "state": s.state,
+                "posted_count": result.posted_count,
+                "skipped_duplicate_count": result.skipped_duplicate_count,
+                "summary_comment_id": result.summary_comment_id,
             },
-            status=status.HTTP_202_ACCEPTED,
+            status=status.HTTP_200_OK,
         )
 
     @action(detail=True, methods=["post"], url_path="resume")
     def resume(self, request, pk=None):
-        """Resume a partial post. Stub until github_poster lands (Day 7-8)."""
+        """
+        Resume a partial post. Thin wrapper over the same Send path:
+        github_poster's duplicate-skip IS the resume logic.
+        """
         try:
             with transaction.atomic():
                 session = (
@@ -495,6 +577,66 @@ class GradingSessionViewSet(
                 session.save(update_fields=["state", "updated_at"])
         except GradingSession.DoesNotExist:
             raise Http404
+
+        from .services import github_poster
+        from .exceptions import (
+            GitHubAuthExpired,
+            GitHubError,
+            PartialPostError,
+            PRClosedError,
+        )
+
+        teacher_pat = getattr(request.user, "github_personal_access_token", None)
+        try:
+            result = github_poster.resume_partial(session, teacher_pat=teacher_pat)
+        except PartialPostError as e:
+            with transaction.atomic():
+                s = GradingSession.objects.select_for_update().get(pk=session.id)
+                s.state = GradingSession.State.PARTIAL
+                s.partial_post_error = {
+                    "error_class": type(e.inner).__name__,
+                    "message": str(e.inner)[:500],
+                    "failed_at_comment_idx": e.failed_at,
+                    "posted_ids_so_far": e.posted_ids,
+                }
+                s.save(update_fields=["state", "partial_post_error", "updated_at"])
+            return Response(
+                {
+                    "error": "partial_post",
+                    "state": s.state,
+                    "posted_so_far": len(e.posted_ids),
+                },
+                status=status.HTTP_207_MULTI_STATUS,
+            )
+        except (PRClosedError, GitHubAuthExpired, GitHubError) as e:
+            with transaction.atomic():
+                s = GradingSession.objects.select_for_update().get(pk=session.id)
+                s.state = GradingSession.State.FAILED
+                s.partial_post_error = {
+                    "error_class": type(e).__name__,
+                    "message": str(e),
+                }
+                s.save(update_fields=["state", "partial_post_error", "updated_at"])
+            return Response(
+                {"error": type(e).__name__, "message": str(e)},
+                status=status.HTTP_502_BAD_GATEWAY,
+            )
+
+        with transaction.atomic():
+            s = GradingSession.objects.select_for_update().get(pk=session.id)
+            s.state = GradingSession.State.POSTED
+            s.posted_at = timezone.now()
+            s.partial_post_error = None
+            s.save(update_fields=["state", "posted_at", "partial_post_error", "updated_at"])
+
+        return Response(
+            {
+                "state": s.state,
+                "posted_count": result.posted_count,
+                "skipped_duplicate_count": result.skipped_duplicate_count,
+            },
+            status=status.HTTP_200_OK,
+        )
 
         return Response(
             {
