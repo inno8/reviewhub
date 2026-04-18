@@ -197,7 +197,7 @@ class Classroom(models.Model):
         return f"{self.name} ({self.owner.email})"
 
 
-class ClassMembership(models.Model):
+class ClassroomMembership(models.Model):
     """
     A student joining a docent's class. Links a student to their own repo
     (usually via their personal GitProviderConnection) for a given class.

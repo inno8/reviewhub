@@ -36,6 +36,7 @@ urlpatterns = [
     path('api/skills/', include('skills.urls')),
     path('api/notifications/', include('notifications.urls')),
     path('api/batch/', include('batch.urls')),  # Phase 6: Batch analysis
+    path('api/grading/', include('grading.urls')),  # Nakijken Copilot v1
 
     # Onboard (public endpoints)
     path('api/onboard/check-email/', OnboardCheckEmailView.as_view(), name='onboard-check-email'),
