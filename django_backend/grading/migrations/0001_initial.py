@@ -10,7 +10,7 @@ class Migration(migrations.Migration):
     initial = True
 
     dependencies = [
-        ('evaluations', '0007_production_hardening'),
+        ('evaluations', '0006_fix_and_learn_fields'),
         ('users', '0012_add_teacher_role'),
         migrations.swappable_dependency(settings.AUTH_USER_MODEL),
     ]
