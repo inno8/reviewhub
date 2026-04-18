@@ -16,6 +16,11 @@ import DevProfileResultsView from '@/views/DevProfileResultsView.vue';
 import CommitTimelineView from '@/views/CommitTimelineView.vue';
 import RecommendationsView from '@/views/RecommendationsView.vue';
 import ResolvedFindingsView from '@/views/ResolvedFindingsView.vue';
+import OrgSignupView from '@/views/OrgSignupView.vue';
+import AcceptInviteView from '@/views/AcceptInviteView.vue';
+import OrgDashboardView from '@/views/OrgDashboardView.vue';
+import OrgStudentDetailView from '@/views/OrgStudentDetailView.vue';
+import DeveloperJourneyView from '@/views/DeveloperJourneyView.vue';
 import GradingInboxView from '@/views/GradingInboxView.vue';
 import GradingSessionDetailView from '@/views/GradingSessionDetailView.vue';
 import { useAuthStore } from '@/stores/auth';
@@ -39,6 +44,11 @@ const router = createRouter({
         { path: '/recommendations', name: 'recommendations', component: RecommendationsView },
         { path: '/timeline', name: 'timeline', component: CommitTimelineView },
         { path: '/resolved', name: 'resolved', component: ResolvedFindingsView },
+        { path: '/journey', name: 'journey', component: DeveloperJourneyView },
+        { path: '/org-signup', name: 'org-signup', component: OrgSignupView, meta: { public: true } },
+        { path: '/accept-invite', name: 'accept-invite', component: AcceptInviteView, meta: { public: true } },
+        { path: '/org-dashboard', name: 'org-dashboard', component: OrgDashboardView, meta: { admin: true } },
+        { path: '/org-dashboard/students/:studentId', name: 'org-student-detail', component: OrgStudentDetailView, meta: { admin: true }, props: true },
         // Nakijken Copilot — teacher grading copilot
         { path: '/grading', name: 'grading-inbox', component: GradingInboxView },
         { path: '/grading/sessions/:id', name: 'grading-session-detail', component: GradingSessionDetailView, props: true },
@@ -55,14 +65,21 @@ router.beforeEach(async (to) => {
     if (!auth.isAuthenticated) {
         return { name: 'login' };
     }
-    if (to.meta.admin && auth.user?.role !== 'ADMIN') {
+    // Admin-gated routes: allow admin, teacher, and platform ops (superuser).
+    // Role is lowercase per auth store normalization.
+    if (to.meta.admin && !['admin', 'teacher'].includes(auth.user?.role) && !auth.user?.isSuperuser) {
         return { name: 'dashboard' };
     }
-    // Redirect developer (non-admin) to profile setup if not yet completed
+    // Ops-gated routes: platform superuser only.
+    if (to.meta.ops && !auth.user?.isSuperuser) {
+        return { name: 'dashboard' };
+    }
+    // Redirect students (not teachers/admins/ops) to profile setup if incomplete.
+    const isStaff = ['admin', 'teacher'].includes(auth.user?.role) || auth.user?.isSuperuser;
     if (!to.meta.skipProfileCheck &&
         auth.user &&
         !auth.user.devProfileCompleted &&
-        auth.user.role !== 'ADMIN') {
+        !isStaff) {
         return { name: 'dev-profile-setup' };
     }
     return true;

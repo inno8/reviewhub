@@ -36,19 +36,65 @@ onMounted(async () => {
   fetchActivityDates();
 });
 
+/**
+ * Role-scoped navigation (v1 focus: grading-first).
+ *
+ * Visibility flags are non-exclusive — any one match shows the item:
+ *   studentOnly    — role=developer (default student experience)
+ *   teacherOnly    — role=teacher
+ *   schoolAdminOnly — role=admin (school owner / staff)
+ *   opsOnly        — is_superuser=true (platform ops, us)
+ *
+ * Items with no role flag are visible to everyone.
+ *
+ * Previous `devOnly` / `adminOnly` kept for backward compat on a few lines
+ * but we migrate toward the explicit flags above.
+ */
 const navItems = [
-  { name: 'Dashboard', icon: 'dashboard', path: '/' },
-  { name: 'Projects', icon: 'folder_open', path: '/projects' },
-  { name: 'Skills', icon: 'school', path: '/skills' },
-  { name: 'Recommendations', icon: 'route', path: '/recommendations', devOnly: true },
-  { name: 'Insights', icon: 'analytics', path: '/insights' },
-  { name: 'Dev Profile', icon: 'psychology', path: '/dev-profile/results', adminOnly: true },
-  { name: 'Batch Analysis', icon: 'history', path: '/batch', devOnly: true },
-  { name: 'Commit Timeline', icon: 'timeline', path: '/timeline' },
-  { name: 'Resolved Issues', icon: 'task_alt', path: '/resolved' },
-  { name: 'Team Management', icon: 'group', path: '/team', adminOnly: true },
+  // Student experience (the learning loop)
+  { name: 'Dashboard', icon: 'dashboard', path: '/', studentOnly: true },
+  { name: 'Skills', icon: 'school', path: '/skills', studentOnly: true },
+  { name: 'Recommendations', icon: 'route', path: '/recommendations', studentOnly: true },
+  { name: 'Journey', icon: 'explore', path: '/journey', studentOnly: true },
+  { name: 'Commit Timeline', icon: 'timeline', path: '/timeline', studentOnly: true },
+  { name: 'Resolved Issues', icon: 'task_alt', path: '/resolved', studentOnly: true },
+  { name: 'My Profile', icon: 'psychology', path: '/dev-profile/results', studentOnly: true },
+
+  // Teacher experience (the grading loop)
   { name: 'Grading Inbox', icon: 'rate_review', path: '/grading', teacherOnly: true },
+
+  // School admin experience (org governance)
+  { name: 'Org Dashboard', icon: 'corporate_fare', path: '/org-dashboard', schoolAdminOnly: true },
+  { name: 'Team Members', icon: 'group', path: '/team', schoolAdminOnly: true },
+
+  // Platform ops (us — superuser only)
+  { name: 'Ops Dashboard', icon: 'admin_panel_settings', path: '/ops', opsOnly: true },
+
+  // DEPRECATED for v1 grading-first scope — hidden behind role flags or
+  // cut entirely. Kept here as comments so we remember why:
+  //   Projects       — developer-era concept; grading uses Classrooms now
+  //   Insights       — trends redundant with Skills + grading session data
+  //   Batch Analysis — power-user tool, not v1 focus
 ];
+
+function isItemVisible(item: any): boolean {
+  // Item with no role gate is visible to everyone.
+  const hasGate = item.studentOnly || item.teacherOnly
+    || item.schoolAdminOnly || item.opsOnly
+    || item.adminOnly || item.devOnly;
+  if (!hasGate) return true;
+
+  // OR-match: any flag that matches the user's role wins.
+  if (item.studentOnly && auth.isStudent) return true;
+  if (item.teacherOnly && auth.isTeacher) return true;
+  if (item.schoolAdminOnly && auth.isSchoolAdmin) return true;
+  if (item.opsOnly && auth.isSuperuser) return true;
+  // Legacy flags
+  if (item.adminOnly && auth.isSchoolAdmin) return true;
+  if (item.devOnly && auth.isStudent) return true;
+
+  return false;
+}
 
 function isActive(path: string) {
   if (path === '/dev-profile/results') {
@@ -476,7 +522,7 @@ function toggleAllBranches(selected: boolean) {
         v-for="item in navItems"
         :key="item.path"
         :to="item.path"
-        v-show="(!item.adminOnly || auth.isAdmin) && (!item.devOnly || !auth.isAdmin)"
+        v-show="isItemVisible(item)"
         :class="[
           'rounded-lg mx-2 my-1 px-4 py-3 flex items-center gap-3 transition-transform active:translate-x-1 text-sm font-medium',
           isActive(item.path)
