@@ -23,6 +23,7 @@ import OrgStudentDetailView from '@/views/OrgStudentDetailView.vue';
 import DeveloperJourneyView from '@/views/DeveloperJourneyView.vue';
 import GradingInboxView from '@/views/GradingInboxView.vue';
 import GradingSessionDetailView from '@/views/GradingSessionDetailView.vue';
+import OpsDashboardView from '@/views/OpsDashboardView.vue';
 import { useAuthStore } from '@/stores/auth';
 const router = createRouter({
     history: createWebHistory(),
@@ -52,6 +53,8 @@ const router = createRouter({
         // Nakijken Copilot — teacher grading copilot
         { path: '/grading', name: 'grading-inbox', component: GradingInboxView },
         { path: '/grading/sessions/:id', name: 'grading-session-detail', component: GradingSessionDetailView, props: true },
+        // Platform ops — superuser only
+        { path: '/ops', name: 'ops-dashboard', component: OpsDashboardView, meta: { ops: true } },
     ],
 });
 router.beforeEach(async (to) => {

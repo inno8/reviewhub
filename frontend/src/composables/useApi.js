@@ -27,7 +27,7 @@ export function setSkipAuthRedirect(skip) {
 client.interceptors.response.use((response) => response, (error) => {
     if (error?.response?.status === 401) {
         // Don't redirect if we're on a public page or during bootstrap
-        const publicPaths = ['/login', '/onboard'];
+        const publicPaths = ['/login', '/onboard', '/org-signup', '/accept-invite'];
         const isPublicPage = publicPaths.some(p => window.location.pathname.startsWith(p));
         if (!isPublicPage && !skipAuthRedirect) {
             localStorage.removeItem('reviewhub_token');
@@ -145,6 +145,9 @@ export const api = {
         breakdown: (userId, skillId, projectId) => client.get(`/skills/user/${userId}/breakdown/${skillId}/`, { params: { project: projectId } }),
         recalculate: (userId, projectId) => Promise.resolve({ data: { success: true } }),
         recommendations: (projectId) => client.get('/skills/recommendations/', { params: { project: projectId } }),
+        journey: (userId, projectId) => client.get(`/skills/journey/${userId}/`, {
+            params: projectId != null ? { project: projectId } : {},
+        }),
     },
     dashboard: {
         overview: (projectId, userId) => client.get('/skills/dashboard/overview/', { params: { project: projectId, user: userId } }),
@@ -198,6 +201,15 @@ export const api = {
         getProfile: () => client.get('/batch/profile/'),
         getStats: () => client.get('/batch/stats/'),
     },
+    org: {
+        signup: (data) => client.post('/users/org-signup/', data),
+        acceptInvite: (data) => client.post('/users/accept-invite/', data),
+        invite: (data) => client.post('/users/invite/', data),
+        members: () => client.get('/users/org/members/'),
+        invitations: () => client.get('/users/org/invitations/'),
+        dashboard: () => client.get('/skills/org-dashboard/'),
+        studentDetail: (studentId) => client.get(`/skills/org-dashboard/students/${studentId}/`),
+    },
     // Nakijken Copilot — teacher grading copilot
     grading: {
         rubrics: {
@@ -238,6 +250,14 @@ export const api = {
         },
         costLogs: {
             list: (params = {}) => client.get('/grading/cost-logs/', { params }),
+        },
+        // Ops dashboard — superuser only
+        ops: {
+            summary: () => client.get('/grading/ops/summary/'),
+            orgs: () => client.get('/grading/ops/orgs/'),
+            classrooms: (params = {}) => client.get('/grading/ops/classrooms/', { params }),
+            teachers: () => client.get('/grading/ops/teachers/'),
+            llmLog: (params = {}) => client.get('/grading/ops/llm-log/', { params }),
         },
     },
 };
