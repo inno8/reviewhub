@@ -40,6 +40,7 @@ INSTALLED_APPS = [
     'skills',
     'notifications',
     'batch',  # Phase 6: Batch commit analysis
+    'grading',  # Nakijken Copilot v1 — teacher grading copilot
 ]
 
 MIDDLEWARE = [
