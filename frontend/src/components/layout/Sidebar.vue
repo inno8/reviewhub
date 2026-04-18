@@ -47,6 +47,7 @@ const navItems = [
   { name: 'Commit Timeline', icon: 'timeline', path: '/timeline' },
   { name: 'Resolved Issues', icon: 'task_alt', path: '/resolved' },
   { name: 'Team Management', icon: 'group', path: '/team', adminOnly: true },
+  { name: 'Grading Inbox', icon: 'rate_review', path: '/grading', teacherOnly: true },
 ];
 
 function isActive(path: string) {

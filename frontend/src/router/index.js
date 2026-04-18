@@ -16,6 +16,8 @@ import DevProfileResultsView from '@/views/DevProfileResultsView.vue';
 import CommitTimelineView from '@/views/CommitTimelineView.vue';
 import RecommendationsView from '@/views/RecommendationsView.vue';
 import ResolvedFindingsView from '@/views/ResolvedFindingsView.vue';
+import GradingInboxView from '@/views/GradingInboxView.vue';
+import GradingSessionDetailView from '@/views/GradingSessionDetailView.vue';
 import { useAuthStore } from '@/stores/auth';
 const router = createRouter({
     history: createWebHistory(),
@@ -37,6 +39,9 @@ const router = createRouter({
         { path: '/recommendations', name: 'recommendations', component: RecommendationsView },
         { path: '/timeline', name: 'timeline', component: CommitTimelineView },
         { path: '/resolved', name: 'resolved', component: ResolvedFindingsView },
+        // Nakijken Copilot — teacher grading copilot
+        { path: '/grading', name: 'grading-inbox', component: GradingInboxView },
+        { path: '/grading/sessions/:id', name: 'grading-session-detail', component: GradingSessionDetailView, props: true },
     ],
 });
 router.beforeEach(async (to) => {

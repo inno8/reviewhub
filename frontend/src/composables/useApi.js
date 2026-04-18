@@ -198,6 +198,48 @@ export const api = {
         getProfile: () => client.get('/batch/profile/'),
         getStats: () => client.get('/batch/stats/'),
     },
+    // Nakijken Copilot — teacher grading copilot
+    grading: {
+        rubrics: {
+            list: () => client.get('/grading/rubrics/'),
+            get: (id) => client.get(`/grading/rubrics/${id}/`),
+            create: (data) => client.post('/grading/rubrics/', data),
+            update: (id, data) => client.patch(`/grading/rubrics/${id}/`, data),
+            delete: (id) => client.delete(`/grading/rubrics/${id}/`),
+        },
+        classrooms: {
+            list: () => client.get('/grading/classrooms/'),
+            get: (id) => client.get(`/grading/classrooms/${id}/`),
+            create: (data) => client.post('/grading/classrooms/', data),
+            update: (id, data) => client.patch(`/grading/classrooms/${id}/`, data),
+            delete: (id) => client.delete(`/grading/classrooms/${id}/`),
+            members: (id) => client.get(`/grading/classrooms/${id}/members/`),
+            addMember: (id, studentId, repoUrl) => client.post(
+                `/grading/classrooms/${id}/members/`,
+                { student_id: studentId, student_repo_url: repoUrl || '' }
+            ),
+            removeMember: (id, studentId) => client.delete(
+                `/grading/classrooms/${id}/members/`,
+                { params: { student_id: studentId } }
+            ),
+        },
+        submissions: {
+            list: (params = {}) => client.get('/grading/submissions/', { params }),
+            get: (id) => client.get(`/grading/submissions/${id}/`),
+        },
+        sessions: {
+            list: (params = {}) => client.get('/grading/sessions/', { params }),
+            get: (id) => client.get(`/grading/sessions/${id}/`),
+            update: (id, data) => client.patch(`/grading/sessions/${id}/`, data),
+            startReview: (id) => client.post(`/grading/sessions/${id}/start_review/`, {}),
+            generateDraft: (id) => client.post(`/grading/sessions/${id}/generate_draft/`, {}),
+            send: (id) => client.post(`/grading/sessions/${id}/send/`, {}),
+            resume: (id) => client.post(`/grading/sessions/${id}/resume/`, {}),
+        },
+        costLogs: {
+            list: (params = {}) => client.get('/grading/cost-logs/', { params }),
+        },
+    },
 };
 export function useApi() {
     return {
