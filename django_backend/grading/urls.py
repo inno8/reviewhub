@@ -12,7 +12,7 @@ from . import ops_views, views, webhooks
 
 router = DefaultRouter()
 router.register(r"rubrics", views.RubricViewSet, basename="rubric")
-router.register(r"classrooms", views.ClassroomViewSet, basename="classroom")
+router.register(r"courses", views.CourseViewSet, basename="course")
 router.register(r"submissions", views.SubmissionViewSet, basename="submission")
 router.register(r"sessions", views.GradingSessionViewSet, basename="grading-session")
 router.register(r"cost-logs", views.LLMCostLogViewSet, basename="llm-cost-log")
@@ -23,7 +23,7 @@ urlpatterns = router.urls + [
     # Ops dashboard — superuser-only, v1 read-only
     path("ops/summary/", ops_views.OpsSummaryView.as_view(), name="ops-summary"),
     path("ops/orgs/", ops_views.OpsOrgsView.as_view(), name="ops-orgs"),
-    path("ops/classrooms/", ops_views.OpsClassroomsView.as_view(), name="ops-classrooms"),
+    path("ops/courses/", ops_views.OpsCoursesView.as_view(), name="ops-courses"),
     path("ops/teachers/", ops_views.OpsTeacherCostsView.as_view(), name="ops-teachers"),
     path("ops/llm-log/", ops_views.OpsLLMCallLogView.as_view(), name="ops-llm-log"),
 ]

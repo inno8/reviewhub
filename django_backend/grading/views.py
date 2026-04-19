@@ -36,8 +36,8 @@ from rest_framework.permissions import IsAuthenticated
 from rest_framework.response import Response
 
 from .models import (
-    Classroom,
-    ClassroomMembership,
+    CohortMembership,
+    Course,
     GradingSession,
     LLMCostLog,
     Rubric,
@@ -45,8 +45,8 @@ from .models import (
 )
 from .permissions import IsTeacher, IsTeacherOrReadOnlyStudent
 from .serializers import (
-    ClassroomMembershipSerializer,
-    ClassroomSerializer,
+    CohortMembershipSerializer,
+    CourseSerializer,
     GradingSessionDetailSerializer,
     GradingSessionEditSerializer,
     GradingSessionListSerializer,
@@ -88,21 +88,26 @@ class RubricViewSet(viewsets.ModelViewSet):
 
 
 # ─────────────────────────────────────────────────────────────────────────────
-# Classroom
+# Course (was "Classroom")
 # ─────────────────────────────────────────────────────────────────────────────
-class ClassroomViewSet(viewsets.ModelViewSet):
+class CourseViewSet(viewsets.ModelViewSet):
     """
-    /api/grading/classrooms/
-    Teacher's classrooms. Teachers see their own + any where they're secondary.
+    /api/grading/courses/
+    Teacher's courses. Teachers see their own + any where they're secondary.
+
+    Membership is exposed on the Course endpoint for v1 backward compatibility:
+    POST/DELETE on /courses/{id}/members/ creates/removes CohortMembership rows
+    on the course's cohort. Migration to a proper /cohorts/{id}/members/
+    endpoint lands in Workstream B+.
     """
 
-    serializer_class = ClassroomSerializer
+    serializer_class = CourseSerializer
     permission_classes = [IsAuthenticated, IsTeacher]
 
     def get_queryset(self):
         user = self.request.user
-        base = Classroom.objects.for_user(user)
-        # Also include classrooms where the user is the secondary docent
+        base = Course.objects.for_user(user)
+        # Also include courses where the user is the secondary docent
         return base.filter(
             # Primary: they own it
             #   OR secondary: they're the backup teacher
@@ -116,15 +121,25 @@ class ClassroomViewSet(viewsets.ModelViewSet):
     @action(detail=True, methods=["get", "post", "delete"], url_path="members")
     def members(self, request, pk=None):
         """
-        GET    /classrooms/{id}/members/   → list
-        POST   /classrooms/{id}/members/   → {student_id, student_repo_url} add
-        DELETE /classrooms/{id}/members/?student_id=X → remove
+        GET    /courses/{id}/members/   → list (cohort memberships for this course's cohort)
+        POST   /courses/{id}/members/   → {student_id, student_repo_url} add to cohort
+        DELETE /courses/{id}/members/?student_id=X → remove from cohort
+
+        In v1 Scope B1 Workstream A, membership is at the cohort level but this
+        endpoint bridges the existing Classroom-era UI. A student added here
+        joins the course's cohort (and thus every course in that cohort).
         """
-        classroom = self.get_object()
+        course = self.get_object()
+        cohort = course.cohort
 
         if request.method == "GET":
-            qs = classroom.memberships.select_related("student").order_by("joined_at")
-            return Response(ClassroomMembershipSerializer(qs, many=True).data)
+            if cohort is None:
+                return Response([])
+            qs = cohort.memberships.select_related("student").order_by("joined_at")
+            return Response(CohortMembershipSerializer(qs, many=True).data)
+
+        if cohort is None:
+            raise ValidationError({"cohort": "course has no cohort; assign one before managing members"})
 
         if request.method == "POST":
             student_id = request.data.get("student_id")
@@ -142,13 +157,20 @@ class ClassroomViewSet(viewsets.ModelViewSet):
                 and student.organization_id != request.user.organization_id
             ):
                 raise PermissionDenied("student is in a different organization")
-            m, created = ClassroomMembership.objects.update_or_create(
-                classroom=classroom,
+            # OneToOne on student: one cohort per student. If the student is
+            # already in a DIFFERENT cohort, block the move — Workstream B+
+            # will add a proper "transfer student between cohorts" flow.
+            existing = CohortMembership.objects.filter(student=student).first()
+            if existing and existing.cohort_id != cohort.id:
+                raise ValidationError(
+                    {"student": f"student is already in cohort {existing.cohort_id}; transfer not supported in v1"}
+                )
+            m, created = CohortMembership.objects.update_or_create(
                 student=student,
-                defaults={"student_repo_url": repo_url},
+                defaults={"cohort": cohort, "student_repo_url": repo_url},
             )
             return Response(
-                ClassroomMembershipSerializer(m).data,
+                CohortMembershipSerializer(m).data,
                 status=status.HTTP_201_CREATED if created else status.HTTP_200_OK,
             )
 
@@ -156,8 +178,8 @@ class ClassroomViewSet(viewsets.ModelViewSet):
         student_id = request.query_params.get("student_id")
         if not student_id:
             raise ValidationError({"student_id": "required"})
-        deleted, _ = ClassroomMembership.objects.filter(
-            classroom=classroom, student_id=student_id
+        deleted, _ = CohortMembership.objects.filter(
+            cohort=cohort, student_id=student_id
         ).delete()
         return Response({"deleted": deleted}, status=status.HTTP_200_OK)
 
@@ -183,12 +205,13 @@ class SubmissionViewSet(
     def get_queryset(self):
         user = self.request.user
         qs = Submission.objects.for_user(user).select_related(
-            "classroom", "student"
+            "course", "student"
         )
-        # Filter by classroom if provided
-        classroom_id = self.request.query_params.get("classroom")
-        if classroom_id:
-            qs = qs.filter(classroom_id=classroom_id)
+        # Filter by course if provided. Accept both `course` and legacy
+        # `classroom` query params for v1 UI transition.
+        course_id = self.request.query_params.get("course") or self.request.query_params.get("classroom")
+        if course_id:
+            qs = qs.filter(course_id=course_id)
         status_param = self.request.query_params.get("status")
         if status_param:
             qs = qs.filter(status=status_param)
@@ -227,14 +250,15 @@ class GradingSessionViewSet(
         user = self.request.user
         qs = GradingSession.objects.for_user(user).select_related(
             "submission",
-            "submission__classroom",
+            "submission__course",
             "submission__student",
             "rubric",
         ).prefetch_related("posted_comments")
 
-        classroom_id = self.request.query_params.get("classroom")
-        if classroom_id:
-            qs = qs.filter(submission__classroom_id=classroom_id)
+        # Accept both `course` and legacy `classroom` query params.
+        course_id = self.request.query_params.get("course") or self.request.query_params.get("classroom")
+        if course_id:
+            qs = qs.filter(submission__course_id=course_id)
 
         state = self.request.query_params.get("state")
         if state:
@@ -692,7 +716,7 @@ class LLMCostLogViewSet(
         user = self.request.user
         if not user.is_superuser and getattr(user, "role", None) != "admin":
             return LLMCostLog.objects.none()
-        qs = LLMCostLog.objects.for_user(user).select_related("docent", "classroom")
+        qs = LLMCostLog.objects.for_user(user).select_related("docent", "course")
         docent_id = self.request.query_params.get("docent")
         if docent_id:
             qs = qs.filter(docent_id=docent_id)

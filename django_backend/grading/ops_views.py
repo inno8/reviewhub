@@ -24,7 +24,7 @@ from django.utils import timezone
 from rest_framework import permissions, views
 from rest_framework.response import Response
 
-from .models import Classroom, ClassroomMembership, GradingSession, LLMCostLog
+from .models import Cohort, CohortMembership, Course, GradingSession, LLMCostLog
 from .services.cost_metering import WEEKLY_COST_ALERT_EUR
 
 
@@ -63,7 +63,8 @@ class OpsSummaryView(views.APIView):
         month_ago = now - timedelta(days=30)
 
         total_orgs = Organization.objects.count()
-        total_classrooms = Classroom.objects.count()
+        total_cohorts = Cohort.objects.count()
+        total_courses = Course.objects.count()
         total_teachers = User.objects.filter(role="teacher").count()
         total_students = User.objects.filter(role="developer").count()
 
@@ -92,7 +93,10 @@ class OpsSummaryView(views.APIView):
         return Response({
             "platform_totals": {
                 "orgs": total_orgs,
-                "classrooms": total_classrooms,
+                "cohorts": total_cohorts,
+                "courses": total_courses,
+                # Legacy key retained for UI compat during Workstream A→B transition.
+                "classrooms": total_courses,
                 "teachers": total_teachers,
                 "students": total_students,
             },
@@ -132,7 +136,8 @@ class OpsOrgsView(views.APIView):
 
         rows = []
         for org in orgs:
-            classroom_count = Classroom.objects.filter(org=org).count()
+            cohort_count = Cohort.objects.filter(org=org).count()
+            course_count = Course.objects.filter(org=org).count()
             teacher_count = org.members.filter(role="teacher").count()
             student_count = org.members.filter(role="developer").count()
             cost_7d = LLMCostLog.objects.filter(
@@ -144,7 +149,10 @@ class OpsOrgsView(views.APIView):
                 "name": org.name,
                 "slug": org.slug,
                 "created_at": org.created_at.isoformat(),
-                "classrooms": classroom_count,
+                "cohorts": cohort_count,
+                "courses": course_count,
+                # Legacy key retained for Workstream A→B transition.
+                "classrooms": course_count,
                 "teachers": teacher_count,
                 "students": student_count,
                 "cost_7d_eur": str(cost_7d),
@@ -154,12 +162,14 @@ class OpsOrgsView(views.APIView):
 
 
 # ─────────────────────────────────────────────────────────────────────────────
-# Per-classroom breakdown
+# Per-course breakdown (was per-classroom)
 # ─────────────────────────────────────────────────────────────────────────────
-class OpsClassroomsView(views.APIView):
+class OpsCoursesView(views.APIView):
     """
-    GET /api/grading/ops/classrooms/?org={id}
-    List classrooms with student count, session count, and cost rollup.
+    GET /api/grading/ops/courses/?org={id}
+    List courses with student count, session count, and cost rollup.
+    Student count is derived from the course's cohort (students are
+    cohort-scoped, not course-scoped, post Workstream A).
     """
 
     permission_classes = [IsSuperuser]
@@ -167,19 +177,23 @@ class OpsClassroomsView(views.APIView):
     def get(self, request):
         week_ago = timezone.now() - timedelta(days=7)
 
-        qs = Classroom.objects.select_related("org", "owner", "rubric")
+        qs = Course.objects.select_related("org", "owner", "rubric", "cohort")
         org_id = request.query_params.get("org")
         if org_id:
             qs = qs.filter(org_id=org_id)
 
         rows = []
         for c in qs:
-            student_count = ClassroomMembership.objects.filter(classroom=c).count()
+            student_count = (
+                CohortMembership.objects.filter(cohort=c.cohort).count()
+                if c.cohort_id
+                else 0
+            )
             sessions_total = GradingSession.objects.filter(
-                submission__classroom=c,
+                submission__course=c,
             ).count()
             sessions_open = GradingSession.objects.filter(
-                submission__classroom=c,
+                submission__course=c,
                 state__in=[
                     GradingSession.State.PENDING,
                     GradingSession.State.DRAFTED,
@@ -187,7 +201,7 @@ class OpsClassroomsView(views.APIView):
                 ],
             ).count()
             cost_7d = LLMCostLog.objects.filter(
-                classroom=c, occurred_at__gte=week_ago,
+                course=c, occurred_at__gte=week_ago,
             ).aggregate(total=Sum("cost_eur"))["total"] or Decimal("0")
 
             rows.append({
@@ -195,6 +209,8 @@ class OpsClassroomsView(views.APIView):
                 "name": c.name,
                 "org_id": c.org_id,
                 "org_name": c.org.name,
+                "cohort_id": c.cohort_id,
+                "cohort_name": c.cohort.name if c.cohort else None,
                 "owner_id": c.owner_id,
                 "owner_email": c.owner.email,
                 "rubric_name": c.rubric.name if c.rubric else None,
@@ -207,6 +223,10 @@ class OpsClassroomsView(views.APIView):
             })
 
         return Response({"count": len(rows), "results": rows})
+
+
+# Legacy alias retained for any URL imports/tests still on the old name.
+OpsClassroomsView = OpsCoursesView
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -229,9 +249,9 @@ class OpsTeacherCostsView(views.APIView):
 
         rows = []
         for t in teachers:
-            classroom_count = Classroom.objects.filter(owner=t).count()
+            course_count = Course.objects.filter(owner=t).count()
             sessions_posted_7d = GradingSession.objects.filter(
-                submission__classroom__owner=t,
+                submission__course__owner=t,
                 posted_at__gte=week_ago,
                 state=GradingSession.State.POSTED,
             ).count()
@@ -245,7 +265,9 @@ class OpsTeacherCostsView(views.APIView):
                 "display_name": t.display_name,
                 "org_id": t.organization_id,
                 "org_name": t.organization.name if t.organization else None,
-                "classrooms": classroom_count,
+                "courses": course_count,
+                # Legacy key for Workstream A→B transition.
+                "classrooms": course_count,
                 "sessions_posted_7d": sessions_posted_7d,
                 "cost_7d_eur": str(cost_7d),
                 "over_threshold": cost_7d > WEEKLY_COST_ALERT_EUR,
@@ -270,7 +292,7 @@ class OpsLLMCallLogView(views.APIView):
 
     def get(self, request):
         limit = min(int(request.query_params.get("limit", 100)), 500)
-        qs = LLMCostLog.objects.select_related("docent", "org", "classroom").order_by(
+        qs = LLMCostLog.objects.select_related("docent", "org", "course").order_by(
             "-occurred_at",
         )
         tier = request.query_params.get("tier")
@@ -294,7 +316,7 @@ class OpsLLMCallLogView(views.APIView):
                 "latency_ms": r.latency_ms,
                 "ceiling_rejected": r.ceiling_rejected,
                 "docent_email": r.docent.email if r.docent else None,
-                "classroom_name": r.classroom.name if r.classroom else None,
+                "course_name": r.course.name if r.course else None,
                 "org_name": r.org.name if r.org else None,
                 "occurred_at": r.occurred_at.isoformat(),
             }

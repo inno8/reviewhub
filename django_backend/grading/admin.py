@@ -10,8 +10,9 @@ Admin URL: http://localhost:8000/admin/grading/
 from django.contrib import admin
 
 from .models import (
-    Classroom,
-    ClassroomMembership,
+    Cohort,
+    CohortMembership,
+    Course,
     GradingSession,
     LLMCostLog,
     PostedComment,
@@ -30,27 +31,35 @@ class RubricAdmin(admin.ModelAdmin):
     readonly_fields = ("created_at", "updated_at")
 
 
-@admin.register(Classroom)
-class ClassroomAdmin(admin.ModelAdmin):
-    list_display = ("name", "org", "owner", "rubric", "source_control_type", "created_at")
-    list_filter = ("source_control_type", "org")
+@admin.register(Cohort)
+class CohortAdmin(admin.ModelAdmin):
+    list_display = ("name", "org", "year", "starts_at", "ends_at", "created_at")
+    list_filter = ("org", "year")
     search_fields = ("name",)
     readonly_fields = ("created_at", "updated_at")
 
 
-@admin.register(ClassroomMembership)
-class ClassroomMembershipAdmin(admin.ModelAdmin):
-    list_display = ("classroom", "student", "student_repo_url", "joined_at")
-    search_fields = ("student__email", "classroom__name", "student_repo_url")
+@admin.register(Course)
+class CourseAdmin(admin.ModelAdmin):
+    list_display = ("name", "cohort", "org", "owner", "rubric", "source_control_type", "created_at")
+    list_filter = ("source_control_type", "org", "cohort")
+    search_fields = ("name",)
+    readonly_fields = ("created_at", "updated_at")
+
+
+@admin.register(CohortMembership)
+class CohortMembershipAdmin(admin.ModelAdmin):
+    list_display = ("cohort", "student", "student_repo_url", "joined_at")
+    search_fields = ("student__email", "cohort__name", "student_repo_url")
 
 
 @admin.register(Submission)
 class SubmissionAdmin(admin.ModelAdmin):
     list_display = (
-        "id", "student", "classroom", "repo_full_name", "pr_number",
+        "id", "student", "course", "repo_full_name", "pr_number",
         "status", "due_at", "created_at",
     )
-    list_filter = ("status", "classroom")
+    list_filter = ("status", "course")
     search_fields = ("repo_full_name", "pr_title", "student__email")
     readonly_fields = ("created_at", "updated_at")
 
@@ -101,7 +110,7 @@ class WebhookDeliveryAdmin(admin.ModelAdmin):
 @admin.register(LLMCostLog)
 class LLMCostLogAdmin(admin.ModelAdmin):
     list_display = (
-        "occurred_at", "tier", "model_name", "docent", "classroom",
+        "occurred_at", "tier", "model_name", "docent", "course",
         "tokens_in", "tokens_out", "cost_eur", "ceiling_rejected",
     )
     list_filter = ("tier", "model_name", "ceiling_rejected")

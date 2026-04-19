@@ -22,8 +22,9 @@ from django.test import override_settings
 from rest_framework.test import APIClient
 
 from grading.models import (
-    Classroom,
-    ClassroomMembership,
+    Cohort,
+    CohortMembership,
+    Course,
     GradingSession,
     Rubric,
     Submission,
@@ -35,7 +36,7 @@ User = get_user_model()
 
 @pytest.fixture
 def membership(db):
-    """A classroom with one student linked to jandeboer/assignment-q3."""
+    """A cohort + course with one student linked to jandeboer/assignment-q3."""
     from users.models import GitProviderConnection, Organization
 
     org = Organization.objects.create(name="Media College", slug="media-college")
@@ -57,11 +58,12 @@ def membership(db):
              "levels": [{"score": 1}, {"score": 4}]}
         ],
     )
-    classroom = Classroom.objects.create(
-        org=org, owner=teacher, name="MBO-4 ICT Y2", rubric=rubric,
+    cohort = Cohort.objects.create(org=org, name="MBO-4 ICT Y2 (klas)")
+    Course.objects.create(
+        org=org, cohort=cohort, owner=teacher, name="MBO-4 ICT Y2", rubric=rubric,
     )
-    m = ClassroomMembership.objects.create(
-        classroom=classroom,
+    m = CohortMembership.objects.create(
+        cohort=cohort,
         student=student,
         student_repo_url="https://github.com/jandeboer/assignment-q3",
     )
@@ -124,14 +126,15 @@ class TestWebhookMatching:
         assert data["matched"] is True
         assert data["session_created"] is True
 
-        sub = Submission.objects.get(classroom=membership.classroom, pr_number=1)
+        course = Course.objects.get(cohort=membership.cohort)
+        sub = Submission.objects.get(course=course, pr_number=1)
         assert sub.repo_full_name == "jandeboer/assignment-q3"
         assert sub.head_branch == "feat/null-fix"
         assert sub.status == Submission.Status.OPEN
 
         session = GradingSession.objects.get(submission=sub)
         assert session.state == GradingSession.State.PENDING
-        assert session.rubric == membership.classroom.rubric
+        assert session.rubric == course.rubric
 
     def test_pr_synchronize_updates_existing_submission(self, membership):
         client = APIClient()
@@ -146,8 +149,9 @@ class TestWebhookMatching:
         assert resp.status_code == 200
 
         # Still one submission, but updated
-        assert Submission.objects.filter(classroom=membership.classroom).count() == 1
-        sub = Submission.objects.get(classroom=membership.classroom)
+        course = Course.objects.get(cohort=membership.cohort)
+        assert Submission.objects.filter(course=course).count() == 1
+        sub = Submission.objects.get(course=course)
         assert sub.head_branch == "feat/updated"
 
         # Session still exists (not duplicated)
@@ -159,10 +163,11 @@ class TestWebhookMatching:
         close_payload = make_pr_payload(action="closed", state="closed", merged=True)
         resp = post_webhook(client, close_payload, delivery_id="d2")
         assert resp.status_code == 200
-        sub = Submission.objects.get(classroom=membership.classroom)
+        course = Course.objects.get(cohort=membership.cohort)
+        sub = Submission.objects.get(course=course)
         assert sub.status == Submission.Status.GRADED
 
-    def test_no_classroom_match_returns_ok_unmatched(self, membership):
+    def test_no_cohort_match_returns_ok_unmatched(self, membership):
         client = APIClient()
         # Different repo — no membership for it
         payload = make_pr_payload(repo_full_name="someone/random-repo")
@@ -193,7 +198,8 @@ class TestWebhookDedupe:
         assert resp.status_code == 200
         assert resp.json().get("deduped") is True
         # Only one submission created despite two deliveries
-        assert Submission.objects.filter(classroom=membership.classroom).count() == 1
+        course = Course.objects.get(cohort=membership.cohort)
+        assert Submission.objects.filter(course=course).count() == 1
 
     def test_delivery_record_persisted(self, membership):
         client = APIClient()

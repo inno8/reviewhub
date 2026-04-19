@@ -20,7 +20,7 @@ import pytest
 from django.contrib.auth import get_user_model
 
 from grading.exceptions import PartialPostError, PRClosedError
-from grading.models import Classroom, GradingSession, PostedComment, Rubric, Submission
+from grading.models import Cohort, Course, GradingSession, PostedComment, Rubric, Submission
 from grading.services import github_poster
 
 User = get_user_model()
@@ -52,9 +52,10 @@ def session(db):
             }
         ],
     )
-    classroom = Classroom.objects.create(org=org, owner=teacher, name="Cls", rubric=rubric)
+    cohort = Cohort.objects.create(org=org, name="Klas")
+    course = Course.objects.create(org=org, cohort=cohort, owner=teacher, name="Cls", rubric=rubric)
     submission = Submission.objects.create(
-        org=org, classroom=classroom, student=student,
+        org=org, course=course, student=student,
         repo_full_name="s/repo", pr_number=1,
         pr_url="https://github.com/s/repo/pull/1",
         head_branch="feat",

@@ -14,8 +14,9 @@ from __future__ import annotations
 from rest_framework import serializers
 
 from .models import (
-    Classroom,
-    ClassroomMembership,
+    Cohort,
+    CohortMembership,
+    Course,
     GradingSession,
     LLMCostLog,
     PostedComment,
@@ -90,17 +91,51 @@ class RubricSerializer(serializers.ModelSerializer):
 
 
 # ─────────────────────────────────────────────────────────────────────────────
-# Classroom + Membership
+# Cohort + Course + Membership
 # ─────────────────────────────────────────────────────────────────────────────
-class ClassroomMembershipSerializer(serializers.ModelSerializer):
+class CohortSerializer(serializers.ModelSerializer):
+    student_count = serializers.SerializerMethodField()
+    course_count = serializers.SerializerMethodField()
+
+    class Meta:
+        model = Cohort
+        fields = [
+            "id",
+            "org",
+            "name",
+            "year",
+            "starts_at",
+            "ends_at",
+            "student_count",
+            "course_count",
+            "created_at",
+            "updated_at",
+        ]
+        read_only_fields = [
+            "id",
+            "org",
+            "student_count",
+            "course_count",
+            "created_at",
+            "updated_at",
+        ]
+
+    def get_student_count(self, obj) -> int:
+        return obj.memberships.count()
+
+    def get_course_count(self, obj) -> int:
+        return obj.courses.count()
+
+
+class CohortMembershipSerializer(serializers.ModelSerializer):
     student_email = serializers.EmailField(source="student.email", read_only=True)
     student_name = serializers.CharField(source="student.display_name", read_only=True)
 
     class Meta:
-        model = ClassroomMembership
+        model = CohortMembership
         fields = [
             "id",
-            "classroom",
+            "cohort",
             "student",
             "student_email",
             "student_name",
@@ -110,16 +145,19 @@ class ClassroomMembershipSerializer(serializers.ModelSerializer):
         read_only_fields = ["id", "joined_at"]
 
 
-class ClassroomSerializer(serializers.ModelSerializer):
+class CourseSerializer(serializers.ModelSerializer):
     owner_email = serializers.EmailField(source="owner.email", read_only=True)
     rubric_name = serializers.CharField(source="rubric.name", read_only=True, default=None)
+    cohort_name = serializers.CharField(source="cohort.name", read_only=True, default=None)
     student_count = serializers.SerializerMethodField()
 
     class Meta:
-        model = Classroom
+        model = Course
         fields = [
             "id",
             "org",
+            "cohort",
+            "cohort_name",
             "owner",
             "owner_email",
             "secondary_docent",
@@ -140,13 +178,16 @@ class ClassroomSerializer(serializers.ModelSerializer):
             "owner",
             "owner_email",
             "rubric_name",
+            "cohort_name",
             "student_count",
             "created_at",
             "updated_at",
         ]
 
     def get_student_count(self, obj) -> int:
-        return obj.memberships.count()
+        if obj.cohort is None:
+            return 0
+        return obj.cohort.memberships.count()
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -154,7 +195,7 @@ class ClassroomSerializer(serializers.ModelSerializer):
 # ─────────────────────────────────────────────────────────────────────────────
 class SubmissionSerializer(serializers.ModelSerializer):
     student_email = serializers.EmailField(source="student.email", read_only=True)
-    classroom_name = serializers.CharField(source="classroom.name", read_only=True)
+    course_name = serializers.CharField(source="course.name", read_only=True)
     has_grading_session = serializers.SerializerMethodField()
 
     class Meta:
@@ -162,8 +203,8 @@ class SubmissionSerializer(serializers.ModelSerializer):
         fields = [
             "id",
             "org",
-            "classroom",
-            "classroom_name",
+            "course",
+            "course_name",
             "student",
             "student_email",
             "repo_full_name",
@@ -181,7 +222,7 @@ class SubmissionSerializer(serializers.ModelSerializer):
         read_only_fields = [
             "id",
             "org",
-            "classroom_name",
+            "course_name",
             "student_email",
             "has_grading_session",
             "created_at",
@@ -217,9 +258,9 @@ class GradingSessionListSerializer(serializers.ModelSerializer):
     student_name = serializers.CharField(
         source="submission.student.display_name", read_only=True
     )
-    classroom_id = serializers.IntegerField(source="submission.classroom_id", read_only=True)
-    classroom_name = serializers.CharField(
-        source="submission.classroom.name", read_only=True
+    course_id = serializers.IntegerField(source="submission.course_id", read_only=True)
+    course_name = serializers.CharField(
+        source="submission.course.name", read_only=True
     )
     pr_url = serializers.URLField(source="submission.pr_url", read_only=True)
     pr_title = serializers.CharField(source="submission.pr_title", read_only=True)
@@ -233,8 +274,8 @@ class GradingSessionListSerializer(serializers.ModelSerializer):
             "submission",
             "student_email",
             "student_name",
-            "classroom_id",
-            "classroom_name",
+            "course_id",
+            "course_name",
             "pr_url",
             "pr_title",
             "due_at",
@@ -254,8 +295,8 @@ class GradingSessionDetailSerializer(serializers.ModelSerializer):
     student_name = serializers.CharField(
         source="submission.student.display_name", read_only=True
     )
-    classroom_name = serializers.CharField(
-        source="submission.classroom.name", read_only=True
+    course_name = serializers.CharField(
+        source="submission.course.name", read_only=True
     )
     pr_url = serializers.URLField(source="submission.pr_url", read_only=True)
     pr_title = serializers.CharField(source="submission.pr_title", read_only=True)
@@ -270,7 +311,7 @@ class GradingSessionDetailSerializer(serializers.ModelSerializer):
             "submission",
             "student_email",
             "student_name",
-            "classroom_name",
+            "course_name",
             "pr_url",
             "pr_title",
             "rubric",
@@ -298,7 +339,7 @@ class GradingSessionDetailSerializer(serializers.ModelSerializer):
             "submission",
             "student_email",
             "student_name",
-            "classroom_name",
+            "course_name",
             "pr_url",
             "pr_title",
             "rubric",
@@ -346,8 +387,8 @@ class GradingSessionEditSerializer(serializers.ModelSerializer):
 # ─────────────────────────────────────────────────────────────────────────────
 class LLMCostLogSerializer(serializers.ModelSerializer):
     docent_email = serializers.EmailField(source="docent.email", read_only=True, default=None)
-    classroom_name = serializers.CharField(
-        source="classroom.name", read_only=True, default=None
+    course_name = serializers.CharField(
+        source="course.name", read_only=True, default=None
     )
 
     class Meta:
@@ -358,8 +399,8 @@ class LLMCostLogSerializer(serializers.ModelSerializer):
             "model_name",
             "docent",
             "docent_email",
-            "classroom",
-            "classroom_name",
+            "course",
+            "course_name",
             "tokens_in",
             "tokens_out",
             "cost_eur",

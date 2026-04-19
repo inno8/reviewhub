@@ -77,7 +77,7 @@ def log_llm_call(
     tokens_in: int,
     tokens_out: int,
     docent_id: int | None = None,
-    classroom_id: int | None = None,
+    course_id: int | None = None,
     grading_session_id: int | None = None,
     latency_ms: int | None = None,
     ceiling_rejected: bool = False,
@@ -94,7 +94,7 @@ def log_llm_call(
     return LLMCostLog.objects.create(
         org_id=org_id,
         docent_id=docent_id,
-        classroom_id=classroom_id,
+        course_id=course_id,
         grading_session_id=grading_session_id,
         tier=tier,
         model_name=model_name,

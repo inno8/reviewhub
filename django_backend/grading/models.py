@@ -6,17 +6,17 @@ Eng review addenda: see Appendix: Eng Review Addenda in the same doc.
 
 Model relationships (ASCII):
 
-    Organization ──< User (TEACHER role = docent)
-         │               │
-         │               └──< Class ──< ClassMembership >── User (student)
-         │                      │
-         │                      ├──> Rubric (FK, default for class)
-         │                      │
-         └──< Rubric                       (org-scoped; templates are global is_template=True)
+    Organization ──< Cohort ──< CohortMembership >── User (student, one cohort each)
+         │             │
+         │             └──< Course ──> Rubric (FK, default for course)
+         │                     │
+         │                     └──> User owner (TEACHER role = docent)
+         │
+         └──< Rubric                      (org-scoped; templates are global is_template=True)
 
-    Class ──< Submission ──< Evaluation        (evaluation is per-commit, existing model)
-                 │
-                 └──> GradingSession (OneToOne w/ Submission; holds AI draft + docent review state)
+    Course ──< Submission ──< Evaluation       (evaluation is per-commit, existing model)
+                  │
+                  └──> GradingSession (OneToOne w/ Submission; holds AI draft + docent review state)
 
     GradingSession ──< PostedComment         (idempotency ledger for GitHub comment posts)
 
@@ -124,17 +124,56 @@ class Rubric(models.Model):
 
 
 # ─────────────────────────────────────────────────────────────────────────────
-# Class
+# Cohort (the student-group, licensing unit — €200/cohort/month)
 # ─────────────────────────────────────────────────────────────────────────────
-class Classroom(models.Model):
+class Cohort(models.Model):
     """
-    A docent's class. Owns a default rubric. Has many students via ClassMembership.
+    A group of students studying together (MBO 'klas').
+    One student belongs to ONE cohort. A cohort has many Courses
+    (one per subject, each with its own teacher + rubric).
+    This is the licensing unit for billing (€200/cohort/month).
+    """
 
-    The design doc calls this "Class" but Django treats class as a keyword in
-    some contexts; we name the field `classroom` on related models to avoid conflicts.
-    Students connect their OWN GitHub/GitLab via GitProviderConnection (existing
-    model in users app). The class tracks which repo each student uses for which
-    assignment.
+    org = models.ForeignKey(
+        "users.Organization",
+        on_delete=models.CASCADE,
+        related_name="cohorts",
+    )
+    name = models.CharField(max_length=150)  # e.g., "Klas 2A ICT 2026"
+    year = models.CharField(max_length=20, blank=True)  # e.g., "2026-2027"
+    starts_at = models.DateField(null=True, blank=True)
+    ends_at = models.DateField(null=True, blank=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    objects = OrgScopedManager()
+
+    class Meta:
+        db_table = "grading_cohorts"
+        indexes = [
+            models.Index(fields=["org", "-created_at"]),
+        ]
+        ordering = ["-created_at"]
+
+    def __str__(self) -> str:
+        return f"{self.name} ({self.org.name if self.org else 'no org'})"
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Course (was "Classroom" — one teacher + one subject + one rubric, in a cohort)
+# ─────────────────────────────────────────────────────────────────────────────
+class Course(models.Model):
+    """
+    One teacher + one subject + one rubric, within a Cohort.
+
+    A Cohort (klas) has many Courses (subjects), each taught by a different
+    teacher. E.g. "Klas 2A ICT" cohort has Frontend, Backend, Databases,
+    DevOps courses — 4 teachers, 4 rubrics, same 20 students.
+
+    Students connect their OWN GitHub/GitLab via GitProviderConnection
+    (existing model in users app). The course tracks which repo each
+    student uses for which assignment through CohortMembership at the
+    cohort level (one repo-per-cohort, not per-course, in v1).
     """
 
     class SourceControlType(models.TextChoices):
@@ -145,12 +184,20 @@ class Classroom(models.Model):
     org = models.ForeignKey(
         "users.Organization",
         on_delete=models.CASCADE,
-        related_name="classes",
+        related_name="courses",
+    )
+    cohort = models.ForeignKey(
+        Cohort,
+        on_delete=models.CASCADE,
+        related_name="courses",
+        null=True,
+        blank=True,
+        help_text="Cohort (klas) this course belongs to. Nullable during initial migration; application-level code treats it as required post-migration.",
     )
     owner = models.ForeignKey(
         settings.AUTH_USER_MODEL,
         on_delete=models.CASCADE,
-        related_name="owned_classes",
+        related_name="owned_courses",
         help_text="Primary docent. Must have role=TEACHER.",
     )
     secondary_docent = models.ForeignKey(
@@ -158,7 +205,7 @@ class Classroom(models.Model):
         on_delete=models.SET_NULL,
         null=True,
         blank=True,
-        related_name="secondary_classes",
+        related_name="secondary_courses",
     )
     name = models.CharField(max_length=150)
     source_control_type = models.CharField(
@@ -176,7 +223,7 @@ class Classroom(models.Model):
         on_delete=models.SET_NULL,
         null=True,
         blank=True,
-        related_name="classes_using",
+        related_name="courses_using",
     )
     starts_at = models.DateField(null=True, blank=True)
     ends_at = models.DateField(null=True, blank=True)
@@ -186,10 +233,10 @@ class Classroom(models.Model):
     objects = OrgScopedManager()
 
     class Meta:
-        db_table = "grading_classes"
-        verbose_name_plural = "classes"
+        db_table = "grading_courses"
         indexes = [
             models.Index(fields=["org", "owner", "-created_at"]),
+            models.Index(fields=["cohort", "-created_at"]),
         ]
         ordering = ["-created_at"]
 
@@ -197,39 +244,43 @@ class Classroom(models.Model):
         return f"{self.name} ({self.owner.email})"
 
 
-class ClassroomMembership(models.Model):
+class CohortMembership(models.Model):
     """
-    A student joining a docent's class. Links a student to their own repo
-    (usually via their personal GitProviderConnection) for a given class.
+    A student joining a Cohort (klas). Links a student to their own repo
+    (usually via their personal GitProviderConnection) for this cohort.
 
-    A student can be in multiple classes. A class has many students.
+    One student → ONE cohort (enforced by OneToOneField on student).
+    A cohort has many students; all courses in the cohort share those
+    students.
+
+    Semantic change from the old ClassroomMembership: membership is now
+    at the cohort level, not the course level.
     """
 
-    classroom = models.ForeignKey(
-        Classroom,
+    cohort = models.ForeignKey(
+        Cohort,
         on_delete=models.CASCADE,
         related_name="memberships",
-        db_column="classroomid",
     )
-    student = models.ForeignKey(
+    student = models.OneToOneField(
         settings.AUTH_USER_MODEL,
         on_delete=models.CASCADE,
-        related_name="classroommemberships",
+        related_name="cohort_membership",
+        help_text="A student belongs to exactly one cohort. Enforced at the DB level via OneToOne.",
     )
     student_repo_url = models.URLField(
         blank=True,
         null=True,
-        help_text="Student's chosen repo URL for this class (e.g., github.com/jandeboer/assignment-q3).",
+        help_text="Student's chosen repo URL for this cohort (e.g., github.com/jandeboer/assignment-q3).",
     )
     joined_at = models.DateTimeField(auto_now_add=True)
 
     class Meta:
-        db_table = "grading_classroommemberships"
-        unique_together = [("classroom", "student")]
-        ordering = ["classroom", "student"]
+        db_table = "grading_cohort_memberships"
+        ordering = ["cohort", "student"]
 
     def __str__(self) -> str:
-        return f"{self.student.email} in {self.classroom.name}"
+        return f"{self.student.email} in {self.cohort.name}"
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -253,11 +304,10 @@ class Submission(models.Model):
         on_delete=models.CASCADE,
         related_name="grading_submissions",
     )
-    classroom = models.ForeignKey(
-        Classroom,
+    course = models.ForeignKey(
+        Course,
         on_delete=models.CASCADE,
         related_name="submissions",
-        db_column="classroomid",
     )
     student = models.ForeignKey(
         settings.AUTH_USER_MODEL,
@@ -283,9 +333,9 @@ class Submission(models.Model):
 
     class Meta:
         db_table = "grading_submissions"
-        unique_together = [("classroom", "repo_full_name", "pr_number")]
+        unique_together = [("course", "repo_full_name", "pr_number")]
         indexes = [
-            models.Index(fields=["org", "classroom", "status"]),
+            models.Index(fields=["org", "course", "status"]),
             models.Index(fields=["student", "-created_at"]),
         ]
         ordering = ["-created_at"]
@@ -568,13 +618,12 @@ class LLMCostLog(models.Model):
         related_name="llm_cost_logs",
         help_text="Null for cheap-tier background evals (no docent in the loop).",
     )
-    classroom = models.ForeignKey(
-        Classroom,
+    course = models.ForeignKey(
+        Course,
         on_delete=models.SET_NULL,
         null=True,
         blank=True,
         related_name="llm_cost_logs",
-        db_column="classroomid",
     )
     grading_session = models.ForeignKey(
         GradingSession,
@@ -599,7 +648,7 @@ class LLMCostLog(models.Model):
         db_table = "grading_llm_cost_logs"
         indexes = [
             models.Index(fields=["docent", "occurred_at"]),
-            models.Index(fields=["classroom", "occurred_at"]),
+            models.Index(fields=["course", "occurred_at"]),
             models.Index(fields=["tier", "occurred_at"]),
         ]
         ordering = ["-occurred_at"]

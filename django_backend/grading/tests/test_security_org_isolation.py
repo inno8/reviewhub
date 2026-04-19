@@ -5,7 +5,7 @@ From the eng-review + CEO-review threat model: the single most important
 correctness bet in the grading app is that org A cannot read, update, or
 send data belonging to org B. Every ViewSet relies on OrgScopedManager.for_user().
 
-This test creates two orgs, puts a teacher + rubric + classroom + session in
+This test creates two orgs, puts a teacher + rubric + course + session in
 each, and verifies that teacher-A gets 404 (NOT 403, to prevent enumeration)
 on every teacher-B resource across every endpoint and every method.
 
@@ -17,7 +17,7 @@ import pytest
 from django.contrib.auth import get_user_model
 from rest_framework.test import APIClient
 
-from grading.models import Classroom, GradingSession, Rubric, Submission
+from grading.models import Cohort, Course, GradingSession, Rubric, Submission
 
 User = get_user_model()
 
@@ -109,27 +109,36 @@ def rubrics(db, two_orgs):
 
 
 @pytest.fixture
-def classrooms(db, two_orgs, rubrics):
-    ca = Classroom.objects.create(
+def cohorts(db, two_orgs):
+    ka = Cohort.objects.create(org=two_orgs["org_a"], name="Cohort A")
+    kb = Cohort.objects.create(org=two_orgs["org_b"], name="Cohort B")
+    return {"a": ka, "b": kb}
+
+
+@pytest.fixture
+def courses(db, two_orgs, rubrics, cohorts):
+    ca = Course.objects.create(
         org=two_orgs["org_a"],
+        cohort=cohorts["a"],
         owner=two_orgs["teacher_a"],
-        name="Class A",
+        name="Course A",
         rubric=rubrics["a"],
     )
-    cb = Classroom.objects.create(
+    cb = Course.objects.create(
         org=two_orgs["org_b"],
+        cohort=cohorts["b"],
         owner=two_orgs["teacher_b"],
-        name="Class B",
+        name="Course B",
         rubric=rubrics["b"],
     )
     return {"a": ca, "b": cb}
 
 
 @pytest.fixture
-def sessions(db, two_orgs, rubrics, classrooms):
+def sessions(db, two_orgs, rubrics, courses):
     sub_a = Submission.objects.create(
         org=two_orgs["org_a"],
-        classroom=classrooms["a"],
+        course=courses["a"],
         student=two_orgs["student_a"],
         repo_full_name="student_a/repo",
         pr_number=1,
@@ -138,7 +147,7 @@ def sessions(db, two_orgs, rubrics, classrooms):
     )
     sub_b = Submission.objects.create(
         org=two_orgs["org_b"],
-        classroom=classrooms["b"],
+        course=courses["b"],
         student=two_orgs["student_b"],
         repo_full_name="student_b/repo",
         pr_number=1,
@@ -194,21 +203,21 @@ class TestRubricIsolation:
 
 
 @pytest.mark.django_db
-class TestClassroomIsolation:
-    def test_teacher_a_cannot_list_org_b_classrooms(self, client_a, classrooms):
-        resp = client_a.get("/api/grading/classrooms/")
+class TestCourseIsolation:
+    def test_teacher_a_cannot_list_org_b_courses(self, client_a, courses):
+        resp = client_a.get("/api/grading/courses/")
         assert resp.status_code == 200
         ids = [c["id"] for c in resp.json().get("results", resp.json())]
-        assert classrooms["a"].id in ids
-        assert classrooms["b"].id not in ids
+        assert courses["a"].id in ids
+        assert courses["b"].id not in ids
 
-    def test_teacher_a_cannot_retrieve_org_b_classroom(self, client_a, classrooms):
-        resp = client_a.get(f"/api/grading/classrooms/{classrooms['b'].id}/")
+    def test_teacher_a_cannot_retrieve_org_b_course(self, client_a, courses):
+        resp = client_a.get(f"/api/grading/courses/{courses['b'].id}/")
         assert resp.status_code == 404
 
-    def test_teacher_a_cannot_add_member_to_org_b_classroom(self, client_a, classrooms, two_orgs):
+    def test_teacher_a_cannot_add_member_to_org_b_course(self, client_a, courses, two_orgs):
         resp = client_a.post(
-            f"/api/grading/classrooms/{classrooms['b'].id}/members/",
+            f"/api/grading/courses/{courses['b'].id}/members/",
             {"student_id": two_orgs["student_a"].id},
             format="json",
         )
@@ -290,8 +299,8 @@ class TestStudentRoleRestriction:
         )
         assert resp.status_code == 403
 
-    def test_student_cannot_create_classroom(self, two_orgs):
+    def test_student_cannot_create_course(self, two_orgs):
         c = APIClient()
         c.force_authenticate(user=two_orgs["student_a"])
-        resp = c.post("/api/grading/classrooms/", {"name": "Smuggled"}, format="json")
+        resp = c.post("/api/grading/courses/", {"name": "Smuggled"}, format="json")
         assert resp.status_code == 403

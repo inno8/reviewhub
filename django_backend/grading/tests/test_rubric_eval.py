@@ -233,7 +233,7 @@ class TestLiveRubricEval:
     def test_live_eval_meets_ship_gate(self, db):
         import datetime as dt
         from grading.services import rubric_grader
-        from grading.models import Classroom, GradingSession, Rubric, Submission
+        from grading.models import Cohort, Course, GradingSession, Rubric, Submission
         from users.models import Organization
 
         data = load_eval_set()
@@ -254,13 +254,14 @@ class TestLiveRubricEval:
             criteria=rubric_spec["criteria"],
             calibration=rubric_spec["calibration"],
         )
-        classroom = Classroom.objects.create(
-            org=org, owner=teacher, name="Eval Class", rubric=rubric,
+        cohort = Cohort.objects.create(org=org, name="Eval Klas")
+        course = Course.objects.create(
+            org=org, cohort=cohort, owner=teacher, name="Eval Class", rubric=rubric,
         )
 
         def live_grader(diff, criteria, calibration):
             sub = Submission.objects.create(
-                org=org, classroom=classroom, student=student,
+                org=org, course=course, student=student,
                 repo_full_name="eval/repo", pr_number=len(GradingSession.objects.all()) + 1,
                 pr_url="https://github.com/eval/repo/pull/1", head_branch="feat",
             )

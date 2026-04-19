@@ -44,7 +44,8 @@ from django.views.decorators.csrf import csrf_exempt
 from django.views.decorators.http import require_POST
 
 from grading.models import (
-    ClassroomMembership,
+    CohortMembership,
+    Course,
     GradingSession,
     Submission,
     WebhookDelivery,
@@ -82,26 +83,26 @@ def _parse_repo_url(repo_url: str) -> tuple[str, str] | None:
 def _membership_for_pr(
     repo_full_name: str,
     author_login: str,
-) -> ClassroomMembership | None:
+) -> CohortMembership | None:
     """
-    Match an incoming PR to a classroom membership.
+    Match an incoming PR to a CohortMembership (student→cohort).
 
     Match rules (in order, first match wins):
-      1. Explicit repo_url match: ClassroomMembership.student_repo_url
+      1. Explicit repo_url match: CohortMembership.student_repo_url
          contains the PR's repo_full_name. Most common — the teacher
          configured "this student's repo is github.com/jan/assignment-q3".
       2. Student-owned repo fallback: the repo owner equals the PR author
          AND the author's GitHub handle matches a GitProviderConnection.
          Covers the case where the student created a new repo ad-hoc and
-         the teacher hasn't updated ClassroomMembership yet. Requires
+         the teacher hasn't updated CohortMembership yet. Requires
          repo_owner == author_login so we don't accidentally match PRs
          the student pushed to someone else's repo.
     """
     # Rule 1: explicit repo_url match
     membership = (
-        ClassroomMembership.objects
+        CohortMembership.objects
         .filter(student_repo_url__icontains=repo_full_name)
-        .select_related("student", "classroom")
+        .select_related("student", "cohort")
         .first()
     )
     if membership:
@@ -123,16 +124,36 @@ def _membership_for_pr(
     if not conn:
         return None
     return (
-        ClassroomMembership.objects
+        CohortMembership.objects
         .filter(student=conn.user)
-        .select_related("student", "classroom")
+        .select_related("student", "cohort")
+        .first()
+    )
+
+
+def _course_for_membership(membership: CohortMembership) -> Course | None:
+    """
+    Pick a Course from the cohort for this webhook's Submission.
+
+    In v1 a cohort typically has multiple courses; we don't (yet) know
+    which course a given PR corresponds to without extra signals (PR
+    title conventions, branch naming, per-course repo mapping). For
+    Workstream A we pick the first course in the cohort so PR webhooks
+    keep flowing end-to-end. Workstream B+ will add per-course routing.
+    """
+    return (
+        Course.objects
+        .filter(cohort=membership.cohort)
+        .select_related("rubric", "org")
+        .order_by("created_at")
         .first()
     )
 
 
 def _upsert_submission_and_session(
     *,
-    membership: ClassroomMembership,
+    membership: CohortMembership,
+    course: Course,
     pr_payload: dict,
     repo_full_name: str,
 ) -> tuple[Submission, GradingSession, bool]:
@@ -140,7 +161,6 @@ def _upsert_submission_and_session(
     Create-or-update the Submission for this PR and ensure a GradingSession
     exists. Returns (submission, session, created_new_session).
     """
-    classroom = membership.classroom
     student = membership.student
     pr_number = int(pr_payload.get("number", 0))
     pr_state = pr_payload.get("state", "open")
@@ -153,11 +173,11 @@ def _upsert_submission_and_session(
 
     with transaction.atomic():
         submission, _ = Submission.objects.select_for_update().update_or_create(
-            classroom=classroom,
+            course=course,
             repo_full_name=repo_full_name,
             pr_number=pr_number,
             defaults={
-                "org": classroom.org,
+                "org": course.org,
                 "student": student,
                 "pr_url": pr_payload.get("html_url", ""),
                 "pr_title": (pr_payload.get("title") or "")[:500],
@@ -168,19 +188,19 @@ def _upsert_submission_and_session(
         )
 
         # Ensure GradingSession exists (one per Submission, OneToOne)
-        classroom_rubric = classroom.rubric
-        if classroom_rubric is None:
+        course_rubric = course.rubric
+        if course_rubric is None:
             log.warning(
-                "webhook: classroom %s has no default rubric; skipping session creation",
-                classroom.id,
+                "webhook: course %s has no default rubric; skipping session creation",
+                course.id,
             )
             return submission, None, False  # type: ignore[return-value]
 
         session, created = GradingSession.objects.select_for_update().get_or_create(
             submission=submission,
             defaults={
-                "org": classroom.org,
-                "rubric": classroom_rubric,
+                "org": course.org,
+                "rubric": course_rubric,
                 "state": GradingSession.State.PENDING,
             },
         )
@@ -256,15 +276,36 @@ def github_webhook(request):
     membership = _membership_for_pr(repo_full_name, author_login)
     if not membership:
         # Not an error — just a repo we don't track yet.
-        log.info("webhook: no classroom match for %s (author=%s)", repo_full_name, author_login)
+        log.info("webhook: no cohort match for %s (author=%s)", repo_full_name, author_login)
         return JsonResponse(
             {
                 "ok": True,
                 "matched": False,
                 "message": (
-                    "No classroom membership matched this repo. "
-                    "Add the student's repo URL to a classroom in Django admin."
+                    "No cohort membership matched this repo. "
+                    "Add the student's repo URL to a cohort in Django admin."
                 ),
+            },
+            status=200,
+        )
+
+    # Pick a Course within the cohort for this Submission.
+    course = _course_for_membership(membership)
+    if course is None:
+        log.info(
+            "webhook: cohort %s has no courses; skipping (add a course first)",
+            membership.cohort_id,
+        )
+        return JsonResponse(
+            {
+                "ok": True,
+                "matched": True,
+                "submission_id": None,
+                "session_id": None,
+                "session_created": False,
+                "cohort": membership.cohort.name,
+                "student": membership.student.email,
+                "message": "Cohort has no courses; add a course before submissions can land.",
             },
             status=200,
         )
@@ -273,6 +314,7 @@ def github_webhook(request):
     try:
         submission, session, created = _upsert_submission_and_session(
             membership=membership,
+            course=course,
             pr_payload=pr,
             repo_full_name=repo_full_name,
         )
@@ -288,7 +330,8 @@ def github_webhook(request):
             "submission_id": submission.id,
             "session_id": session.id if session else None,
             "session_created": created,
-            "classroom": membership.classroom.name,
+            "cohort": membership.cohort.name,
+            "course": course.name,
             "student": membership.student.email,
         },
         status=200,
