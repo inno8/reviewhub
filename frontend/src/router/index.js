@@ -4,7 +4,6 @@ import DashboardView from '@/views/DashboardView.vue';
 import FindingDetailView from '@/views/FindingDetailView.vue';
 import FileReviewView from '@/views/FileReviewView.vue';
 import PerformanceView from '@/views/PerformanceView.vue';
-import UserManagementView from '@/views/UserManagementView.vue';
 import SettingsView from '@/views/SettingsView.vue';
 import OnboardView from '@/views/OnboardView.vue';
 import SkillsDashboardView from '@/views/SkillsDashboardView.vue';
@@ -18,12 +17,12 @@ import RecommendationsView from '@/views/RecommendationsView.vue';
 import ResolvedFindingsView from '@/views/ResolvedFindingsView.vue';
 import OrgSignupView from '@/views/OrgSignupView.vue';
 import AcceptInviteView from '@/views/AcceptInviteView.vue';
-import OrgDashboardView from '@/views/OrgDashboardView.vue';
 import OrgStudentDetailView from '@/views/OrgStudentDetailView.vue';
 import DeveloperJourneyView from '@/views/DeveloperJourneyView.vue';
 import GradingInboxView from '@/views/GradingInboxView.vue';
 import GradingSessionDetailView from '@/views/GradingSessionDetailView.vue';
 import OpsDashboardView from '@/views/OpsDashboardView.vue';
+import OrgMembersView from '@/views/OrgMembersView.vue';
 import { useAuthStore } from '@/stores/auth';
 const router = createRouter({
     history: createWebHistory(),
@@ -39,7 +38,10 @@ const router = createRouter({
         { path: '/skills', name: 'skills', component: SkillsDashboardView },
         { path: '/insights', name: 'insights', component: PerformanceView },
         { path: '/notifications', name: 'notifications', component: NotificationsView },
-        { path: '/team', name: 'team', component: UserManagementView, meta: { admin: true } },
+        // Unified org members page (Workstream B Part 2 of Scope B1).
+        // /team and /org-dashboard redirect here to preserve bookmarks.
+        { path: '/org/members', name: 'org-members', component: OrgMembersView, meta: { admin: true } },
+        { path: '/team', redirect: '/org/members' },
         { path: '/batch', name: 'batch', component: BatchAnalysisView },
         { path: '/settings', name: 'settings', component: SettingsView },
         { path: '/recommendations', name: 'recommendations', component: RecommendationsView },
@@ -48,7 +50,9 @@ const router = createRouter({
         { path: '/journey', name: 'journey', component: DeveloperJourneyView },
         { path: '/org-signup', name: 'org-signup', component: OrgSignupView, meta: { public: true } },
         { path: '/accept-invite', name: 'accept-invite', component: AcceptInviteView, meta: { public: true } },
-        { path: '/org-dashboard', name: 'org-dashboard', component: OrgDashboardView, meta: { admin: true } },
+        // /org-dashboard redirects to the unified view; the old OrgDashboardView
+        // component file stays on disk and will be cleaned up in a later pass.
+        { path: '/org-dashboard', redirect: '/org/members' },
         { path: '/org-dashboard/students/:studentId', name: 'org-student-detail', component: OrgStudentDetailView, meta: { admin: true }, props: true },
         // Nakijken Copilot — teacher grading copilot
         { path: '/grading', name: 'grading-inbox', component: GradingInboxView },

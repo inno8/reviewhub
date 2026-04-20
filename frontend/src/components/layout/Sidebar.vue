@@ -63,9 +63,9 @@ const navItems = [
   // Teacher experience (the grading loop)
   { name: 'Grading Inbox', icon: 'rate_review', path: '/grading', teacherOnly: true },
 
-  // School admin experience (org governance)
-  { name: 'Org Dashboard', icon: 'corporate_fare', path: '/org-dashboard', schoolAdminOnly: true },
-  { name: 'Team Members', icon: 'group', path: '/team', schoolAdminOnly: true },
+  // School admin experience (org governance).
+  // Single unified members view replaces the old /team + /org-dashboard split.
+  { name: 'Members', icon: 'group', path: '/org/members', schoolAdminOnly: true },
 
   // Platform ops (us — superuser only)
   { name: 'Ops Dashboard', icon: 'admin_panel_settings', path: '/ops', opsOnly: true },
