@@ -19,14 +19,14 @@ vi.mock('@/composables/useApi', () => {
   const startReviewMock = vi.fn();
   const generateDraftMock = vi.fn();
   const updateMock = vi.fn();
-  const classroomsListMock = vi.fn();
+  const coursesListMock = vi.fn();
   const rubricsListMock = vi.fn();
 
   return {
     api: {
       grading: {
         rubrics: { list: rubricsListMock },
-        classrooms: { list: classroomsListMock },
+        courses: { list: coursesListMock },
         sessions: {
           list: listMock,
           get: getMock,
@@ -43,7 +43,7 @@ vi.mock('@/composables/useApi', () => {
     // expose for direct access in tests
     __mocks: {
       listMock, getMock, sendMock, resumeMock, startReviewMock,
-      generateDraftMock, updateMock, classroomsListMock, rubricsListMock,
+      generateDraftMock, updateMock, coursesListMock, rubricsListMock,
     },
   };
 });
@@ -60,7 +60,7 @@ const mocks = (apiModule as any).__mocks as {
   startReviewMock: any;
   generateDraftMock: any;
   updateMock: any;
-  classroomsListMock: any;
+  coursesListMock: any;
   rubricsListMock: any;
 };
 

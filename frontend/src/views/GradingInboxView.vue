@@ -24,15 +24,15 @@
 
     <div class="filters">
       <label class="filter">
-        <span class="filter-label">Classroom</span>
+        <span class="filter-label">Course</span>
         <select
-          v-model="selectedClassroom"
+          v-model="selectedCourse"
           @change="onFilterChange"
           class="filter-select"
-          data-testid="filter-classroom"
+          data-testid="filter-course"
         >
-          <option :value="undefined">All classrooms</option>
-          <option v-for="c in store.classrooms" :key="c.id" :value="c.id">
+          <option :value="undefined">All courses</option>
+          <option v-for="c in store.courses" :key="c.id" :value="c.id">
             {{ c.name }}
           </option>
         </select>
@@ -99,7 +99,7 @@
             <span class="pr-title">{{ s.pr_title || 'Untitled PR' }}</span>
           </div>
           <div class="session-meta">
-            <span class="classroom">{{ s.classroom_name }}</span>
+            <span class="course">{{ s.course_name }}</span>
             <span class="separator">·</span>
             <span class="state-badge" :class="`state-${s.state}`">{{ stateLabel(s.state) }}</span>
             <span v-if="s.due_at" class="separator">·</span>
@@ -124,17 +124,17 @@ import { useGradingStore, type SessionState, type SessionListRow } from '@/store
 const router = useRouter();
 const store = useGradingStore();
 
-const selectedClassroom = ref<number | undefined>(undefined);
+const selectedCourse = ref<number | undefined>(undefined);
 const selectedState = ref<SessionState | undefined>(undefined);
 const overdueOnly = ref(false);
 
 onMounted(async () => {
-  await Promise.all([store.fetchClassrooms(), store.fetchSessions()]);
+  await Promise.all([store.fetchCourses(), store.fetchSessions()]);
 });
 
 function onFilterChange() {
   store.setFilters({
-    classroom: selectedClassroom.value,
+    course: selectedCourse.value,
     state: selectedState.value,
     overdue: overdueOnly.value,
   });

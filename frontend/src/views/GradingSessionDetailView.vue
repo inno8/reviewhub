@@ -9,7 +9,7 @@
           {{ store.activeSession.student_name || store.activeSession.student_email }}
         </h1>
         <p class="text-sm text-slate-400">
-          {{ store.activeSession.classroom_name }} ·
+          {{ store.activeSession.course_name }} ·
           <a :href="store.activeSession.pr_url" target="_blank" class="link">
             {{ store.activeSession.pr_title }}
           </a>

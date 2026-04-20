@@ -72,7 +72,7 @@ const navItems = [
 
   // DEPRECATED for v1 grading-first scope — hidden behind role flags or
   // cut entirely. Kept here as comments so we remember why:
-  //   Projects       — developer-era concept; grading uses Classrooms now
+  //   Projects       — developer-era concept; grading uses Courses now
   //   Insights       — trends redundant with Skills + grading session data
   //   Batch Analysis — power-user tool, not v1 focus
 ];

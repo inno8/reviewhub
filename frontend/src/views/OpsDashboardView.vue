@@ -28,8 +28,8 @@
           <div class="stat-label">Organizations</div>
         </div>
         <div class="stat-card">
-          <div class="stat-value">{{ summary?.platform_totals.classrooms ?? '—' }}</div>
-          <div class="stat-label">Classrooms</div>
+          <div class="stat-value">{{ summary?.platform_totals.courses ?? summary?.platform_totals.classrooms ?? '—' }}</div>
+          <div class="stat-label">Courses</div>
         </div>
         <div class="stat-card">
           <div class="stat-value">{{ summary?.platform_totals.teachers ?? '—' }}</div>
@@ -89,7 +89,7 @@
         <thead>
           <tr>
             <th>Name</th>
-            <th class="num">Classrooms</th>
+            <th class="num">Courses</th>
             <th class="num">Teachers</th>
             <th class="num">Students</th>
             <th class="num">Cost (7d)</th>
@@ -98,7 +98,7 @@
         <tbody>
           <tr v-for="o in orgs" :key="o.id">
             <td>{{ o.name }}</td>
-            <td class="num">{{ o.classrooms }}</td>
+            <td class="num">{{ o.courses ?? o.classrooms }}</td>
             <td class="num">{{ o.teachers }}</td>
             <td class="num">{{ o.students }}</td>
             <td class="num">€{{ formatEur(o.cost_7d_eur) }}</td>
@@ -108,12 +108,12 @@
       <div v-if="orgs.length === 0" class="ops-empty">No organizations yet.</div>
     </section>
 
-    <!-- Classrooms -->
-    <section v-show="activeTab === 'classrooms'" class="ops-section">
+    <!-- Courses -->
+    <section v-show="activeTab === 'courses'" class="ops-section">
       <table class="ops-table">
         <thead>
           <tr>
-            <th>Classroom</th>
+            <th>Course</th>
             <th>Org</th>
             <th>Teacher</th>
             <th class="num">Students</th>
@@ -122,7 +122,7 @@
           </tr>
         </thead>
         <tbody>
-          <tr v-for="c in classrooms" :key="c.id">
+          <tr v-for="c in courses" :key="c.id">
             <td>{{ c.name }}</td>
             <td>{{ c.org_name }}</td>
             <td>{{ c.owner_email }}</td>
@@ -132,7 +132,7 @@
           </tr>
         </tbody>
       </table>
-      <div v-if="classrooms.length === 0" class="ops-empty">No classrooms yet.</div>
+      <div v-if="courses.length === 0" class="ops-empty">No courses yet.</div>
     </section>
 
     <!-- Teachers / docents -->
@@ -142,7 +142,7 @@
           <tr>
             <th>Teacher</th>
             <th>Org</th>
-            <th class="num">Classrooms</th>
+            <th class="num">Courses</th>
             <th class="num">Posted (7d)</th>
             <th class="num">Cost (7d)</th>
             <th></th>
@@ -156,7 +156,7 @@
           >
             <td>{{ t.email }}</td>
             <td>{{ t.org_name || '—' }}</td>
-            <td class="num">{{ t.classrooms }}</td>
+            <td class="num">{{ t.courses ?? t.classrooms }}</td>
             <td class="num">{{ t.sessions_posted_7d }}</td>
             <td class="num">€{{ formatEur(t.cost_7d_eur) }}</td>
             <td>
@@ -187,7 +187,7 @@
             <th>Tier</th>
             <th>Model</th>
             <th>Teacher</th>
-            <th>Classroom</th>
+            <th>Course</th>
             <th class="num">In</th>
             <th class="num">Out</th>
             <th class="num">Cost</th>
@@ -200,7 +200,7 @@
             <td>{{ r.tier }}</td>
             <td>{{ r.model_name }}</td>
             <td>{{ r.docent_email || '—' }}</td>
-            <td>{{ r.classroom_name || '—' }}</td>
+            <td>{{ r.course_name || r.classroom_name || '—' }}</td>
             <td class="num">{{ r.tokens_in }}</td>
             <td class="num">{{ r.tokens_out }}</td>
             <td class="num">€{{ formatEur(r.cost_eur) }}</td>
@@ -227,12 +227,12 @@
 import { ref, onMounted, watch } from 'vue';
 import { api } from '@/composables/useApi';
 
-type TabId = 'summary' | 'orgs' | 'classrooms' | 'teachers' | 'llm-log' | 'llm-config';
+type TabId = 'summary' | 'orgs' | 'courses' | 'teachers' | 'llm-log' | 'llm-config';
 
 const tabs: { id: TabId; label: string }[] = [
   { id: 'summary', label: 'Summary' },
   { id: 'orgs', label: 'Orgs' },
-  { id: 'classrooms', label: 'Classrooms' },
+  { id: 'courses', label: 'Courses' },
   { id: 'teachers', label: 'Teachers' },
   { id: 'llm-log', label: 'LLM Log' },
   { id: 'llm-config', label: 'LLM Config' },
@@ -244,7 +244,7 @@ const error = ref<string | null>(null);
 
 const summary = ref<any>(null);
 const orgs = ref<any[]>([]);
-const classrooms = ref<any[]>([]);
+const courses = ref<any[]>([]);
 const teachers = ref<any[]>([]);
 const llmLog = ref<any[]>([]);
 const llmTier = ref('');
@@ -264,9 +264,9 @@ async function loadActiveTab() {
         orgs.value = data.results ?? [];
         break;
       }
-      case 'classrooms': {
-        const { data } = await api.grading.ops.classrooms();
-        classrooms.value = data.results ?? [];
+      case 'courses': {
+        const { data } = await api.grading.ops.courses();
+        courses.value = data.results ?? [];
         break;
       }
       case 'teachers': {

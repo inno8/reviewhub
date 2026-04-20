@@ -14,7 +14,7 @@ import { createPinia, setActivePinia } from 'pinia';
 vi.mock('@/composables/useApi', () => {
   const m = {
     sessionsList: vi.fn(),
-    classroomsList: vi.fn(),
+    coursesList: vi.fn(),
     rubricsList: vi.fn(),
     get: vi.fn(),
     update: vi.fn(),
@@ -27,7 +27,7 @@ vi.mock('@/composables/useApi', () => {
     api: {
       grading: {
         rubrics: { list: m.rubricsList },
-        classrooms: { list: m.classroomsList },
+        courses: { list: m.coursesList },
         sessions: {
           list: m.sessionsList,
           get: m.get,
@@ -67,7 +67,7 @@ function draftedSession(overrides: Record<string, any> = {}) {
     state: 'drafted',
     student_email: 'jan@ex.com',
     student_name: 'Jan de Boer',
-    classroom_name: 'MBO-4 ICT',
+    course_name: 'MBO-4 ICT',
     pr_url: 'https://github.com/jan/repo/pull/1',
     pr_title: 'Fix null handling',
     rubric: 7,

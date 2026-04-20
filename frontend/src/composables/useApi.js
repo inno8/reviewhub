@@ -219,19 +219,19 @@ export const api = {
             update: (id, data) => client.patch(`/grading/rubrics/${id}/`, data),
             delete: (id) => client.delete(`/grading/rubrics/${id}/`),
         },
-        classrooms: {
-            list: () => client.get('/grading/classrooms/'),
-            get: (id) => client.get(`/grading/classrooms/${id}/`),
-            create: (data) => client.post('/grading/classrooms/', data),
-            update: (id, data) => client.patch(`/grading/classrooms/${id}/`, data),
-            delete: (id) => client.delete(`/grading/classrooms/${id}/`),
-            members: (id) => client.get(`/grading/classrooms/${id}/members/`),
+        courses: {
+            list: () => client.get('/grading/courses/'),
+            get: (id) => client.get(`/grading/courses/${id}/`),
+            create: (data) => client.post('/grading/courses/', data),
+            update: (id, data) => client.patch(`/grading/courses/${id}/`, data),
+            delete: (id) => client.delete(`/grading/courses/${id}/`),
+            members: (id) => client.get(`/grading/courses/${id}/members/`),
             addMember: (id, studentId, repoUrl) => client.post(
-                `/grading/classrooms/${id}/members/`,
+                `/grading/courses/${id}/members/`,
                 { student_id: studentId, student_repo_url: repoUrl || '' }
             ),
             removeMember: (id, studentId) => client.delete(
-                `/grading/classrooms/${id}/members/`,
+                `/grading/courses/${id}/members/`,
                 { params: { student_id: studentId } }
             ),
         },
@@ -255,7 +255,7 @@ export const api = {
         ops: {
             summary: () => client.get('/grading/ops/summary/'),
             orgs: () => client.get('/grading/ops/orgs/'),
-            classrooms: (params = {}) => client.get('/grading/ops/classrooms/', { params }),
+            courses: (params = {}) => client.get('/grading/ops/courses/', { params }),
             teachers: () => client.get('/grading/ops/teachers/'),
             llmLog: (params = {}) => client.get('/grading/ops/llm-log/', { params }),
         },

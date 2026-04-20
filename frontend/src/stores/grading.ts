@@ -35,8 +35,8 @@ export interface SessionListRow {
   state: SessionState;
   student_email: string;
   student_name: string;
-  classroom_id: number;
-  classroom_name: string;
+  course_id: number;
+  course_name: string;
   pr_url: string;
   pr_title: string;
   due_at: string | null;
@@ -83,7 +83,7 @@ export interface SessionDetail extends SessionListRow {
   }>;
 }
 
-export interface Classroom {
+export interface Course {
   id: number;
   name: string;
   owner: number;
@@ -127,11 +127,11 @@ export const useGradingStore = defineStore('grading', () => {
   const activeSessionLoading = ref(false);
   const activeSessionError = ref<string | null>(null);
 
-  const classrooms = ref<Classroom[]>([]);
+  const courses = ref<Course[]>([]);
   const rubrics = ref<Rubric[]>([]);
 
   const filters = ref({
-    classroom: undefined as number | undefined,
+    course: undefined as number | undefined,
     state: undefined as SessionState | undefined,
     overdue: false,
   });
@@ -155,7 +155,7 @@ export const useGradingStore = defineStore('grading', () => {
     sessionsError.value = null;
     try {
       const params: Record<string, unknown> = {};
-      if (filters.value.classroom) params.classroom = filters.value.classroom;
+      if (filters.value.course) params.course = filters.value.course;
       if (filters.value.state) params.state = filters.value.state;
       if (filters.value.overdue) params.overdue = 'true';
       const { data } = await api.grading.sessions.list(params);
@@ -255,10 +255,10 @@ export const useGradingStore = defineStore('grading', () => {
     }
   }
 
-  // ── classrooms / rubrics (read-only for v1 UI) ────────────────────────
-  async function fetchClassrooms() {
-    const { data } = await api.grading.classrooms.list();
-    classrooms.value = unwrapPage<Classroom>(data);
+  // ── courses / rubrics (read-only for v1 UI) ───────────────────────────
+  async function fetchCourses() {
+    const { data } = await api.grading.courses.list();
+    courses.value = unwrapPage<Course>(data);
   }
 
   async function fetchRubrics() {
@@ -269,9 +269,9 @@ export const useGradingStore = defineStore('grading', () => {
   function reset() {
     sessions.value = [];
     activeSession.value = null;
-    classrooms.value = [];
+    courses.value = [];
     rubrics.value = [];
-    filters.value = { classroom: undefined, state: undefined, overdue: false };
+    filters.value = { course: undefined, state: undefined, overdue: false };
   }
 
   return {
@@ -282,7 +282,7 @@ export const useGradingStore = defineStore('grading', () => {
     activeSession,
     activeSessionLoading,
     activeSessionError,
-    classrooms,
+    courses,
     rubrics,
     filters,
     // computed
@@ -297,7 +297,7 @@ export const useGradingStore = defineStore('grading', () => {
     saveEdits,
     send,
     resume,
-    fetchClassrooms,
+    fetchCourses,
     fetchRubrics,
     reset,
   };
