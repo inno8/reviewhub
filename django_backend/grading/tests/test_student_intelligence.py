@@ -324,3 +324,187 @@ class TestStudentPRHistory:
         c = _auth(users_set["admin_b"])
         resp = c.get(self.URL.format(id=users_set["student_a"].id))
         assert resp.status_code == 404
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Cohort recurring errors
+# ─────────────────────────────────────────────────────────────────────────────
+@pytest.fixture
+def cohort_patterns(db, two_orgs, users_set, cohort_setup):
+    """
+    Seed Pattern rows for the cohort_a students. Three students get the
+    'bare-except' pattern with frequencies 5/3/7 (total 15, 3 students).
+    Two students get 'mutable-default' with 4/2. One resolved pattern
+    that should be filtered out. Plus a removed membership student with
+    a pattern that should be excluded.
+    """
+    from evaluations.models import Pattern
+
+    # Add two more active students to cohort_a.
+    student_2 = User.objects.create_user(
+        username="student_a2_si", email="sa2_si@x.com", password="p",
+        role="developer", organization=two_orgs["a"],
+    )
+    student_3 = User.objects.create_user(
+        username="student_a3_si", email="sa3_si@x.com", password="p",
+        role="developer", organization=two_orgs["a"],
+    )
+    # A student that was removed from the cohort — their patterns must
+    # NOT appear in the aggregation.
+    student_removed = User.objects.create_user(
+        username="student_removed_si", email="srm_si@x.com", password="p",
+        role="developer", organization=two_orgs["a"],
+    )
+    CohortMembership.objects.create(cohort=cohort_setup["cohort_a"], student=student_2)
+    CohortMembership.objects.create(cohort=cohort_setup["cohort_a"], student=student_3)
+    CohortMembership.objects.create(
+        cohort=cohort_setup["cohort_a"],
+        student=student_removed,
+        removed_at=timezone.now(),
+    )
+
+    student_a = users_set["student_a"]
+
+    # bare-except × 3 students (freqs 5, 3, 7 → total 15)
+    Pattern.objects.create(
+        user=student_a, pattern_type="EXCEPTION_HANDLING",
+        pattern_key="bare-except", frequency=5,
+    )
+    Pattern.objects.create(
+        user=student_2, pattern_type="EXCEPTION_HANDLING",
+        pattern_key="bare-except", frequency=3,
+    )
+    Pattern.objects.create(
+        user=student_3, pattern_type="EXCEPTION_HANDLING",
+        pattern_key="bare-except", frequency=7,
+    )
+    # mutable-default × 2 students
+    Pattern.objects.create(
+        user=student_a, pattern_type="STYLE",
+        pattern_key="mutable-default", frequency=4,
+    )
+    Pattern.objects.create(
+        user=student_2, pattern_type="STYLE",
+        pattern_key="mutable-default", frequency=2,
+    )
+    # Resolved pattern — must be filtered out
+    Pattern.objects.create(
+        user=student_a, pattern_type="STYLE",
+        pattern_key="old-fixed-thing", frequency=99,
+        is_resolved=True, resolved_at=timezone.now(),
+    )
+    # Removed membership → must be filtered out
+    Pattern.objects.create(
+        user=student_removed, pattern_type="STYLE",
+        pattern_key="ghost-pattern", frequency=50,
+    )
+    return {
+        "student_2": student_2,
+        "student_3": student_3,
+        "student_removed": student_removed,
+    }
+
+
+@pytest.mark.django_db
+class TestCohortRecurringErrorsEndpoint:
+    URL = "/api/grading/cohorts/{id}/recurring-errors/"
+
+    def test_anonymous_401(self, users_set, cohort_setup):
+        c = APIClient()
+        resp = c.get(self.URL.format(id=cohort_setup["cohort_a"].id))
+        assert resp.status_code == 401
+
+    def test_teacher_in_cohort_200_shape(
+        self, users_set, cohort_setup, cohort_patterns
+    ):
+        c = _auth(users_set["teacher_in"])
+        resp = c.get(self.URL.format(id=cohort_setup["cohort_a"].id))
+        assert resp.status_code == 200
+        data = resp.json()
+        assert data["cohort"]["id"] == cohort_setup["cohort_a"].id
+        assert data["cohort"]["name"] == cohort_setup["cohort_a"].name
+        # 3 active students: student_a + student_2 + student_3
+        assert data["cohort"]["student_count"] == 3
+        assert isinstance(data["top_patterns"], list)
+        # bare-except should be first (3 affected > 2 affected)
+        first = data["top_patterns"][0]
+        assert first["pattern_key"] == "bare-except"
+        assert first["affected_students"] == 3
+        assert first["total_frequency"] == 15
+        assert first["avg_frequency_per_student"] == 5.0
+        assert first["pattern_type"] == "EXCEPTION_HANDLING"
+        assert "severity" in first
+        assert "example_findings" in first
+        # Summary shape
+        assert "summary" in data
+        assert data["summary"]["most_affected_category"] == "EXCEPTION_HANDLING"
+
+    def test_resolved_patterns_excluded(
+        self, users_set, cohort_setup, cohort_patterns
+    ):
+        c = _auth(users_set["teacher_in"])
+        resp = c.get(self.URL.format(id=cohort_setup["cohort_a"].id))
+        assert resp.status_code == 200
+        keys = [p["pattern_key"] for p in resp.json()["top_patterns"]]
+        assert "old-fixed-thing" not in keys
+
+    def test_removed_membership_patterns_excluded(
+        self, users_set, cohort_setup, cohort_patterns
+    ):
+        c = _auth(users_set["teacher_in"])
+        resp = c.get(self.URL.format(id=cohort_setup["cohort_a"].id))
+        assert resp.status_code == 200
+        keys = [p["pattern_key"] for p in resp.json()["top_patterns"]]
+        assert "ghost-pattern" not in keys
+
+    def test_teacher_not_in_cohort_404(
+        self, users_set, cohort_setup, cohort_patterns
+    ):
+        """Same-org teacher who doesn't teach this cohort → 404 (isolation)."""
+        c = _auth(users_set["teacher_out"])
+        resp = c.get(self.URL.format(id=cohort_setup["cohort_a"].id))
+        assert resp.status_code == 404
+
+    def test_admin_same_org_200(
+        self, users_set, cohort_setup, cohort_patterns
+    ):
+        c = _auth(users_set["admin_a"])
+        resp = c.get(self.URL.format(id=cohort_setup["cohort_a"].id))
+        assert resp.status_code == 200
+
+    def test_admin_other_org_404(
+        self, users_set, cohort_setup, cohort_patterns
+    ):
+        c = _auth(users_set["admin_b"])
+        resp = c.get(self.URL.format(id=cohort_setup["cohort_a"].id))
+        assert resp.status_code == 404
+
+    def test_student_in_cohort_403(
+        self, users_set, cohort_setup, cohort_patterns
+    ):
+        """student_a is enrolled but this is teacher-only intelligence."""
+        c = _auth(users_set["student_a"])
+        resp = c.get(self.URL.format(id=cohort_setup["cohort_a"].id))
+        assert resp.status_code == 403
+
+    def test_empty_cohort_returns_empty_list(
+        self, two_orgs, users_set, cohort_setup
+    ):
+        """A cohort with no patterns yet still returns 200 with [] list."""
+        from grading.models import Cohort as CohortModel
+        empty = CohortModel.objects.create(
+            org=two_orgs["a"], name="Empty Cohort SI"
+        )
+        from grading.models import Course as CourseModel
+        CourseModel.objects.create(
+            org=two_orgs["a"], cohort=empty,
+            owner=users_set["teacher_in"],
+            name="Empty Course",
+        )
+        c = _auth(users_set["teacher_in"])
+        resp = c.get(self.URL.format(id=empty.id))
+        assert resp.status_code == 200
+        data = resp.json()
+        assert data["top_patterns"] == []
+        assert data["summary"]["total_unresolved_patterns"] == 0
+        assert data["summary"]["most_affected_category"] is None

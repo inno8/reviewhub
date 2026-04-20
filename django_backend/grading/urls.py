@@ -43,4 +43,9 @@ urlpatterns = router.urls + [
         views_student_intelligence.StudentPRHistoryView.as_view(),
         name="student-pr-history",
     ),
+    path(
+        "cohorts/<int:cohort_id>/recurring-errors/",
+        views_student_intelligence.CohortRecurringErrorsView.as_view(),
+        name="cohort-recurring-errors",
+    ),
 ]

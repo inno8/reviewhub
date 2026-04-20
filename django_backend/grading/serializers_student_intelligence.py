@@ -95,3 +95,35 @@ class PRHistoryEntrySerializer(serializers.Serializer):
 class StudentPRHistorySerializer(serializers.Serializer):
     student = _StudentRefSerializer()
     sessions = PRHistoryEntrySerializer(many=True)
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Cohort-wide recurring errors
+# ─────────────────────────────────────────────────────────────────────────────
+class _CohortHeaderSerializer(serializers.Serializer):
+    id = serializers.IntegerField()
+    name = serializers.CharField()
+    student_count = serializers.IntegerField()
+
+
+class CohortPatternSerializer(serializers.Serializer):
+    pattern_key = serializers.CharField()
+    pattern_type = serializers.CharField()
+    affected_students = serializers.IntegerField()
+    total_frequency = serializers.IntegerField()
+    avg_frequency_per_student = serializers.FloatField()
+    severity = serializers.CharField()
+    last_seen_days_ago = serializers.IntegerField(allow_null=True)
+    example_findings = serializers.ListField(child=serializers.CharField())
+
+
+class CohortRecurringErrorsSummarySerializer(serializers.Serializer):
+    students_with_unresolved_patterns = serializers.IntegerField()
+    total_unresolved_patterns = serializers.IntegerField()
+    most_affected_category = serializers.CharField(allow_null=True)
+
+
+class CohortRecurringErrorsSerializer(serializers.Serializer):
+    cohort = _CohortHeaderSerializer()
+    top_patterns = CohortPatternSerializer(many=True)
+    summary = CohortRecurringErrorsSummarySerializer()

@@ -36,8 +36,8 @@ from rest_framework import permissions, status
 from rest_framework.response import Response
 from rest_framework.views import APIView
 
-from .models import CohortMembership, GradingSession
-from .permissions import can_view_student
+from .models import Cohort, CohortMembership, GradingSession
+from .permissions import ADMIN_ROLES, _role, can_view_student  # _role used by _can_view_cohort_intelligence
 
 User = get_user_model()
 
@@ -432,4 +432,211 @@ class StudentPRHistoryView(APIView):
         return Response({
             "student": _student_ref(student),
             "sessions": rows,
+        })
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Endpoint 4: Cohort-wide recurring errors (teacher-only intelligence)
+# ─────────────────────────────────────────────────────────────────────────────
+def _can_view_cohort_intelligence(user, cohort) -> bool:
+    """
+    Teacher-or-admin only view of aggregated cohort patterns.
+
+    Returns a tri-state via exception-free bool semantics:
+      - True  → allow (200)
+      - False → caller decides 403 (role gated) vs 404 (org gated) via
+                _cohort_access_denied_reason() below.
+
+    This function only returns True/False; the view inspects the reason to
+    choose the HTTP status.
+    """
+    if user is None or not getattr(user, "is_authenticated", False):
+        return False
+    if getattr(user, "is_superuser", False):
+        return True
+    # Cross-org: deny (404 upstream).
+    user_org = getattr(user, "organization_id", None)
+    if user_org is None or cohort.org_id != user_org:
+        return False
+    role = _role(user)
+    if role in ADMIN_ROLES:
+        return True
+    if role == "teacher":
+        return (
+            cohort.courses.filter(owner=user).exists()
+            or cohort.courses.filter(secondary_docent=user).exists()
+        )
+    # Students (or other roles): explicitly denied (403, not 404).
+    return False
+
+
+class CohortRecurringErrorsView(APIView):
+    """
+    GET /api/grading/cohorts/<cohort_id>/recurring-errors/
+
+    Returns the top unresolved `Pattern` records aggregated across all
+    currently-enrolled students in a cohort — "what is my class weak at".
+
+    Permission matrix:
+      - superuser: 200
+      - admin in same org: 200
+      - teacher owning (or secondary on) a course in this cohort: 200
+      - student (any): 403 — teacher-only intelligence
+      - anyone else in a different org: 404 (follows isolation pattern)
+      - unauthenticated: 401
+    """
+
+    permission_classes = [permissions.IsAuthenticated]
+
+    def get(self, request, cohort_id: int):
+        from evaluations.models import Finding, Pattern  # local import
+
+        # Scope cohort lookup to the requester's org (cross-org → 404).
+        # Superusers/admins of the same org see it; others follow the
+        # permission helper.
+        try:
+            cohort = Cohort.objects.select_related("org").get(pk=cohort_id)
+        except Cohort.DoesNotExist:
+            raise Http404("cohort not found")
+
+        user = request.user
+
+        # Cross-org anyone (incl. admin of a different org) → 404.
+        if not getattr(user, "is_superuser", False):
+            user_org = getattr(user, "organization_id", None)
+            if user_org is None or cohort.org_id != user_org:
+                raise Http404("cohort not found")
+
+        # Role gating within the org:
+        #   - admin (same org) or teacher-of-a-course-in-cohort → 200
+        #   - student enrolled in this cohort → 403 (role-gated; they can
+        #     see the cohort exists but may not view aggregated intel)
+        #   - anyone else (e.g. teacher same org but not teaching here) → 404
+        if not _can_view_cohort_intelligence(user, cohort):
+            is_enrolled_student = CohortMembership.objects.filter(
+                cohort=cohort, student=user, removed_at__isnull=True
+            ).exists()
+            if is_enrolled_student:
+                return Response(
+                    {"detail": "Teacher or admin role required for this view."},
+                    status=status.HTTP_403_FORBIDDEN,
+                )
+            raise Http404("cohort not found")
+
+        # ── Active student set for this cohort ───────────────────────────
+        student_ids = list(
+            CohortMembership.objects
+            .filter(cohort=cohort, removed_at__isnull=True)
+            .values_list("student_id", flat=True)
+        )
+        student_count = len(student_ids)
+
+        if not student_ids:
+            return Response({
+                "cohort": {
+                    "id": cohort.id,
+                    "name": cohort.name,
+                    "student_count": 0,
+                },
+                "top_patterns": [],
+                "summary": {
+                    "students_with_unresolved_patterns": 0,
+                    "total_unresolved_patterns": 0,
+                    "most_affected_category": None,
+                },
+            })
+
+        # ── Aggregate Pattern rows for those students (unresolved only) ──
+        patterns_qs = (
+            Pattern.objects
+            .filter(user_id__in=student_ids, is_resolved=False)
+            .prefetch_related("sample_findings")
+        )
+
+        # Group by pattern_key in Python: the fields we need (affected
+        # student count via distinct users, frequency sum, example findings)
+        # are awkward to express in one annotated query without double-counting
+        # sample_findings. With cohort-sized N (≤ a few hundred students ×
+        # a handful of patterns each) this is fine.
+        by_key: dict[str, dict] = {}
+        for p in patterns_qs:
+            bucket = by_key.setdefault(p.pattern_key, {
+                "pattern_key": p.pattern_key,
+                "pattern_type": p.pattern_type,
+                "users": set(),
+                "total_frequency": 0,
+                "last_seen": None,
+                "finding_descriptions": [],
+            })
+            bucket["users"].add(p.user_id)
+            bucket["total_frequency"] += int(p.frequency or 0)
+            if p.last_seen and (bucket["last_seen"] is None or p.last_seen > bucket["last_seen"]):
+                bucket["last_seen"] = p.last_seen
+            # Keep up to 3 example Finding descriptions total per key.
+            if len(bucket["finding_descriptions"]) < 3:
+                # .all() is prefetched; no extra queries.
+                for f in p.sample_findings.all():
+                    if f.description and f.description not in bucket["finding_descriptions"]:
+                        bucket["finding_descriptions"].append(f.description)
+                        if len(bucket["finding_descriptions"]) >= 3:
+                            break
+
+        now = timezone.now()
+        top_patterns = []
+        for b in by_key.values():
+            affected = len(b["users"])
+            total_freq = b["total_frequency"]
+            avg_per_student = round(total_freq / affected, 1) if affected else 0.0
+            # Severity heuristic consistent with snapshot: any pattern
+            # averaging ≥ 3 hits per affected student, OR affecting ≥ half
+            # the cohort, is a "warning"; else "info".
+            half = max(1, student_count // 2)
+            severity = "warning" if (avg_per_student >= 3 or affected >= half) else "info"
+            days_ago = (now - b["last_seen"]).days if b["last_seen"] else None
+            top_patterns.append({
+                "pattern_key": b["pattern_key"],
+                "pattern_type": b["pattern_type"],
+                "affected_students": affected,
+                "total_frequency": total_freq,
+                "avg_frequency_per_student": avg_per_student,
+                "severity": severity,
+                "last_seen_days_ago": days_ago,
+                "example_findings": b["finding_descriptions"][:3],
+            })
+
+        # Order: more-students-affected first, then raw frequency.
+        top_patterns.sort(
+            key=lambda r: (-r["affected_students"], -r["total_frequency"], r["pattern_key"])
+        )
+        top_patterns = top_patterns[:10]
+
+        # ── Summary ──────────────────────────────────────────────────────
+        students_with_unresolved = len({p.user_id for p in patterns_qs})
+        total_unresolved = patterns_qs.count()
+        # "Most affected category" — we don't have a dedicated category
+        # field on Pattern, so use pattern_type as the category proxy
+        # (matches how snapshot exposes it). Pick the type whose affected-
+        # student count is highest.
+        type_student_counts: dict[str, set] = defaultdict(set)
+        for p in patterns_qs:
+            type_student_counts[p.pattern_type].add(p.user_id)
+        most_affected_category = None
+        if type_student_counts:
+            most_affected_category = max(
+                type_student_counts.items(),
+                key=lambda kv: (len(kv[1]), kv[0]),
+            )[0]
+
+        return Response({
+            "cohort": {
+                "id": cohort.id,
+                "name": cohort.name,
+                "student_count": student_count,
+            },
+            "top_patterns": top_patterns,
+            "summary": {
+                "students_with_unresolved_patterns": students_with_unresolved,
+                "total_unresolved_patterns": total_unresolved,
+                "most_affected_category": most_affected_category,
+            },
         })
