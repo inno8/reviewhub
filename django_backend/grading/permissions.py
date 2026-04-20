@@ -112,6 +112,67 @@ class IsCourseOwnerOrAdmin(permissions.BasePermission):
         return owner_id == getattr(user, "id", None)
 
 
+def can_view_student(requesting_user, student) -> bool:
+    """
+    Can `requesting_user` see intelligence data about `student`?
+
+    Rules (Workstream D — student-intelligence endpoints):
+      - Superuser: yes.
+      - Self: a user can always view their own data.
+      - Admin: yes if student is in the same org.
+      - Teacher: yes if teacher owns (primary or secondary) a Course in the
+        student's current cohort AND they share the same org.
+      - Anyone else: no.
+
+    Returns False (callers should translate to 404 at the view layer to avoid
+    enumeration — follow the existing isolation pattern).
+    """
+    if requesting_user is None or not getattr(requesting_user, "is_authenticated", False):
+        return False
+    if getattr(requesting_user, "is_superuser", False):
+        return True
+    if student is None:
+        return False
+    if getattr(requesting_user, "id", None) == getattr(student, "id", None):
+        return True
+    # Cross-org: always deny.
+    req_org = getattr(requesting_user, "organization_id", None)
+    stu_org = getattr(student, "organization_id", None)
+    if req_org is None or stu_org is None or req_org != stu_org:
+        return False
+    role = _role(requesting_user)
+    if role in ADMIN_ROLES:
+        return True
+    if role == "teacher":
+        # Teacher owns (or co-teaches) a course in the student's current cohort.
+        membership = getattr(student, "cohort_membership", None)
+        if membership is None or membership.removed_at is not None:
+            return False
+        cohort = membership.cohort
+        return (
+            cohort.courses.filter(owner=requesting_user).exists()
+            or cohort.courses.filter(secondary_docent=requesting_user).exists()
+        )
+    return False
+
+
+class CanViewStudent(permissions.BasePermission):
+    """
+    Object-level permission: the requesting user may view the given student.
+
+    Use with a view where `get_object()` returns the student User, or
+    call `can_view_student()` helper directly for function-style views.
+    """
+
+    message = "You do not have permission to view this student."
+
+    def has_permission(self, request, view) -> bool:
+        return bool(request.user and request.user.is_authenticated)
+
+    def has_object_permission(self, request, view, obj) -> bool:
+        return can_view_student(request.user, obj)
+
+
 class IsCohortVisible(permissions.BasePermission):
     """
     Object permission for Cohort — caller can see the cohort if any of:

@@ -8,7 +8,7 @@ real PR events. See views.py + webhooks.py for docs.
 from django.urls import path
 from rest_framework.routers import DefaultRouter
 
-from . import ops_views, views, webhooks
+from . import ops_views, views, views_student_intelligence, webhooks
 
 router = DefaultRouter()
 router.register(r"rubrics", views.RubricViewSet, basename="rubric")
@@ -27,4 +27,20 @@ urlpatterns = router.urls + [
     path("ops/courses/", ops_views.OpsCoursesView.as_view(), name="ops-courses"),
     path("ops/teachers/", ops_views.OpsTeacherCostsView.as_view(), name="ops-teachers"),
     path("ops/llm-log/", ops_views.OpsLLMCallLogView.as_view(), name="ops-llm-log"),
+    # Workstream D — student-intelligence (teacher-facing)
+    path(
+        "students/<int:student_id>/snapshot/",
+        views_student_intelligence.StudentSnapshotView.as_view(),
+        name="student-snapshot",
+    ),
+    path(
+        "students/<int:student_id>/trajectory/",
+        views_student_intelligence.StudentTrajectoryView.as_view(),
+        name="student-trajectory",
+    ),
+    path(
+        "students/<int:student_id>/pr-history/",
+        views_student_intelligence.StudentPRHistoryView.as_view(),
+        name="student-pr-history",
+    ),
 ]
