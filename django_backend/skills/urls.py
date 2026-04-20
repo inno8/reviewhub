@@ -37,4 +37,7 @@ urlpatterns = [
     # Organization dashboard (Phase 2)
     path('org-dashboard/', views.OrgDashboardView.as_view(), name='org-dashboard'),
     path('org-dashboard/students/<int:student_id>/', views.OrgStudentDetailView.as_view(), name='org-student-detail'),
+
+    # Developer Journey
+    path('journey/<int:user_id>/', views.DeveloperJourneyView.as_view(), name='developer-journey'),
 ]
