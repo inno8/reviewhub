@@ -11,7 +11,10 @@ reaches the rubric_grader service (RubricSchemaError would be runtime).
 """
 from __future__ import annotations
 
+from django.contrib.auth import get_user_model
 from rest_framework import serializers
+
+User = get_user_model()
 
 from .models import (
     Cohort,
@@ -106,6 +109,7 @@ class CohortSerializer(serializers.ModelSerializer):
             "year",
             "starts_at",
             "ends_at",
+            "archived_at",
             "student_count",
             "course_count",
             "created_at",
@@ -114,6 +118,7 @@ class CohortSerializer(serializers.ModelSerializer):
         read_only_fields = [
             "id",
             "org",
+            "archived_at",
             "student_count",
             "course_count",
             "created_at",
@@ -150,6 +155,12 @@ class CourseSerializer(serializers.ModelSerializer):
     rubric_name = serializers.CharField(source="rubric.name", read_only=True, default=None)
     cohort_name = serializers.CharField(source="cohort.name", read_only=True, default=None)
     student_count = serializers.SerializerMethodField()
+    # owner is writable (admin can set on create / reassigns via dedicated
+    # endpoint) but optional — teachers leave blank and the viewset fills
+    # in self.request.user.
+    owner = serializers.PrimaryKeyRelatedField(
+        queryset=User.objects.all(), required=False, allow_null=True,
+    )
 
     class Meta:
         model = Course
@@ -168,6 +179,7 @@ class CourseSerializer(serializers.ModelSerializer):
             "rubric_name",
             "starts_at",
             "ends_at",
+            "archived_at",
             "student_count",
             "created_at",
             "updated_at",
@@ -175,10 +187,10 @@ class CourseSerializer(serializers.ModelSerializer):
         read_only_fields = [
             "id",
             "org",
-            "owner",
             "owner_email",
             "rubric_name",
             "cohort_name",
+            "archived_at",
             "student_count",
             "created_at",
             "updated_at",

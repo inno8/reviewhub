@@ -143,6 +143,11 @@ class Cohort(models.Model):
     year = models.CharField(max_length=20, blank=True)  # e.g., "2026-2027"
     starts_at = models.DateField(null=True, blank=True)
     ends_at = models.DateField(null=True, blank=True)
+    archived_at = models.DateTimeField(
+        null=True,
+        blank=True,
+        help_text="Soft-archive timestamp. Archived cohorts stay queryable for history but are hidden by default in list views.",
+    )
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
 
@@ -227,6 +232,11 @@ class Course(models.Model):
     )
     starts_at = models.DateField(null=True, blank=True)
     ends_at = models.DateField(null=True, blank=True)
+    archived_at = models.DateTimeField(
+        null=True,
+        blank=True,
+        help_text="Soft-archive timestamp. Archived courses are hidden by default but preserved for grading history.",
+    )
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
 
@@ -274,6 +284,11 @@ class CohortMembership(models.Model):
         help_text="Student's chosen repo URL for this cohort (e.g., github.com/jandeboer/assignment-q3).",
     )
     joined_at = models.DateTimeField(auto_now_add=True)
+    removed_at = models.DateTimeField(
+        null=True,
+        blank=True,
+        help_text="Soft-delete timestamp. Row is preserved so historical grading sessions remain valid.",
+    )
 
     class Meta:
         db_table = "grading_cohort_memberships"

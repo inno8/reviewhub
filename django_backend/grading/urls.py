@@ -12,6 +12,7 @@ from . import ops_views, views, webhooks
 
 router = DefaultRouter()
 router.register(r"rubrics", views.RubricViewSet, basename="rubric")
+router.register(r"cohorts", views.CohortViewSet, basename="cohort")
 router.register(r"courses", views.CourseViewSet, basename="course")
 router.register(r"submissions", views.SubmissionViewSet, basename="submission")
 router.register(r"sessions", views.GradingSessionViewSet, basename="grading-session")

@@ -36,6 +36,7 @@ from rest_framework.permissions import IsAuthenticated
 from rest_framework.response import Response
 
 from .models import (
+    Cohort,
     CohortMembership,
     Course,
     GradingSession,
@@ -43,9 +44,17 @@ from .models import (
     Rubric,
     Submission,
 )
-from .permissions import IsTeacher, IsTeacherOrReadOnlyStudent
+from .permissions import (
+    IsCohortVisible,
+    IsCourseOwnerOrAdmin,
+    IsOrgAdmin,
+    IsTeacher,
+    IsTeacherOrAdmin,
+    IsTeacherOrReadOnlyStudent,
+)
 from .serializers import (
     CohortMembershipSerializer,
+    CohortSerializer,
     CourseSerializer,
     GradingSessionDetailSerializer,
     GradingSessionEditSerializer,
@@ -88,35 +97,328 @@ class RubricViewSet(viewsets.ModelViewSet):
 
 
 # ─────────────────────────────────────────────────────────────────────────────
+# Cohort (admin-managed, teachers + students read-scoped)
+# ─────────────────────────────────────────────────────────────────────────────
+def _role(user) -> str:
+    return getattr(user, "role", "") or ""
+
+
+def _is_admin(user) -> bool:
+    if getattr(user, "is_superuser", False):
+        return True
+    return _role(user) == "admin"
+
+
+def _is_teacher(user) -> bool:
+    return _role(user) == "teacher"
+
+
+class CohortViewSet(viewsets.ModelViewSet):
+    """
+    /api/grading/cohorts/
+
+    Admin write, teacher/student scoped read.
+
+    Visibility:
+      - admin / superuser: all cohorts in their org
+      - teacher: cohorts where they own (or secondary-teach) a course
+      - student: their own cohort (via CohortMembership)
+
+    Writes (POST, PATCH, archive, DELETE of membership rows) are admin-only.
+    Hard DELETE of a cohort is not exposed — use archive/ instead so grading
+    history stays queryable.
+    """
+
+    serializer_class = CohortSerializer
+
+    def get_permissions(self):
+        # Writes require admin; reads require any authenticated role that
+        # has a relationship to the cohort (enforced via queryset scoping).
+        if self.action in {"list", "retrieve"}:
+            return [IsAuthenticated()]
+        if self.action in {"members"}:
+            # GET/POST/DELETE on members is permission-checked inside the action.
+            return [IsAuthenticated()]
+        # create, update, partial_update, destroy, archive
+        return [IsAuthenticated(), IsOrgAdmin()]
+
+    def get_queryset(self):
+        user = self.request.user
+        base = Cohort.objects.for_user(user).select_related("org")
+        include_archived = self.request.query_params.get("include_archived") == "true"
+        if not include_archived and self.action == "list":
+            base = base.filter(archived_at__isnull=True)
+
+        if _is_admin(user):
+            return base.order_by("-created_at")
+        if _is_teacher(user):
+            # Cohorts where the teacher owns a course or is secondary docent.
+            return (
+                base.filter(courses__owner=user)
+                | base.filter(courses__secondary_docent=user)
+            ).distinct().order_by("-created_at")
+        # Student: their own cohort only
+        return base.filter(memberships__student=user, memberships__removed_at__isnull=True).distinct()
+
+    def perform_create(self, serializer):
+        user = self.request.user
+        serializer.save(org=user.organization)
+
+    def destroy(self, request, *args, **kwargs):
+        # Hard delete is disallowed — archive via dedicated action instead.
+        return Response(
+            {"error": "hard_delete_disabled", "message": "Use POST /archive/ instead."},
+            status=status.HTTP_405_METHOD_NOT_ALLOWED,
+        )
+
+    @action(detail=True, methods=["post"], url_path="archive")
+    def archive(self, request, pk=None):
+        """
+        Soft-archive a cohort. Admins only. Idempotent: re-archiving is a no-op.
+        """
+        cohort = self.get_object()  # 404 if not visible to this user
+        # Re-check admin (get_permissions already enforces; belt-and-braces)
+        if not _is_admin(request.user):
+            raise PermissionDenied("Admin role required.")
+        if cohort.archived_at is None:
+            cohort.archived_at = timezone.now()
+            cohort.save(update_fields=["archived_at", "updated_at"])
+        return Response(CohortSerializer(cohort).data)
+
+    @action(detail=True, methods=["get", "post"], url_path="members")
+    def members(self, request, pk=None):
+        """
+        GET   /cohorts/{id}/members/        list active members (admin, any
+                                            teacher in the cohort, or the
+                                            students themselves)
+        POST  /cohorts/{id}/members/        add student (admin only)
+                                            body: {student_id, student_repo_url?}
+        """
+        cohort = self.get_object()  # 404 if not visible to this user
+
+        if request.method == "GET":
+            qs = cohort.memberships.filter(removed_at__isnull=True).select_related("student").order_by("joined_at")
+            return Response(CohortMembershipSerializer(qs, many=True).data)
+
+        # POST — admin only
+        if not _is_admin(request.user):
+            raise PermissionDenied("Admin role required to add members.")
+
+        student_id = request.data.get("student_id")
+        repo_url = request.data.get("student_repo_url", "") or ""
+        if not student_id:
+            raise ValidationError({"student_id": "required"})
+
+        from users.models import User
+        try:
+            student = User.objects.get(pk=student_id)
+        except User.DoesNotExist:
+            raise NotFound("student not found")
+        if (
+            not request.user.is_superuser
+            and student.organization_id != request.user.organization_id
+        ):
+            raise PermissionDenied("student is in a different organization")
+
+        existing = CohortMembership.objects.filter(
+            student=student, removed_at__isnull=True
+        ).select_related("cohort").first()
+        if existing and existing.cohort_id != cohort.id:
+            raise ValidationError(
+                {
+                    "student": (
+                        f"student already enrolled in cohort "
+                        f"{existing.cohort.name!r} (id={existing.cohort_id}) — "
+                        "remove from that cohort first or transfer explicitly."
+                    )
+                }
+            )
+
+        m, created = CohortMembership.objects.update_or_create(
+            student=student,
+            defaults={
+                "cohort": cohort,
+                "student_repo_url": repo_url,
+                "removed_at": None,
+            },
+        )
+        return Response(
+            CohortMembershipSerializer(m).data,
+            status=status.HTTP_201_CREATED if created else status.HTTP_200_OK,
+        )
+
+    @action(
+        detail=True,
+        methods=["delete"],
+        url_path=r"members/(?P<membership_id>[^/.]+)",
+    )
+    def remove_member(self, request, pk=None, membership_id=None):
+        """DELETE /cohorts/{id}/members/{membership_id}/  — admin only, soft-delete."""
+        cohort = self.get_object()
+        if not _is_admin(request.user):
+            raise PermissionDenied("Admin role required to remove members.")
+        try:
+            m = cohort.memberships.get(pk=membership_id)
+        except CohortMembership.DoesNotExist:
+            raise NotFound("membership not found")
+        if m.removed_at is None:
+            m.removed_at = timezone.now()
+            m.save(update_fields=["removed_at"])
+        return Response(status=status.HTTP_204_NO_CONTENT)
+
+
+# ─────────────────────────────────────────────────────────────────────────────
 # Course (was "Classroom")
 # ─────────────────────────────────────────────────────────────────────────────
 class CourseViewSet(viewsets.ModelViewSet):
     """
     /api/grading/courses/
-    Teacher's courses. Teachers see their own + any where they're secondary.
 
-    Membership is exposed on the Course endpoint for v1 backward compatibility:
-    POST/DELETE on /courses/{id}/members/ creates/removes CohortMembership rows
-    on the course's cohort. Migration to a proper /cohorts/{id}/members/
-    endpoint lands in Workstream B+.
+    Visibility (org-scoped first via OrgScopedManager):
+      - admin/superuser: every course in the org
+      - teacher: courses they own, secondary-teach, OR any course in a
+        cohort where they teach something (needed so co-teachers can see
+        each other's courses in the same klas)
+      - student: every course in their own cohort
+
+    Writes:
+      - create: admin (any cohort in org); teacher if they own the cohort
+        (teach some course in it) OR they are setting themselves as owner
+        in a cohort they teach
+      - update: admin (any); teacher only when they own the course
+      - reassign: admin-only — changes course.owner_id to new user in org
+      - archive: via PATCH on archived_at or via POST /archive/ (admin + owner)
+
+    Membership is also exposed here for v1 backward compatibility:
+    /courses/{id}/members/ — delegates to the course's cohort.
     """
 
     serializer_class = CourseSerializer
-    permission_classes = [IsAuthenticated, IsTeacher]
+
+    def get_permissions(self):
+        if self.action in {"list", "retrieve", "members"}:
+            return [IsAuthenticated()]
+        if self.action in {"create"}:
+            return [IsAuthenticated(), IsTeacherOrAdmin()]
+        if self.action in {"reassign"}:
+            return [IsAuthenticated(), IsOrgAdmin()]
+        # update, partial_update, destroy, archive → owner-or-admin
+        return [IsAuthenticated(), IsTeacherOrAdmin(), IsCourseOwnerOrAdmin()]
 
     def get_queryset(self):
         user = self.request.user
-        base = Course.objects.for_user(user)
-        # Also include courses where the user is the secondary docent
+        base = Course.objects.for_user(user).select_related("cohort", "owner", "rubric")
+        include_archived = self.request.query_params.get("include_archived") == "true"
+        if not include_archived and self.action == "list":
+            base = base.filter(archived_at__isnull=True)
+
+        if _is_admin(user):
+            return base.order_by("-created_at")
+        if _is_teacher(user):
+            # Own + secondary + other courses in cohorts where I teach
+            own = base.filter(owner=user)
+            secondary = base.filter(secondary_docent=user)
+            cohort_siblings = base.filter(
+                cohort__courses__owner=user,
+            ) | base.filter(cohort__courses__secondary_docent=user)
+            return (own | secondary | cohort_siblings).distinct().order_by("-created_at")
+        # Student: courses in their own cohort
         return base.filter(
-            # Primary: they own it
-            #   OR secondary: they're the backup teacher
-            owner=user,
-        ) | base.filter(secondary_docent=user)
+            cohort__memberships__student=user,
+            cohort__memberships__removed_at__isnull=True,
+        ).distinct()
+
+    def _resolve_create_payload(self, serializer):
+        """
+        Enforce create rules:
+          - admin: may set any owner in the org; cohort must belong to org
+          - teacher: may only create courses they will own themselves
+            (owner defaults to self). Cohort must be in the teacher's org AND
+            either empty of courses OR contain a course they already teach.
+        """
+        user = self.request.user
+        data = serializer.validated_data
+        cohort = data.get("cohort")
+        if cohort is not None and cohort.org_id != user.organization_id and not user.is_superuser:
+            raise PermissionDenied("cohort is in a different organization")
+
+        if _is_admin(user):
+            owner = data.get("owner") or user
+            return {"org": user.organization, "owner": owner, "cohort": cohort}
+
+        # Teacher path
+        # Teachers cannot assign ownership to someone else.
+        owner = data.get("owner")
+        if owner is not None and owner.id != user.id:
+            raise PermissionDenied("teachers can only create courses they own")
+        if cohort is not None:
+            already_teaching = (
+                cohort.courses.filter(owner=user).exists()
+                or cohort.courses.filter(secondary_docent=user).exists()
+            )
+            # If the cohort already has courses and the teacher teaches none
+            # of them, creating there is an admin operation.
+            if cohort.courses.exists() and not already_teaching:
+                raise PermissionDenied("you don't teach in this cohort")
+        return {"org": user.organization, "owner": user, "cohort": cohort}
 
     def perform_create(self, serializer):
-        user = self.request.user
-        serializer.save(org=user.organization, owner=user)
+        overrides = self._resolve_create_payload(serializer)
+        serializer.save(**overrides)
+
+    def perform_update(self, serializer):
+        # Don't let non-admins mutate owner via plain PATCH.
+        if not _is_admin(self.request.user):
+            serializer.validated_data.pop("owner", None)
+        serializer.save()
+
+    def destroy(self, request, *args, **kwargs):
+        return Response(
+            {"error": "hard_delete_disabled", "message": "Use POST /archive/ instead."},
+            status=status.HTTP_405_METHOD_NOT_ALLOWED,
+        )
+
+    @action(detail=True, methods=["post"], url_path="archive")
+    def archive(self, request, pk=None):
+        """Soft-archive a course. Admin or the course owner."""
+        course = self.get_object()
+        self.check_object_permissions(request, course)
+        if course.archived_at is None:
+            course.archived_at = timezone.now()
+            course.save(update_fields=["archived_at", "updated_at"])
+        return Response(CourseSerializer(course).data)
+
+    @action(detail=True, methods=["post"], url_path="reassign")
+    def reassign(self, request, pk=None):
+        """
+        POST /courses/{id}/reassign/  body: {new_owner_id}
+        Admin-only. Changes course.owner (e.g., teacher leaves school).
+        """
+        course = self.get_object()
+        # IsOrgAdmin already enforced by get_permissions; keep defensive.
+        if not _is_admin(request.user):
+            raise PermissionDenied("Admin role required.")
+
+        new_owner_id = request.data.get("new_owner_id")
+        if not new_owner_id:
+            raise ValidationError({"new_owner_id": "required"})
+        from users.models import User
+        try:
+            new_owner = User.objects.get(pk=new_owner_id)
+        except User.DoesNotExist:
+            raise NotFound("new owner not found")
+        if (
+            not request.user.is_superuser
+            and new_owner.organization_id != request.user.organization_id
+        ):
+            raise ValidationError({"new_owner_id": "user is in a different organization"})
+        if _role(new_owner) not in {"teacher", "admin"}:
+            raise ValidationError(
+                {"new_owner_id": "new owner must have role=teacher or admin"}
+            )
+        course.owner = new_owner
+        course.save(update_fields=["owner", "updated_at"])
+        return Response(CourseSerializer(course).data)
 
     @action(detail=True, methods=["get", "post", "delete"], url_path="members")
     def members(self, request, pk=None):
