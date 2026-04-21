@@ -1,4 +1,5 @@
 <template>
+  <AppShell>
   <div class="grading-inbox">
     <header class="inbox-header">
       <div>
@@ -114,12 +115,14 @@
       </li>
     </ul>
   </div>
+  </AppShell>
 </template>
 
 <script setup lang="ts">
 import { ref, onMounted } from 'vue';
 import { useRouter } from 'vue-router';
 import { useGradingStore, type SessionState, type SessionListRow } from '@/stores/grading';
+import AppShell from '@/components/layout/AppShell.vue';
 
 const router = useRouter();
 const store = useGradingStore();

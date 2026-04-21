@@ -1,4 +1,5 @@
 <template>
+  <AppShell>
   <div class="grading-detail">
     <header class="detail-header">
       <button @click="goBack" class="btn-ghost" data-testid="back-btn">
@@ -224,6 +225,7 @@
       </div>
     </div>
   </div>
+  </AppShell>
 </template>
 
 <script setup lang="ts">
@@ -233,6 +235,7 @@ import { useGradingStore, type GradingComment, type SessionState } from '@/store
 import { api } from '@/composables/useApi';
 import StudentSnapshotPanel from '@/components/grading/StudentSnapshotPanel.vue';
 import ContributorsList from '@/components/grading/ContributorsList.vue';
+import AppShell from '@/components/layout/AppShell.vue';
 
 const route = useRoute();
 const router = useRouter();

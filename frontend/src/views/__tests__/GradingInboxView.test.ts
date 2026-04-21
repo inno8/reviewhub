@@ -37,9 +37,14 @@ vi.mock('@/composables/useApi', () => {
 });
 
 const push = vi.fn();
-vi.mock('vue-router', () => ({
-  useRouter: () => ({ push }),
-}));
+vi.mock('vue-router', async () => {
+  const actual = await vi.importActual<any>('vue-router');
+  return {
+    ...actual,
+    useRouter: () => ({ push }),
+    useRoute: () => ({ path: '/grading', params: {}, query: {}, name: 'grading-inbox' }),
+  };
+});
 
 import GradingInboxView from '@/views/GradingInboxView.vue';
 import * as apiModule from '@/composables/useApi';
