@@ -485,6 +485,25 @@ class GradingSession(models.Model):
         allowed = self.ALLOWED_TRANSITIONS.get(self.state, set())
         return new_state in {s.value if hasattr(s, "value") else s for s in allowed}
 
+    # ── Scope B2: template hit rate (no migration — computed property) ──
+    @property
+    def template_hit_rate(self) -> float:
+        """
+        Share of ai_draft_comments that were (or could have been) served
+        by a template. Computed at read time from ai_draft_comments — no
+        DB column needed.
+
+        A comment is counted as a template hit if it carries the
+        `served_by_template=True` flag set by the ai_engine grading draft
+        generator when a template matched. Returns 0.0 when there are
+        no comments yet.
+        """
+        comments = self.ai_draft_comments or []
+        if not comments:
+            return 0.0
+        hits = sum(1 for c in comments if isinstance(c, dict) and c.get("served_by_template"))
+        return hits / len(comments)
+
 
 class SessionEvaluation(models.Model):
     """
