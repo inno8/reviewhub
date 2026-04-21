@@ -54,6 +54,18 @@ export interface RubricCriterion {
   levels: Array<{ score: number; description?: string }>;
 }
 
+export interface SubmissionContributor {
+  id: number;
+  user: number;
+  user_email: string;
+  user_name: string;
+  lines_changed: number;
+  commits_count: number;
+  contribution_fraction: number;
+  is_primary_author: boolean;
+  attached_at: string;
+}
+
 export interface SessionDetail extends SessionListRow {
   rubric: number;
   rubric_snapshot: {
@@ -81,6 +93,7 @@ export interface SessionDetail extends SessionListRow {
     body_preview: string;
     posted_at: string;
   }>;
+  contributors?: SubmissionContributor[];
 }
 
 export interface Course {

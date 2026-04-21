@@ -50,7 +50,18 @@
         </button>
       </div>
 
-      <!-- Student snapshot (Workstream E2) -->
+      <!-- Contributors (Workstream G2) — shown when PR has >1 contributor -->
+      <ContributorsList
+        v-if="store.activeSession.contributors && store.activeSession.contributors.length > 1"
+        :contributors="store.activeSession.contributors"
+      />
+
+      <!--
+        Student snapshot (Workstream E2)
+        v1.1 followup: if session has multiple contributors, show a small
+        "view snapshot for [name]" switcher here. v1 just shows the primary
+        author's snapshot (via studentId loaded from the Submission).
+      -->
       <StudentSnapshotPanel
         v-if="studentId"
         :student-id="studentId"
@@ -221,6 +232,7 @@ import { useRoute, useRouter, onBeforeRouteLeave } from 'vue-router';
 import { useGradingStore, type GradingComment, type SessionState } from '@/stores/grading';
 import { api } from '@/composables/useApi';
 import StudentSnapshotPanel from '@/components/grading/StudentSnapshotPanel.vue';
+import ContributorsList from '@/components/grading/ContributorsList.vue';
 
 const route = useRoute();
 const router = useRouter();
