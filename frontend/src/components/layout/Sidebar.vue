@@ -61,13 +61,19 @@ const navItems = [
   { name: 'Resolved Issues', icon: 'task_alt', path: '/resolved', studentOnly: true },
   { name: 'My Profile', icon: 'psychology', path: '/dev-profile/results', studentOnly: true },
 
-  // Teacher experience (the grading loop)
-  { name: 'Grading Inbox', icon: 'rate_review', path: '/grading', teacherOnly: true },
+  // Teacher experience (the grading loop).
+  // Also visible to school admins + platform ops so they can land on the
+  // grading surface from the sidebar instead of fishing for a URL.
+  { name: 'Grading Inbox', icon: 'rate_review', path: '/grading',
+    teacherOnly: true, schoolAdminOnly: true, opsOnly: true },
 
   // School admin experience (org governance).
   // Single unified members view replaces the old /team + /org-dashboard split.
-  { name: 'Members', icon: 'group', path: '/org/members', schoolAdminOnly: true },
-  { name: 'Cohorts', icon: 'groups_2', path: '/org/cohorts', schoolAdminOnly: true },
+  // Platform ops get these too — they manage schools on behalf of customers.
+  { name: 'Members', icon: 'group', path: '/org/members',
+    schoolAdminOnly: true, opsOnly: true },
+  { name: 'Cohorts', icon: 'groups_2', path: '/org/cohorts',
+    schoolAdminOnly: true, opsOnly: true },
 
   // Platform ops (us — superuser only)
   { name: 'Ops Dashboard', icon: 'admin_panel_settings', path: '/ops', opsOnly: true },
@@ -85,6 +91,13 @@ function isItemVisible(item: any): boolean {
     || item.schoolAdminOnly || item.opsOnly
     || item.adminOnly || item.devOnly;
   if (!hasGate) return true;
+
+  // Staff roles (teacher / school admin / platform ops) should never see
+  // student-only items even if their `role` field hasn't been migrated off
+  // the legacy `developer` default. Before this guard, a super admin with
+  // role='developer' saw the full student nav — the exact bug we hit pre-demo.
+  const isStaff = auth.isTeacher || auth.isSchoolAdmin || auth.isSuperuser;
+  if ((item.studentOnly || item.devOnly) && isStaff) return false;
 
   // OR-match: any flag that matches the user's role wins.
   if (item.studentOnly && auth.isStudent) return true;
