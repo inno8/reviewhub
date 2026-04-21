@@ -1,230 +1,260 @@
 <template>
   <AppShell>
-  <div class="grading-detail">
-    <header class="detail-header">
-      <button @click="goBack" class="btn-ghost" data-testid="back-btn">
-        ← Inbox
-      </button>
-      <div class="header-meta" v-if="store.activeSession">
-        <h1 class="text-xl font-semibold text-slate-100">
-          {{ store.activeSession.student_name || store.activeSession.student_email }}
-        </h1>
-        <p class="text-sm text-slate-400">
-          {{ store.activeSession.course_name }} ·
-          <a :href="store.activeSession.pr_url" target="_blank" class="link">
-            {{ store.activeSession.pr_title }}
-          </a>
-        </p>
-      </div>
-      <div class="header-state" v-if="store.activeSession">
-        <span class="state-badge" :class="`state-${store.activeSession.state}`">
-          {{ stateLabel(store.activeSession.state) }}
-        </span>
-      </div>
-    </header>
-
-    <div v-if="store.activeSessionLoading && !store.activeSession" class="skeleton-detail">
-      <div class="skeleton-row" v-for="n in 8" :key="n"></div>
-    </div>
-
-    <div v-else-if="store.activeSessionError" class="error-banner">
-      {{ store.activeSessionError }}
-    </div>
-
-    <div v-else-if="store.activeSession" class="detail-body">
-      <!-- AI draft warnings + controls -->
-      <div
-        v-if="store.activeSession.ai_draft_truncated"
-        class="info-banner warning"
-        data-testid="truncated-banner"
-      >
-        The diff was truncated before AI grading. Review carefully.
-      </div>
-
-      <div
-        v-if="store.activeSession.state === 'pending' || !store.activeSession.ai_draft_generated_at"
-        class="draft-prompt"
-      >
-        <p>No AI draft yet.</p>
-        <button @click="onGenerateDraft" :disabled="draftInFlight" class="btn-primary">
-          {{ draftInFlight ? 'Drafting…' : 'Generate draft' }}
-        </button>
-      </div>
-
-      <!-- Contributors (Workstream G2) — shown when PR has >1 contributor -->
-      <ContributorsList
-        v-if="store.activeSession.contributors && store.activeSession.contributors.length > 1"
-        :contributors="store.activeSession.contributors"
-      />
-
-      <!--
-        Student snapshot (Workstream E2)
-        v1.1 followup: if session has multiple contributors, show a small
-        "view snapshot for [name]" switcher here. v1 just shows the primary
-        author's snapshot (via studentId loaded from the Submission).
-      -->
-      <StudentSnapshotPanel
-        v-if="studentId"
-        :student-id="studentId"
-        :profile-link="true"
-      />
-
-      <!-- Rubric scores editor -->
-      <section class="rubric-section">
-        <h2>Rubric scores</h2>
-        <div class="rubric-grid">
-          <div
-            v-for="criterion in store.activeSession.rubric_snapshot.criteria"
-            :key="criterion.id"
-            class="criterion-card"
+    <div class="p-8 flex-1">
+      <div class="max-w-5xl mx-auto">
+        <header class="flex items-center gap-4 pb-4 border-b border-outline-variant/10 mb-6">
+          <button
+            @click="goBack"
+            class="bg-transparent border-none text-on-surface-variant hover:text-on-surface cursor-pointer px-3 py-2 text-sm transition-colors"
+            data-testid="back-btn"
           >
-            <div class="criterion-header">
-              <span class="criterion-name">{{ criterion.name }}</span>
-              <select
-                :value="scoreFor(criterion.id)"
-                @change="(e) => setScore(criterion.id, parseInt((e.target as HTMLSelectElement).value))"
-                class="score-select"
-                :data-testid="`score-${criterion.id}`"
+            ← Inbox
+          </button>
+          <div class="flex-1 min-w-0" v-if="store.activeSession">
+            <h1 class="text-xl font-semibold text-on-surface">
+              {{ store.activeSession.student_name || store.activeSession.student_email }}
+            </h1>
+            <p class="text-sm text-on-surface-variant">
+              {{ store.activeSession.course_name }} ·
+              <a
+                :href="store.activeSession.pr_url"
+                target="_blank"
+                class="text-primary hover:underline"
               >
-                <option
-                  v-for="lvl in criterion.levels"
-                  :key="lvl.score"
-                  :value="lvl.score"
-                >
-                  {{ lvl.score }}{{ lvl.description ? ' — ' + lvl.description : '' }}
-                </option>
-              </select>
-            </div>
-            <p v-if="evidenceFor(criterion.id)" class="criterion-evidence">
-              <span class="evidence-label">Evidence:</span>
-              {{ evidenceFor(criterion.id) }}
+                {{ store.activeSession.pr_title }}
+              </a>
             </p>
           </div>
-        </div>
-      </section>
+          <div v-if="store.activeSession">
+            <span
+              class="px-2.5 py-1 rounded-md text-xs uppercase tracking-widest font-semibold"
+              :class="stateBadgeClass(store.activeSession.state)"
+            >
+              {{ stateLabel(store.activeSession.state) }}
+            </span>
+          </div>
+        </header>
 
-      <!-- Inline comments editor -->
-      <section class="comments-section">
-        <div class="comments-header">
-          <h2>Inline comments ({{ editedComments.length }})</h2>
-          <span v-if="dirty" class="dirty-indicator">Unsaved changes</span>
-          <span v-if="savingEdits" class="dirty-indicator">Saving…</span>
+        <div v-if="store.activeSessionLoading && !store.activeSession" class="flex flex-col gap-2">
+          <div
+            v-for="n in 8"
+            :key="n"
+            class="h-12 bg-surface-container-low rounded-lg animate-pulse"
+          ></div>
         </div>
 
         <div
-          v-if="editedComments.length === 0"
-          class="empty-comments"
-          data-testid="no-comments"
+          v-else-if="store.activeSessionError"
+          class="bg-error/10 border border-error/20 text-error rounded-lg px-4 py-3 text-sm"
         >
-          The AI returned no inline comments. Add a summary note below or click Send with rubric scores only.
+          {{ store.activeSessionError }}
         </div>
 
-        <ul v-else class="comment-list">
-          <li
-            v-for="(c, idx) in editedComments"
-            :key="idx"
-            class="comment-card"
-            :data-testid="`comment-${idx}`"
+        <div v-else-if="store.activeSession" class="flex flex-col gap-6">
+          <!-- AI draft warnings + controls -->
+          <div
+            v-if="store.activeSession.ai_draft_truncated"
+            class="bg-tertiary/10 border border-tertiary/30 text-tertiary px-4 py-3 rounded-lg text-sm"
+            data-testid="truncated-banner"
           >
-            <div class="comment-meta">
-              <code class="comment-location">{{ c.file }}:{{ c.line }}</code>
-              <button
-                class="btn-ghost-red"
-                @click="removeComment(idx)"
-                :data-testid="`remove-comment-${idx}`"
+            The diff was truncated before AI grading. Review carefully.
+          </div>
+
+          <div
+            v-if="store.activeSession.state === 'pending' || !store.activeSession.ai_draft_generated_at"
+            class="glass-panel p-6 text-center rounded-xl"
+          >
+            <p class="text-on-surface-variant mb-3">No AI draft yet.</p>
+            <button
+              @click="onGenerateDraft"
+              :disabled="draftInFlight"
+              class="primary-gradient text-on-primary px-5 py-2.5 rounded-lg font-bold shadow-lg shadow-primary/10 hover:shadow-primary/20 transition-all active:scale-95 disabled:opacity-50 disabled:cursor-not-allowed"
+            >
+              {{ draftInFlight ? 'Drafting…' : 'Generate draft' }}
+            </button>
+          </div>
+
+          <!-- Contributors (Workstream G2) — shown when PR has >1 contributor -->
+          <ContributorsList
+            v-if="store.activeSession.contributors && store.activeSession.contributors.length > 1"
+            :contributors="store.activeSession.contributors"
+          />
+
+          <!--
+            Student snapshot (Workstream E2)
+            v1.1 followup: if session has multiple contributors, show a small
+            "view snapshot for [name]" switcher here. v1 just shows the primary
+            author's snapshot (via studentId loaded from the Submission).
+          -->
+          <StudentSnapshotPanel
+            v-if="studentId"
+            :student-id="studentId"
+            :profile-link="true"
+          />
+
+          <!-- Rubric scores editor -->
+          <section>
+            <h2 class="text-base font-semibold text-on-surface mb-3">Rubric scores</h2>
+            <div class="grid grid-cols-[repeat(auto-fill,minmax(280px,1fr))] gap-3">
+              <div
+                v-for="criterion in store.activeSession.rubric_snapshot.criteria"
+                :key="criterion.id"
+                class="bg-surface-container-low border border-outline-variant/10 rounded-xl px-4 py-3"
               >
-                Remove
+                <div class="flex items-center justify-between gap-2 mb-2">
+                  <span class="font-medium text-on-surface">{{ criterion.name }}</span>
+                  <select
+                    :value="scoreFor(criterion.id)"
+                    @change="(e) => setScore(criterion.id, parseInt((e.target as HTMLSelectElement).value))"
+                    class="bg-surface-container border border-outline-variant/20 text-on-surface rounded-md py-1 px-2 text-sm max-w-[140px] focus:ring-1 focus:ring-primary/50 focus:outline-none"
+                    :data-testid="`score-${criterion.id}`"
+                  >
+                    <option
+                      v-for="lvl in criterion.levels"
+                      :key="lvl.score"
+                      :value="lvl.score"
+                    >
+                      {{ lvl.score }}{{ lvl.description ? ' — ' + lvl.description : '' }}
+                    </option>
+                  </select>
+                </div>
+                <p v-if="evidenceFor(criterion.id)" class="text-xs text-on-surface-variant italic mt-2 leading-relaxed">
+                  <span class="font-semibold not-italic">Evidence:</span>
+                  {{ evidenceFor(criterion.id) }}
+                </p>
+              </div>
+            </div>
+          </section>
+
+          <!-- Inline comments editor -->
+          <section>
+            <div class="flex items-center gap-4 mb-3">
+              <h2 class="text-base font-semibold text-on-surface">Inline comments ({{ editedComments.length }})</h2>
+              <span v-if="dirty" class="text-xs text-tertiary">Unsaved changes</span>
+              <span v-if="savingEdits" class="text-xs text-tertiary">Saving…</span>
+            </div>
+
+            <div
+              v-if="editedComments.length === 0"
+              class="p-4 bg-surface-container-low border border-dashed border-outline-variant/30 rounded-xl text-on-surface-variant text-sm"
+              data-testid="no-comments"
+            >
+              The AI returned no inline comments. Add a summary note below or click Send with rubric scores only.
+            </div>
+
+            <ul v-else class="list-none p-0 m-0 flex flex-col gap-3">
+              <li
+                v-for="(c, idx) in editedComments"
+                :key="idx"
+                class="bg-surface-container-low border border-outline-variant/10 rounded-xl p-3"
+                :data-testid="`comment-${idx}`"
+              >
+                <div class="flex items-center justify-between mb-2">
+                  <code class="font-mono text-xs text-primary bg-surface-container px-2 py-0.5 rounded">
+                    {{ c.file }}:{{ c.line }}
+                  </code>
+                  <button
+                    class="bg-transparent border-none text-error hover:text-error/80 cursor-pointer text-xs transition-colors"
+                    @click="removeComment(idx)"
+                    :data-testid="`remove-comment-${idx}`"
+                  >
+                    Remove
+                  </button>
+                </div>
+                <textarea
+                  v-model="c.body"
+                  @input="markDirty"
+                  class="w-full bg-surface-container-lowest border border-outline-variant/20 text-on-surface rounded-md py-2 px-2 text-sm font-inherit resize-y focus:ring-1 focus:ring-primary/50 focus:outline-none leading-relaxed"
+                  rows="3"
+                  :data-testid="`comment-body-${idx}`"
+                ></textarea>
+              </li>
+            </ul>
+          </section>
+
+          <!-- Summary note -->
+          <section>
+            <h2 class="text-base font-semibold text-on-surface mb-3">Summary note (optional)</h2>
+            <textarea
+              v-model="editedSummary"
+              @input="markDirty"
+              rows="4"
+              placeholder="Overall feedback that will appear as a top-level PR comment…"
+              class="w-full bg-surface-container-lowest border border-outline-variant/20 text-on-surface rounded-md py-3 px-3 text-sm font-inherit resize-y focus:ring-1 focus:ring-primary/50 focus:outline-none leading-relaxed placeholder:text-outline/50"
+              data-testid="summary-textarea"
+            ></textarea>
+          </section>
+
+          <!-- Send / Resume controls -->
+          <footer class="flex items-center justify-between pt-6 border-t border-outline-variant/10">
+            <div class="text-on-surface-variant text-sm">
+              <span v-if="store.activeSession.docent_review_time_seconds">
+                {{ Math.round(store.activeSession.docent_review_time_seconds / 60) }} min reviewed
+              </span>
+              <span v-if="store.activeSession.state === 'partial'" class="text-tertiary">
+                {{ store.activeSession.posted_comments.length }} comments already posted
+              </span>
+            </div>
+            <div class="flex gap-3">
+              <button
+                @click="onSave"
+                :disabled="!dirty || savingEdits"
+                class="bg-surface-container hover:bg-surface-container-high text-on-surface px-5 py-2.5 rounded-lg text-sm font-medium border border-outline-variant/20 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+                data-testid="save-btn"
+              >
+                Save
+              </button>
+              <button
+                v-if="store.activeSession.state === 'partial'"
+                @click="onResume"
+                :disabled="sendInFlight"
+                class="primary-gradient text-on-primary px-5 py-2.5 rounded-lg font-bold shadow-lg shadow-primary/10 hover:shadow-primary/20 transition-all active:scale-95 disabled:opacity-50 disabled:cursor-not-allowed"
+                data-testid="resume-btn"
+              >
+                {{ sendInFlight ? 'Resuming…' : 'Resume send' }}
+              </button>
+              <button
+                v-else
+                @click="onSend"
+                :disabled="!canSend || sendInFlight"
+                class="primary-gradient text-on-primary px-5 py-2.5 rounded-lg font-bold shadow-lg shadow-primary/10 hover:shadow-primary/20 transition-all active:scale-95 disabled:opacity-50 disabled:cursor-not-allowed"
+                data-testid="send-btn"
+              >
+                {{ sendInFlight ? 'Sending…' : 'Send to student' }}
               </button>
             </div>
-            <textarea
-              v-model="c.body"
-              @input="markDirty"
-              class="comment-body"
-              rows="3"
-              :data-testid="`comment-body-${idx}`"
-            ></textarea>
-          </li>
-        </ul>
-      </section>
+          </footer>
 
-      <!-- Summary note -->
-      <section class="summary-section">
-        <h2>Summary note (optional)</h2>
-        <textarea
-          v-model="editedSummary"
-          @input="markDirty"
-          rows="4"
-          placeholder="Overall feedback that will appear as a top-level PR comment…"
-          class="summary-textarea"
-          data-testid="summary-textarea"
-        ></textarea>
-      </section>
-
-      <!-- Send / Resume controls -->
-      <footer class="detail-footer">
-        <div class="footer-meta">
-          <span v-if="store.activeSession.docent_review_time_seconds">
-            {{ Math.round(store.activeSession.docent_review_time_seconds / 60) }} min reviewed
-          </span>
-          <span v-if="store.activeSession.state === 'partial'" class="text-orange-400">
-            {{ store.activeSession.posted_comments.length }} comments already posted
-          </span>
+          <!-- Send-result banners -->
+          <div
+            v-if="sendResult"
+            class="px-4 py-3 rounded-lg text-sm"
+            :class="sendResultClass"
+          >
+            <template v-if="sendResult.ok">
+              <strong>Sent.</strong>
+              Posted {{ sendResult.summary?.posted_count || 0 }} comments
+              ({{ sendResult.summary?.skipped_duplicate_count || 0 }} duplicates skipped).
+            </template>
+            <template v-else-if="sendResult.kind === 'partial'">
+              <strong>Partial post.</strong>
+              {{ sendResult.posted_so_far }} comments posted. Click Resume to continue.
+            </template>
+            <template v-else-if="sendResult.kind === 'pr_closed'">
+              <strong>PR is closed.</strong> Ask the student to reopen, then try again.
+            </template>
+            <template v-else-if="sendResult.kind === 'github_auth'">
+              <strong>GitHub authentication expired.</strong>
+              Update your PAT in Settings, then retry.
+            </template>
+            <template v-else>
+              <strong>Send failed.</strong>
+              {{ sendResult.message || 'Unknown error' }}
+            </template>
+          </div>
         </div>
-        <div class="footer-actions">
-          <button
-            @click="onSave"
-            :disabled="!dirty || savingEdits"
-            class="btn-secondary"
-            data-testid="save-btn"
-          >
-            Save
-          </button>
-          <button
-            v-if="store.activeSession.state === 'partial'"
-            @click="onResume"
-            :disabled="sendInFlight"
-            class="btn-primary"
-            data-testid="resume-btn"
-          >
-            {{ sendInFlight ? 'Resuming…' : 'Resume send' }}
-          </button>
-          <button
-            v-else
-            @click="onSend"
-            :disabled="!canSend || sendInFlight"
-            class="btn-primary"
-            data-testid="send-btn"
-          >
-            {{ sendInFlight ? 'Sending…' : 'Send to student' }}
-          </button>
-        </div>
-      </footer>
-
-      <!-- Send-result banners -->
-      <div v-if="sendResult" class="send-result" :class="`result-${sendResult.kind || 'success'}`">
-        <template v-if="sendResult.ok">
-          <strong>Sent.</strong>
-          Posted {{ sendResult.summary?.posted_count || 0 }} comments
-          ({{ sendResult.summary?.skipped_duplicate_count || 0 }} duplicates skipped).
-        </template>
-        <template v-else-if="sendResult.kind === 'partial'">
-          <strong>Partial post.</strong>
-          {{ sendResult.posted_so_far }} comments posted. Click Resume to continue.
-        </template>
-        <template v-else-if="sendResult.kind === 'pr_closed'">
-          <strong>PR is closed.</strong> Ask the student to reopen, then try again.
-        </template>
-        <template v-else-if="sendResult.kind === 'github_auth'">
-          <strong>GitHub authentication expired.</strong>
-          Update your PAT in Settings, then retry.
-        </template>
-        <template v-else>
-          <strong>Send failed.</strong>
-          {{ sendResult.message || 'Unknown error' }}
-        </template>
       </div>
     </div>
-  </div>
   </AppShell>
 </template>
 
@@ -270,6 +300,18 @@ const canSend = computed(() => {
   const st = store.activeSession?.state;
   if (!st) return false;
   return ['drafted', 'reviewing'].includes(st);
+});
+
+const sendResultClass = computed(() => {
+  const r = sendResult.value;
+  if (!r) return '';
+  if (r.ok || !r.kind) {
+    return 'bg-primary-container/15 border border-primary-container/30 text-primary-container';
+  }
+  if (r.kind === 'partial') {
+    return 'bg-tertiary/10 border border-tertiary/30 text-tertiary';
+  }
+  return 'bg-error/10 border border-error/20 text-error';
 });
 
 onMounted(async () => {
@@ -416,338 +458,21 @@ function stateLabel(state: SessionState): string {
   };
   return labels[state] || state;
 }
+
+function stateBadgeClass(state: SessionState): string {
+  switch (state) {
+    case 'drafted':
+      return 'bg-primary/15 text-primary';
+    case 'reviewing':
+      return 'bg-tertiary/20 text-tertiary';
+    case 'posted':
+      return 'bg-primary-container/15 text-primary-container';
+    case 'partial':
+      return 'bg-tertiary/20 text-tertiary';
+    case 'failed':
+      return 'bg-error/15 text-error';
+    default:
+      return 'bg-surface-container text-on-surface-variant';
+  }
+}
 </script>
-
-<style scoped>
-.grading-detail {
-  max-width: 1100px;
-  margin: 0 auto;
-  padding: 1.5rem;
-}
-
-.detail-header {
-  display: flex;
-  align-items: center;
-  gap: 1rem;
-  padding-bottom: 1rem;
-  border-bottom: 1px solid rgb(30 41 59);
-  margin-bottom: 1.5rem;
-}
-
-.header-meta {
-  flex: 1;
-  min-width: 0;
-}
-
-.link {
-  color: rgb(147 197 253);
-  text-decoration: none;
-}
-
-.link:hover {
-  text-decoration: underline;
-}
-
-.state-badge {
-  padding: 0.25rem 0.6rem;
-  border-radius: 0.25rem;
-  font-size: 0.75rem;
-  text-transform: uppercase;
-  letter-spacing: 0.05em;
-  background: rgb(30 41 59);
-  color: rgb(203 213 225);
-}
-
-.state-badge.state-drafted { background: rgb(59 130 246 / 0.2); color: rgb(147 197 253); }
-.state-badge.state-reviewing { background: rgb(234 179 8 / 0.2); color: rgb(253 224 71); }
-.state-badge.state-posted { background: rgb(34 197 94 / 0.2); color: rgb(134 239 172); }
-.state-badge.state-partial { background: rgb(249 115 22 / 0.2); color: rgb(253 186 116); }
-.state-badge.state-failed { background: rgb(239 68 68 / 0.2); color: rgb(252 165 165); }
-
-.btn-ghost {
-  background: transparent;
-  border: none;
-  color: rgb(148 163 184);
-  cursor: pointer;
-  padding: 0.5rem 0.75rem;
-  font-size: 0.9rem;
-}
-
-.btn-ghost:hover {
-  color: rgb(226 232 240);
-}
-
-.btn-ghost-red {
-  background: transparent;
-  border: none;
-  color: rgb(248 113 113);
-  cursor: pointer;
-  font-size: 0.8rem;
-}
-
-.btn-primary {
-  background: rgb(99 102 241);
-  color: white;
-  border: none;
-  padding: 0.6rem 1.2rem;
-  border-radius: 0.375rem;
-  cursor: pointer;
-  font-weight: 500;
-}
-
-.btn-primary:disabled {
-  background: rgb(71 85 105);
-  cursor: not-allowed;
-}
-
-.btn-secondary {
-  background: rgb(30 41 59);
-  border: 1px solid rgb(71 85 105);
-  color: rgb(226 232 240);
-  padding: 0.6rem 1.2rem;
-  border-radius: 0.375rem;
-  cursor: pointer;
-}
-
-.btn-secondary:disabled {
-  opacity: 0.5;
-  cursor: not-allowed;
-}
-
-.info-banner {
-  padding: 0.75rem 1rem;
-  border-radius: 0.5rem;
-  margin-bottom: 1rem;
-}
-
-.info-banner.warning {
-  background: rgb(120 53 15 / 0.3);
-  border: 1px solid rgb(180 83 9);
-  color: rgb(253 186 116);
-}
-
-.error-banner {
-  background: rgb(127 29 29);
-  border: 1px solid rgb(185 28 28);
-  color: rgb(254 226 226);
-  padding: 0.75rem 1rem;
-  border-radius: 0.5rem;
-}
-
-.draft-prompt {
-  padding: 1.5rem;
-  background: rgb(30 41 59);
-  border-radius: 0.5rem;
-  text-align: center;
-  margin-bottom: 1.5rem;
-}
-
-.draft-prompt p {
-  color: rgb(148 163 184);
-  margin-bottom: 0.75rem;
-}
-
-.rubric-section,
-.comments-section,
-.summary-section {
-  margin-bottom: 2rem;
-}
-
-h2 {
-  font-size: 1rem;
-  font-weight: 600;
-  color: rgb(226 232 240);
-  margin-bottom: 0.75rem;
-}
-
-.rubric-grid {
-  display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
-  gap: 0.75rem;
-}
-
-.criterion-card {
-  background: rgb(15 23 42);
-  border: 1px solid rgb(30 41 59);
-  border-radius: 0.5rem;
-  padding: 0.75rem 1rem;
-}
-
-.criterion-header {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 0.5rem;
-  margin-bottom: 0.5rem;
-}
-
-.criterion-name {
-  font-weight: 500;
-  color: rgb(226 232 240);
-}
-
-.score-select {
-  background: rgb(30 41 59);
-  border: 1px solid rgb(51 65 85);
-  color: rgb(226 232 240);
-  padding: 0.3rem 0.5rem;
-  border-radius: 0.25rem;
-  font-size: 0.85rem;
-  max-width: 140px;
-}
-
-.criterion-evidence {
-  font-size: 0.8rem;
-  color: rgb(148 163 184);
-  font-style: italic;
-  margin-top: 0.5rem;
-}
-
-.evidence-label {
-  font-weight: 600;
-  font-style: normal;
-}
-
-.comments-header {
-  display: flex;
-  align-items: center;
-  gap: 1rem;
-  margin-bottom: 0.75rem;
-}
-
-.dirty-indicator {
-  font-size: 0.75rem;
-  color: rgb(253 186 116);
-}
-
-.empty-comments {
-  padding: 1rem;
-  background: rgb(15 23 42);
-  border: 1px dashed rgb(51 65 85);
-  border-radius: 0.5rem;
-  color: rgb(148 163 184);
-  font-size: 0.9rem;
-}
-
-.comment-list {
-  list-style: none;
-  padding: 0;
-  margin: 0;
-  display: flex;
-  flex-direction: column;
-  gap: 0.75rem;
-}
-
-.comment-card {
-  background: rgb(15 23 42);
-  border: 1px solid rgb(30 41 59);
-  border-radius: 0.5rem;
-  padding: 0.75rem;
-}
-
-.comment-meta {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  margin-bottom: 0.5rem;
-}
-
-.comment-location {
-  font-family: ui-monospace, SFMono-Regular, monospace;
-  font-size: 0.8rem;
-  color: rgb(147 197 253);
-  background: rgb(30 41 59);
-  padding: 0.15rem 0.4rem;
-  border-radius: 0.25rem;
-}
-
-.comment-body {
-  width: 100%;
-  background: rgb(2 6 23);
-  border: 1px solid rgb(51 65 85);
-  color: rgb(226 232 240);
-  padding: 0.5rem;
-  border-radius: 0.375rem;
-  font-family: inherit;
-  font-size: 0.9rem;
-  resize: vertical;
-}
-
-.summary-textarea {
-  width: 100%;
-  background: rgb(2 6 23);
-  border: 1px solid rgb(51 65 85);
-  color: rgb(226 232 240);
-  padding: 0.75rem;
-  border-radius: 0.375rem;
-  font-family: inherit;
-  font-size: 0.9rem;
-  resize: vertical;
-}
-
-.detail-footer {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  padding-top: 1.5rem;
-  border-top: 1px solid rgb(30 41 59);
-  margin-top: 1.5rem;
-}
-
-.footer-meta {
-  color: rgb(148 163 184);
-  font-size: 0.875rem;
-}
-
-.footer-actions {
-  display: flex;
-  gap: 0.75rem;
-}
-
-.send-result {
-  margin-top: 1rem;
-  padding: 0.75rem 1rem;
-  border-radius: 0.5rem;
-  font-size: 0.9rem;
-}
-
-.send-result.result-success,
-.send-result:not([class*="result-"]) {
-  background: rgb(22 101 52 / 0.3);
-  border: 1px solid rgb(34 197 94);
-  color: rgb(187 247 208);
-}
-
-.send-result.result-partial {
-  background: rgb(154 52 18 / 0.3);
-  border: 1px solid rgb(234 88 12);
-  color: rgb(254 215 170);
-}
-
-.send-result.result-pr_closed,
-.send-result.result-github_auth,
-.send-result.result-github_failed,
-.send-result.result-network {
-  background: rgb(127 29 29 / 0.3);
-  border: 1px solid rgb(185 28 28);
-  color: rgb(254 202 202);
-}
-
-.skeleton-detail {
-  display: flex;
-  flex-direction: column;
-  gap: 0.5rem;
-}
-
-.skeleton-row {
-  height: 3rem;
-  background: rgb(30 41 59);
-  border-radius: 0.5rem;
-  animation: pulse 1.4s ease-in-out infinite;
-}
-
-@keyframes pulse {
-  0%, 100% { opacity: 1; }
-  50% { opacity: 0.6; }
-}
-</style>
