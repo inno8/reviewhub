@@ -48,6 +48,7 @@ from grading.models import (
     Course,
     GradingSession,
     Submission,
+    SubmissionContributor,
     WebhookDelivery,
 )
 
@@ -80,39 +81,42 @@ def _parse_repo_url(repo_url: str) -> tuple[str, str] | None:
         return None
 
 
-def _membership_for_pr(
+def _memberships_for_pr(
     repo_full_name: str,
     author_login: str,
-) -> CohortMembership | None:
+) -> list[CohortMembership]:
     """
-    Match an incoming PR to a CohortMembership (student→cohort).
+    Match an incoming PR to ALL relevant CohortMemberships (Workstream G).
 
-    Match rules (in order, first match wins):
-      1. Explicit repo_url match: CohortMembership.student_repo_url
-         contains the PR's repo_full_name. Most common — the teacher
-         configured "this student's repo is github.com/jan/assignment-q3".
-      2. Student-owned repo fallback: the repo owner equals the PR author
-         AND the author's GitHub handle matches a GitProviderConnection.
-         Covers the case where the student created a new repo ad-hoc and
-         the teacher hasn't updated CohortMembership yet. Requires
-         repo_owner == author_login so we don't accidentally match PRs
-         the student pushed to someone else's repo.
+    Shared-repo support: an MBO-4 ICT group often shares ONE repo. Instead of
+    first-match-wins, we return the full list of matched cohort members so
+    the webhook can attach all of them as Submission.contributors.
+
+    Match rules:
+      1. Explicit repo_url match: every non-removed CohortMembership whose
+         `student_repo_url` contains the PR's repo_full_name. For solo repos,
+         this is 1 member; for group repos, it's 2+.
+      2. If rule 1 returns zero, fall back to the author→GitProviderConnection
+         rule (single student who owns the repo ad-hoc). Only when the repo
+         is owned by the PR author.
+      3. If still empty, return [] — caller emits matched=false.
     """
-    # Rule 1: explicit repo_url match
-    membership = (
+    # Rule 1: explicit repo_url match — ALL matching memberships.
+    qs = (
         CohortMembership.objects
         .filter(student_repo_url__icontains=repo_full_name)
+        .filter(removed_at__isnull=True)
         .select_related("student", "cohort")
-        .first()
+        .order_by("student__email")  # deterministic tiebreak
     )
-    if membership:
-        return membership
+    members = list(qs)
+    if members:
+        return members
 
-    # Rule 2: repo-owner-is-author fallback
-    # Only match if the repo is OWNED by the PR author (student's own repo).
+    # Rule 2: repo-owner-is-author fallback — single-student path.
     repo_owner = (repo_full_name.split("/", 1)[0] or "").strip()
     if not repo_owner or repo_owner.lower() != (author_login or "").lower():
-        return None
+        return []
 
     from users.models import GitProviderConnection
     conn = (
@@ -122,13 +126,45 @@ def _membership_for_pr(
         .first()
     )
     if not conn:
-        return None
-    return (
+        return []
+    m = (
         CohortMembership.objects
-        .filter(student=conn.user)
+        .filter(student=conn.user, removed_at__isnull=True)
         .select_related("student", "cohort")
         .first()
     )
+    return [m] if m else []
+
+
+def _pick_primary_author(
+    memberships: list[CohortMembership],
+    author_login: str,
+) -> CohortMembership:
+    """
+    Pick the primary author among matched cohort members.
+
+    Rule: if the PR author's GitHub login maps (via GitProviderConnection)
+    to one of the members, that member is primary. Otherwise the first
+    member sorted alphabetically by email (deterministic fallback).
+    """
+    if not memberships:
+        raise ValueError("_pick_primary_author called with empty memberships")
+
+    from users.models import GitProviderConnection
+    if author_login:
+        conn = (
+            GitProviderConnection.objects
+            .filter(provider="github", username__iexact=author_login)
+            .values_list("user_id", flat=True)
+            .first()
+        )
+        if conn:
+            for m in memberships:
+                if m.student_id == conn:
+                    return m
+
+    # Deterministic fallback: alphabetical by email.
+    return sorted(memberships, key=lambda m: (m.student.email or "").lower())[0]
 
 
 def _course_for_membership(membership: CohortMembership) -> Course | None:
@@ -152,16 +188,24 @@ def _course_for_membership(membership: CohortMembership) -> Course | None:
 
 def _upsert_submission_and_session(
     *,
-    membership: CohortMembership,
+    memberships: list[CohortMembership],
+    primary: CohortMembership,
     course: Course,
     pr_payload: dict,
     repo_full_name: str,
 ) -> tuple[Submission, GradingSession, bool]:
     """
     Create-or-update the Submission for this PR and ensure a GradingSession
-    exists. Returns (submission, session, created_new_session).
+    exists. Attaches ALL matched cohort members as SubmissionContributor
+    rows (shared-repo / Workstream G).
+
+    Returns (submission, session, created_new_session).
+
+    v1 note: contribution_fraction is an equal split across matched members.
+    Commit-level attribution (mapping commit authors → Users via
+    GitProviderConnection → lines_changed) is v1.1 work — requires a new
+    github-api fetcher that isn't in scope for this workstream.
     """
-    student = membership.student
     pr_number = int(pr_payload.get("number", 0))
     pr_state = pr_payload.get("state", "open")
     pr_merged = bool(pr_payload.get("merged", False))
@@ -178,7 +222,7 @@ def _upsert_submission_and_session(
             pr_number=pr_number,
             defaults={
                 "org": course.org,
-                "student": student,
+                "student": primary.student,
                 "pr_url": pr_payload.get("html_url", ""),
                 "pr_title": (pr_payload.get("title") or "")[:500],
                 "base_branch": pr_payload.get("base", {}).get("ref", "main"),
@@ -186,6 +230,9 @@ def _upsert_submission_and_session(
                 "status": status,
             },
         )
+
+        # Ensure contributor rows exist for every matched member.
+        _sync_contributors(submission, memberships, primary)
 
         # Ensure GradingSession exists (one per Submission, OneToOne)
         course_rubric = course.rubric
@@ -206,6 +253,38 @@ def _upsert_submission_and_session(
         )
 
     return submission, session, created
+
+
+def _sync_contributors(
+    submission: Submission,
+    memberships: list[CohortMembership],
+    primary: CohortMembership,
+) -> None:
+    """
+    Create SubmissionContributor rows for every matched member.
+
+    v1 equal-split: `contribution_fraction = 1/N` for N contributors.
+    Upgrade path (v1.1): fetch PR commits, group by commit author login,
+    map login → User via GitProviderConnection, compute lines_changed
+    per author, set fractions from that.
+
+    Idempotent — re-running on the same PR leaves existing rows alone
+    (update_or_create keyed on (submission, user)). Fractions get
+    rewritten so a new contributor joining triggers a rebalance.
+    """
+    n = max(1, len(memberships))
+    equal_fraction = round(1.0 / n, 6)
+    for m in memberships:
+        SubmissionContributor.objects.update_or_create(
+            submission=submission,
+            user=m.student,
+            defaults={
+                "is_primary_author": (m.student_id == primary.student_id),
+                "contribution_fraction": equal_fraction,
+                # lines_changed / commits_count stay 0 at webhook time —
+                # filled in by a future commit-attribution fetcher.
+            },
+        )
 
 
 # ── the view ─────────────────────────────────────────────────────────
@@ -273,8 +352,8 @@ def github_webhook(request):
     if not repo_full_name:
         return HttpResponseBadRequest("missing repository.full_name")
 
-    membership = _membership_for_pr(repo_full_name, author_login)
-    if not membership:
+    memberships = _memberships_for_pr(repo_full_name, author_login)
+    if not memberships:
         # Not an error — just a repo we don't track yet.
         log.info("webhook: no cohort match for %s (author=%s)", repo_full_name, author_login)
         return JsonResponse(
@@ -289,12 +368,15 @@ def github_webhook(request):
             status=200,
         )
 
-    # Pick a Course within the cohort for this Submission.
-    course = _course_for_membership(membership)
+    primary = _pick_primary_author(memberships, author_login)
+
+    # Pick a Course within the primary's cohort for this Submission.
+    # (All members in a shared repo usually belong to the same cohort.)
+    course = _course_for_membership(primary)
     if course is None:
         log.info(
             "webhook: cohort %s has no courses; skipping (add a course first)",
-            membership.cohort_id,
+            primary.cohort_id,
         )
         return JsonResponse(
             {
@@ -303,17 +385,18 @@ def github_webhook(request):
                 "submission_id": None,
                 "session_id": None,
                 "session_created": False,
-                "cohort": membership.cohort.name,
-                "student": membership.student.email,
+                "cohort": primary.cohort.name,
+                "student": primary.student.email,
                 "message": "Cohort has no courses; add a course before submissions can land.",
             },
             status=200,
         )
 
-    # 6. Upsert Submission + GradingSession.
+    # 6. Upsert Submission + GradingSession + Contributors.
     try:
         submission, session, created = _upsert_submission_and_session(
-            membership=membership,
+            memberships=memberships,
+            primary=primary,
             course=course,
             pr_payload=pr,
             repo_full_name=repo_full_name,
@@ -330,9 +413,11 @@ def github_webhook(request):
             "submission_id": submission.id,
             "session_id": session.id if session else None,
             "session_created": created,
-            "cohort": membership.cohort.name,
+            "cohort": primary.cohort.name,
             "course": course.name,
-            "student": membership.student.email,
+            "student": primary.student.email,
+            "contributors": [m.student.email for m in memberships],
+            "contributor_count": len(memberships),
         },
         status=200,
     )

@@ -19,6 +19,7 @@ from .models import (
     Rubric,
     SessionEvaluation,
     Submission,
+    SubmissionContributor,
     WebhookDelivery,
 )
 
@@ -84,6 +85,17 @@ class GradingSessionAdmin(admin.ModelAdmin):
 @admin.register(SessionEvaluation)
 class SessionEvaluationAdmin(admin.ModelAdmin):
     list_display = ("grading_session", "evaluation", "included_in_draft")
+
+
+@admin.register(SubmissionContributor)
+class SubmissionContributorAdmin(admin.ModelAdmin):
+    list_display = (
+        "id", "submission", "user", "is_primary_author",
+        "contribution_fraction", "lines_changed", "commits_count", "attached_at",
+    )
+    list_filter = ("is_primary_author",)
+    search_fields = ("user__email", "submission__repo_full_name")
+    readonly_fields = ("attached_at",)
 
 
 @admin.register(PostedComment)

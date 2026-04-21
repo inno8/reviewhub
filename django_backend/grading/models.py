@@ -344,6 +344,18 @@ class Submission(models.Model):
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
 
+    contributors = models.ManyToManyField(
+        settings.AUTH_USER_MODEL,
+        through="SubmissionContributor",
+        related_name="contributed_submissions",
+        help_text=(
+            "All students who contributed to this PR's shared repo. "
+            "For solo repos, exactly one contributor (== student). "
+            "For group projects (shared repo), the full cohort-member list. "
+            "See Workstream G of Nakijken Copilot v1."
+        ),
+    )
+
     objects = OrgScopedManager()
 
     class Meta:
@@ -689,3 +701,66 @@ class LLMCostLog(models.Model):
 
     def __str__(self) -> str:
         return f"{self.tier}:{self.model_name} €{self.cost_eur} by {self.docent_id}"
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# SubmissionContributor — shared-repo support (Workstream G)
+# ─────────────────────────────────────────────────────────────────────────────
+class SubmissionContributor(models.Model):
+    """
+    Through-model attaching contributors to a Submission (PR).
+
+    Shared-repo (group-project) support for MBO-4 ICT cohorts where students
+    often hand in ONE GitHub repo for a group assignment. One Submission →
+    one grade → one set of GitHub comments, but every contributor gets
+    per-student skill credit proportional to what THEY wrote.
+
+    `contribution_fraction` is 0.0-1.0 and (across all contributors on a
+    Submission) should sum to ~1.0. For solo repos this row is created
+    automatically with fraction=1.0 and is_primary_author=True.
+
+    For group repos the webhook creates one row per matched cohort member
+    (equal split fallback), and a future enhancement will refine fractions
+    by fetching per-commit author line counts.
+    """
+
+    submission = models.ForeignKey(
+        Submission,
+        on_delete=models.CASCADE,
+        related_name="contributor_links",
+    )
+    user = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.CASCADE,
+        related_name="submission_contributions",
+    )
+    lines_changed = models.IntegerField(
+        default=0,
+        help_text="Total lines added+removed in this contributor's commits on the PR.",
+    )
+    commits_count = models.IntegerField(default=0)
+    contribution_fraction = models.FloatField(
+        default=0.0,
+        help_text="0.0-1.0, lines_changed / total_lines_changed across all contributors.",
+    )
+    is_primary_author = models.BooleanField(
+        default=False,
+        help_text="True for the PR author (Submission.student). False for co-contributors.",
+    )
+    attached_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        db_table = "grading_submission_contributors"
+        constraints = [
+            models.UniqueConstraint(
+                fields=["submission", "user"], name="uniq_sub_contrib"
+            ),
+        ]
+        indexes = [
+            models.Index(fields=["user", "-attached_at"]),
+        ]
+        ordering = ["-is_primary_author", "-contribution_fraction", "user_id"]
+
+    def __str__(self) -> str:
+        tag = "primary" if self.is_primary_author else "contributor"
+        return f"{self.user_id} @ sub#{self.submission_id} [{tag} {self.contribution_fraction:.2f}]"

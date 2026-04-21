@@ -14,3 +14,18 @@ class GradingConfig(AppConfig):
     default_auto_field = "django.db.models.BigAutoField"
     name = "grading"
     verbose_name = "Grading (Nakijken Copilot)"
+
+    def ready(self):
+        # Workstream G: connect the SkillObservation post_save handler
+        # that fans out primary-author observations to all contributors
+        # of a shared-repo Submission.
+        try:
+            from grading.signals import connect_signals
+            connect_signals()
+        except Exception:
+            # App-registry edge cases during manage.py commands; don't
+            # prevent startup if the skills app isn't yet installed.
+            import logging
+            logging.getLogger(__name__).warning(
+                "grading.signals could not be connected yet", exc_info=True,
+            )

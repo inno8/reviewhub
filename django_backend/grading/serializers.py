@@ -26,7 +26,30 @@ from .models import (
     Rubric,
     SessionEvaluation,
     Submission,
+    SubmissionContributor,
 )
+
+
+class SubmissionContributorSerializer(serializers.ModelSerializer):
+    """Lean shape used inside SubmissionSerializer / GradingSessionDetailSerializer."""
+
+    user_email = serializers.EmailField(source="user.email", read_only=True)
+    user_name = serializers.CharField(source="user.display_name", read_only=True)
+
+    class Meta:
+        model = SubmissionContributor
+        fields = [
+            "id",
+            "user",
+            "user_email",
+            "user_name",
+            "lines_changed",
+            "commits_count",
+            "contribution_fraction",
+            "is_primary_author",
+            "attached_at",
+        ]
+        read_only_fields = fields
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -209,6 +232,7 @@ class SubmissionSerializer(serializers.ModelSerializer):
     student_email = serializers.EmailField(source="student.email", read_only=True)
     course_name = serializers.CharField(source="course.name", read_only=True)
     has_grading_session = serializers.SerializerMethodField()
+    contributor_links = SubmissionContributorSerializer(many=True, read_only=True)
 
     class Meta:
         model = Submission
@@ -228,6 +252,7 @@ class SubmissionSerializer(serializers.ModelSerializer):
             "status",
             "due_at",
             "has_grading_session",
+            "contributor_links",
             "created_at",
             "updated_at",
         ]
@@ -237,6 +262,7 @@ class SubmissionSerializer(serializers.ModelSerializer):
             "course_name",
             "student_email",
             "has_grading_session",
+            "contributor_links",
             "created_at",
             "updated_at",
         ]
@@ -314,6 +340,7 @@ class GradingSessionDetailSerializer(serializers.ModelSerializer):
     pr_title = serializers.CharField(source="submission.pr_title", read_only=True)
     rubric_snapshot = serializers.SerializerMethodField()
     posted_comments = PostedCommentSerializer(many=True, read_only=True)
+    contributors = serializers.SerializerMethodField()
 
     class Meta:
         model = GradingSession
@@ -342,6 +369,7 @@ class GradingSessionDetailSerializer(serializers.ModelSerializer):
             "posted_at",
             "partial_post_error",
             "posted_comments",
+            "contributors",
             "created_at",
             "updated_at",
         ]
@@ -365,9 +393,15 @@ class GradingSessionDetailSerializer(serializers.ModelSerializer):
             "posted_at",
             "partial_post_error",
             "posted_comments",
+            "contributors",
             "created_at",
             "updated_at",
         ]
+
+    def get_contributors(self, obj) -> list[dict]:
+        """All SubmissionContributor rows for the PR — the full group roster."""
+        links = obj.submission.contributor_links.select_related("user").all()
+        return SubmissionContributorSerializer(links, many=True).data
 
     def get_rubric_snapshot(self, obj) -> dict:
         """Denormalized rubric data so the frontend doesn't need a second round-trip."""
