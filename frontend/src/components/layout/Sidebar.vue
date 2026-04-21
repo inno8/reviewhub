@@ -62,10 +62,10 @@ const navItems = [
   { name: 'My Profile', icon: 'psychology', path: '/dev-profile/results', studentOnly: true },
 
   // Teacher experience (the grading loop).
-  // Also visible to school admins + platform ops so they can land on the
-  // grading surface from the sidebar instead of fishing for a URL.
+  // School admins can land here to oversee teacher work.
+  // Super admin / platform ops do NOT grade PRs — that's per-org teacher work.
   { name: 'Grading Inbox', icon: 'rate_review', path: '/grading',
-    teacherOnly: true, schoolAdminOnly: true, opsOnly: true },
+    teacherOnly: true, schoolAdminOnly: true },
 
   // School admin experience (org governance).
   // Single unified members view replaces the old /team + /org-dashboard split.
