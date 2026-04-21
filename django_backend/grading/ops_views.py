@@ -25,7 +25,9 @@ from rest_framework import permissions, views
 from rest_framework.response import Response
 
 from .models import Cohort, CohortMembership, Course, GradingSession, LLMCostLog
+from .permissions import _is_admin
 from .services.cost_metering import WEEKLY_COST_ALERT_EUR
+from .services.metrics import compute_weekly_metrics, parse_period
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -323,3 +325,54 @@ class OpsLLMCallLogView(views.APIView):
             for r in qs[:limit]
         ]
         return Response({"count": len(rows), "results": rows})
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Workstream I1 — passive weekly metrics
+# ─────────────────────────────────────────────────────────────────────────────
+class IsOrgAdminOrSuperuser(permissions.BasePermission):
+    """Org admin OR superuser. Wider than IsSuperuser for the weekly report."""
+
+    message = "Organization admin (or superuser) required."
+
+    def has_permission(self, request, view) -> bool:
+        return _is_admin(request.user)
+
+
+class OpsWeeklyMetricsView(views.APIView):
+    """
+    GET /api/grading/ops/metrics/weekly/?start=YYYY-MM-DD&end=YYYY-MM-DD
+
+    Per-org, per-cohort teacher activity + cost signals for the period.
+    Admins see only their own org; superusers see all orgs.
+
+    Defaults to last 7 days ending today if params omitted.
+    """
+
+    permission_classes = [IsOrgAdminOrSuperuser]
+
+    def get(self, request):
+        from rest_framework.exceptions import ValidationError
+
+        try:
+            start, end = parse_period(
+                request.query_params.get("start"),
+                request.query_params.get("end"),
+            )
+        except ValueError as exc:
+            raise ValidationError(
+                {"detail": f"Invalid date: {exc}. Expected YYYY-MM-DD."},
+            )
+
+        if start > end:
+            raise ValidationError({"detail": "start must be <= end."})
+
+        user = request.user
+        if getattr(user, "is_superuser", False):
+            org_ids = None  # all orgs
+        else:
+            org_id = getattr(user, "organization_id", None)
+            org_ids = [org_id] if org_id else []
+
+        report = compute_weekly_metrics(start, end, org_ids=org_ids)
+        return Response(report)

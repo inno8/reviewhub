@@ -27,6 +27,12 @@ urlpatterns = router.urls + [
     path("ops/courses/", ops_views.OpsCoursesView.as_view(), name="ops-courses"),
     path("ops/teachers/", ops_views.OpsTeacherCostsView.as_view(), name="ops-teachers"),
     path("ops/llm-log/", ops_views.OpsLLMCallLogView.as_view(), name="ops-llm-log"),
+    # Workstream I1 — passive weekly metrics (admin + superuser)
+    path(
+        "ops/metrics/weekly/",
+        ops_views.OpsWeeklyMetricsView.as_view(),
+        name="ops-weekly-metrics",
+    ),
     # Workstream D — student-intelligence (teacher-facing)
     path(
         "students/<int:student_id>/snapshot/",
