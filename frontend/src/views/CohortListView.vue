@@ -10,6 +10,7 @@
 import { ref, onMounted } from 'vue';
 import { useRouter } from 'vue-router';
 import { api } from '@/composables/useApi';
+import AppShell from '@/components/layout/AppShell.vue';
 
 interface Cohort {
   id: number;
@@ -88,284 +89,162 @@ onMounted(load);
 </script>
 
 <template>
-  <div class="cohort-list">
-    <header class="page-header">
-      <div>
-        <h1>Cohorts</h1>
-        <p class="muted">Groups of students. Courses belong to a cohort.</p>
-      </div>
-      <div class="header-actions">
-        <label class="archived-toggle">
-          <input type="checkbox" v-model="includeArchived" @change="load" />
-          Include archived
-        </label>
-        <button class="btn-primary" @click="showCreate = true" data-testid="new-cohort-btn">
-          + New cohort
-        </button>
-      </div>
-    </header>
+  <AppShell>
+    <div class="p-8 flex-1">
+      <div class="max-w-6xl mx-auto">
+        <header class="flex flex-wrap gap-4 justify-between items-end mb-8">
+          <div>
+            <h1 class="text-4xl font-extrabold text-on-surface tracking-tight">Cohorts</h1>
+            <p class="text-on-surface-variant mt-2 max-w-xl">
+              Groups of students. Courses belong to a cohort.
+            </p>
+          </div>
+          <div class="flex items-center gap-3">
+            <label class="flex items-center gap-2 text-xs text-on-surface-variant cursor-pointer">
+              <input
+                type="checkbox"
+                v-model="includeArchived"
+                @change="load"
+                class="h-4 w-4 rounded border-outline-variant bg-surface-container text-primary"
+              />
+              Include archived
+            </label>
+            <button
+              @click="showCreate = true"
+              class="primary-gradient text-on-primary px-5 py-2.5 rounded-lg font-bold flex items-center gap-2 shadow-lg shadow-primary/10 hover:shadow-primary/20 transition-all active:scale-95"
+              data-testid="new-cohort-btn"
+            >
+              <span class="material-symbols-outlined text-sm">add</span>
+              New cohort
+            </button>
+          </div>
+        </header>
 
-    <div v-if="loading" class="loading">Loading cohorts…</div>
-    <div v-else-if="error" class="error-banner">{{ error }}</div>
-    <div v-else-if="!cohorts.length" class="empty">
-      <p>No cohorts yet. Create one to start grouping students and courses.</p>
-    </div>
-    <div v-else class="cohort-grid">
-      <div
-        v-for="c in cohorts"
-        :key="c.id"
-        class="cohort-card"
-        :class="{ archived: c.archived_at }"
-        @click="openCohort(c)"
-        data-testid="cohort-card"
-      >
-        <div class="card-head">
-          <h2>{{ c.name }}</h2>
-          <span v-if="c.archived_at" class="badge archived-badge">Archived</span>
+        <div v-if="loading" class="p-12 text-center text-outline">
+          <span class="material-symbols-outlined animate-spin text-2xl text-primary">progress_activity</span>
+          <p class="mt-2 text-sm">Loading cohorts…</p>
         </div>
-        <div class="card-meta">
-          <span v-if="c.year" class="pill">Year {{ c.year }}</span>
-          <span class="pill">{{ c.student_count }} students</span>
-          <span class="pill">{{ c.course_count }} courses</span>
+        <div
+          v-else-if="error"
+          class="bg-error/10 border border-error/20 text-error rounded-lg px-4 py-3 text-sm"
+        >
+          {{ error }}
         </div>
-        <div class="card-actions" v-if="!c.archived_at">
-          <button
-            class="btn-ghost btn-danger"
-            @click.stop="archiveCohort(c)"
-            data-testid="archive-btn"
+        <div
+          v-else-if="!cohorts.length"
+          class="p-12 text-center text-outline text-sm bg-surface-container-low rounded-xl border border-outline-variant/10"
+        >
+          <span class="material-symbols-outlined text-3xl mb-2 block opacity-40">groups_2</span>
+          No cohorts yet. Create one to start grouping students and courses.
+        </div>
+        <div v-else class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
+          <div
+            v-for="c in cohorts"
+            :key="c.id"
+            class="bg-surface-container-low rounded-xl border border-outline-variant/10 p-5 cursor-pointer hover:border-primary/40 transition-colors"
+            :class="{ 'opacity-55': c.archived_at }"
+            @click="openCohort(c)"
+            data-testid="cohort-card"
           >
-            Archive
+            <div class="flex justify-between items-baseline mb-3">
+              <h2 class="text-base font-bold text-on-surface m-0">{{ c.name }}</h2>
+              <span
+                v-if="c.archived_at"
+                class="px-2 py-0.5 rounded-full text-[10px] font-bold uppercase tracking-wider bg-on-surface-variant/10 text-on-surface-variant border border-outline-variant/20"
+              >
+                Archived
+              </span>
+            </div>
+            <div class="flex flex-wrap gap-2 mb-3">
+              <span
+                v-if="c.year"
+                class="px-2 py-0.5 rounded-md text-[11px] font-medium bg-surface-container text-on-surface-variant"
+              >
+                Year {{ c.year }}
+              </span>
+              <span class="px-2 py-0.5 rounded-md text-[11px] font-medium bg-surface-container text-on-surface-variant">
+                {{ c.student_count }} students
+              </span>
+              <span class="px-2 py-0.5 rounded-md text-[11px] font-medium bg-surface-container text-on-surface-variant">
+                {{ c.course_count }} courses
+              </span>
+            </div>
+            <div
+              v-if="!c.archived_at"
+              class="flex gap-2 border-t border-outline-variant/10 pt-3 mt-2"
+            >
+              <button
+                class="text-xs text-error hover:text-error/80 font-semibold transition-colors"
+                @click.stop="archiveCohort(c)"
+                data-testid="archive-btn"
+              >
+                Archive
+              </button>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Create modal -->
+    <div
+      v-if="showCreate"
+      class="fixed inset-0 z-[100] flex items-center justify-center p-6 bg-background/80 backdrop-blur-sm"
+      @click.self="showCreate = false"
+    >
+      <div class="glass-panel w-full max-w-md rounded-xl overflow-hidden shadow-2xl">
+        <div class="px-6 py-4 border-b border-outline-variant/10 flex justify-between items-center">
+          <h2 class="text-lg font-bold text-on-surface m-0">New cohort</h2>
+          <button
+            class="text-outline hover:text-on-surface transition-colors"
+            @click="showCreate = false"
+          >
+            <span class="material-symbols-outlined">close</span>
           </button>
         </div>
-      </div>
-    </div>
-
-    <!-- Create modal (minimal inline) -->
-    <div v-if="showCreate" class="modal-backdrop" @click.self="showCreate = false">
-      <div class="modal">
-        <h2>New cohort</h2>
-        <form @submit.prevent="createCohort" class="form">
-          <label>
-            Name
+        <form @submit.prevent="createCohort" class="p-6 space-y-4">
+          <div class="space-y-1.5">
+            <label class="text-xs font-bold uppercase tracking-widest text-outline">Name</label>
             <input
               v-model="createForm.name"
               placeholder="2025 Software Track"
               data-testid="cohort-name-input"
               required
+              class="w-full bg-surface-container-lowest border-none rounded-lg text-on-surface placeholder:text-outline/40 focus:ring-1 focus:ring-primary/50 py-3 px-4"
             />
-          </label>
-          <label>
-            Year (optional)
+          </div>
+          <div class="space-y-1.5">
+            <label class="text-xs font-bold uppercase tracking-widest text-outline">Year (optional)</label>
             <input
               v-model.number="createForm.year"
               type="number"
               placeholder="2025"
               min="2000"
               max="2100"
+              class="w-full bg-surface-container-lowest border-none rounded-lg text-on-surface placeholder:text-outline/40 focus:ring-1 focus:ring-primary/50 py-3 px-4"
             />
-          </label>
-          <p v-if="createError" class="error-inline">{{ createError }}</p>
-          <div class="form-actions">
-            <button type="button" class="btn-ghost" @click="showCreate = false">
+          </div>
+          <p v-if="createError" class="text-sm text-error">{{ createError }}</p>
+          <div class="flex gap-3 pt-2">
+            <button
+              type="button"
+              class="flex-1 py-3 bg-surface-container-highest text-on-surface font-bold rounded-lg hover:bg-outline-variant transition-colors"
+              @click="showCreate = false"
+            >
               Cancel
             </button>
-            <button type="submit" class="btn-primary" :disabled="creating" data-testid="submit-cohort">
+            <button
+              type="submit"
+              :disabled="creating"
+              data-testid="submit-cohort"
+              class="flex-1 primary-gradient text-on-primary font-bold py-3 rounded-lg disabled:opacity-50 transition-all active:scale-95 shadow-lg shadow-primary/20"
+            >
               {{ creating ? 'Creating…' : 'Create cohort' }}
             </button>
           </div>
         </form>
       </div>
     </div>
-  </div>
+  </AppShell>
 </template>
 
-<style scoped>
-.cohort-list {
-  max-width: 1200px;
-  margin: 0 auto;
-  padding: 1.5rem;
-  color: rgb(226 232 240);
-}
-
-.page-header {
-  display: flex;
-  justify-content: space-between;
-  align-items: flex-start;
-  margin-bottom: 1.5rem;
-  gap: 1rem;
-}
-.page-header h1 {
-  font-size: 1.5rem;
-  font-weight: 600;
-  color: rgb(241 245 249);
-  margin: 0;
-}
-.muted {
-  color: rgb(148 163 184);
-  font-size: 0.85rem;
-  margin: 0.25rem 0 0 0;
-}
-
-.header-actions {
-  display: flex;
-  gap: 0.8rem;
-  align-items: center;
-}
-.archived-toggle {
-  font-size: 0.8rem;
-  color: rgb(148 163 184);
-  display: flex;
-  gap: 0.4rem;
-  align-items: center;
-  cursor: pointer;
-}
-
-.btn-primary {
-  background: rgb(59 130 246);
-  color: white;
-  border: none;
-  padding: 0.5rem 1rem;
-  border-radius: 0.4rem;
-  font-size: 0.85rem;
-  cursor: pointer;
-  font-weight: 500;
-}
-.btn-primary:hover { background: rgb(37 99 235); }
-.btn-primary:disabled { opacity: 0.5; cursor: not-allowed; }
-
-.btn-ghost {
-  background: transparent;
-  border: 1px solid rgb(51 65 85);
-  color: rgb(203 213 225);
-  padding: 0.35rem 0.8rem;
-  border-radius: 0.35rem;
-  font-size: 0.8rem;
-  cursor: pointer;
-}
-.btn-ghost:hover { background: rgb(30 41 59); }
-.btn-ghost.btn-danger { color: rgb(252 165 165); border-color: rgb(127 29 29); }
-.btn-ghost.btn-danger:hover { background: rgb(127 29 29 / 0.3); }
-
-.loading, .empty {
-  text-align: center;
-  padding: 3rem 1rem;
-  color: rgb(148 163 184);
-}
-.error-banner {
-  background: rgb(239 68 68 / 0.08);
-  border: 1px solid rgb(239 68 68 / 0.3);
-  color: rgb(252 165 165);
-  border-radius: 0.5rem;
-  padding: 0.8rem 1rem;
-}
-
-.cohort-grid {
-  display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
-  gap: 1rem;
-}
-.cohort-card {
-  background: rgb(15 23 42);
-  border: 1px solid rgb(30 41 59);
-  border-radius: 0.75rem;
-  padding: 1rem 1.1rem;
-  cursor: pointer;
-  transition: border-color 0.15s;
-}
-.cohort-card:hover { border-color: rgb(59 130 246 / 0.5); }
-.cohort-card.archived { opacity: 0.55; }
-
-.card-head {
-  display: flex;
-  justify-content: space-between;
-  align-items: baseline;
-  margin-bottom: 0.6rem;
-}
-.card-head h2 {
-  font-size: 1rem;
-  font-weight: 600;
-  color: rgb(241 245 249);
-  margin: 0;
-}
-
-.badge, .pill {
-  display: inline-block;
-  padding: 0.15rem 0.5rem;
-  border-radius: 0.3rem;
-  font-size: 0.7rem;
-  font-weight: 500;
-}
-.archived-badge {
-  background: rgb(100 116 139 / 0.3);
-  color: rgb(203 213 225);
-}
-.card-meta { display: flex; gap: 0.4rem; flex-wrap: wrap; margin-bottom: 0.6rem; }
-.pill {
-  background: rgb(30 41 59);
-  color: rgb(203 213 225);
-}
-
-.card-actions {
-  display: flex;
-  gap: 0.4rem;
-  border-top: 1px solid rgb(30 41 59 / 0.5);
-  padding-top: 0.6rem;
-  margin-top: 0.4rem;
-}
-
-/* Modal */
-.modal-backdrop {
-  position: fixed;
-  inset: 0;
-  background: rgba(0, 0, 0, 0.6);
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  z-index: 50;
-}
-.modal {
-  background: rgb(15 23 42);
-  border: 1px solid rgb(30 41 59);
-  border-radius: 0.75rem;
-  padding: 1.5rem;
-  width: min(440px, 90vw);
-  color: rgb(226 232 240);
-}
-.modal h2 {
-  font-size: 1.1rem;
-  font-weight: 600;
-  color: rgb(241 245 249);
-  margin: 0 0 1rem 0;
-}
-
-.form { display: flex; flex-direction: column; gap: 0.8rem; }
-.form label {
-  display: flex;
-  flex-direction: column;
-  gap: 0.3rem;
-  font-size: 0.8rem;
-  color: rgb(148 163 184);
-}
-.form input {
-  background: rgb(30 41 59);
-  border: 1px solid rgb(51 65 85);
-  border-radius: 0.35rem;
-  padding: 0.5rem 0.6rem;
-  color: rgb(226 232 240);
-  font-size: 0.85rem;
-}
-.form input:focus { outline: none; border-color: rgb(59 130 246); }
-
-.form-actions {
-  display: flex;
-  justify-content: flex-end;
-  gap: 0.6rem;
-  margin-top: 0.6rem;
-}
-
-.error-inline {
-  color: rgb(252 165 165);
-  font-size: 0.8rem;
-  margin: 0;
-}
-</style>

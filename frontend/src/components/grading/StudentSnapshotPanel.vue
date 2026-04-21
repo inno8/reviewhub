@@ -169,117 +169,158 @@ function formatPatternKey(key: string): string {
 </script>
 
 <template>
-  <aside class="snapshot-panel" data-testid="student-snapshot">
-    <header class="panel-header">
-      <h3>Student snapshot</h3>
+  <aside
+    class="bg-surface-container-low rounded-xl border border-outline-variant/10 p-6 flex flex-col gap-5"
+    data-testid="student-snapshot"
+  >
+    <header class="flex justify-between items-center border-b border-outline-variant/10 pb-4">
+      <h3 class="text-base font-bold text-on-surface m-0">Student snapshot</h3>
       <router-link
         v-if="profileLink && data?.student.id"
         :to="{ name: 'grading-student-profile', params: { id: data.student.id } }"
-        class="link"
+        class="text-xs text-primary hover:underline"
         data-testid="snapshot-profile-link"
       >
         Full profile →
       </router-link>
     </header>
 
-    <div v-if="loading" class="loading">Loading snapshot…</div>
-    <div v-else-if="error" class="error-banner">{{ error }}</div>
-    <div v-else-if="data" class="panel-body">
+    <div v-if="loading" class="text-sm text-outline text-center py-4">Loading snapshot…</div>
+    <div
+      v-else-if="error"
+      class="bg-error/10 border border-error/20 text-error rounded-lg px-4 py-3 text-sm"
+    >
+      {{ error }}
+    </div>
+    <div v-else-if="data" class="flex flex-col gap-5">
       <!-- Student + cohort -->
-      <div class="student-meta">
-        <div class="student-name">{{ data.student.name }}</div>
-        <div class="student-sub">
-          <span v-if="data.student.cohort" class="cohort-pill">
+      <div>
+        <div class="text-base font-bold text-on-surface">{{ data.student.name }}</div>
+        <div class="flex gap-2 items-center text-xs mt-1">
+          <span
+            v-if="data.student.cohort"
+            class="bg-primary/15 text-primary px-2 py-0.5 rounded-md font-semibold"
+          >
             {{ data.student.cohort.name }}
           </span>
-          <span class="muted">{{ data.student.email }}</span>
+          <span class="text-on-surface-variant">{{ data.student.email }}</span>
         </div>
       </div>
 
       <!-- Radar -->
-      <section v-if="data.skill_radar.length >= 3" class="radar-section">
-        <div class="radar-wrap">
+      <section v-if="data.skill_radar.length >= 3">
+        <div class="h-[220px]">
           <Radar :data="radarData" :options="radarOptions" />
         </div>
       </section>
-      <section v-else-if="data.skill_radar.length > 0" class="radar-fallback">
-        <div v-for="s in data.skill_radar" :key="s.category" class="bar-row">
-          <div class="bar-label">
-            <span>{{ s.category }}</span>
-            <span class="muted">{{ Math.round(s.score) }}</span>
+      <section v-else-if="data.skill_radar.length > 0" class="flex flex-col gap-2">
+        <div v-for="s in data.skill_radar" :key="s.category">
+          <div class="flex justify-between text-xs mb-1">
+            <span class="text-on-surface">{{ s.category }}</span>
+            <span class="text-on-surface-variant">{{ Math.round(s.score) }}</span>
           </div>
-          <div class="bar-track">
-            <div class="bar-fill" :style="{ width: s.score + '%' }"></div>
+          <div class="bg-surface-container h-1.5 rounded overflow-hidden">
+            <div class="bg-primary h-full" :style="{ width: s.score + '%' }"></div>
           </div>
         </div>
       </section>
-      <section v-else class="empty-block">
-        <p class="muted">No skill data yet.</p>
+      <section v-else class="py-4 text-center">
+        <p class="text-on-surface-variant text-sm m-0">No skill data yet.</p>
       </section>
 
       <!-- Recent activity -->
-      <section class="activity">
-        <div class="stat">
-          <div class="stat-value">{{ data.recent_activity.prs_last_30d }}</div>
-          <div class="stat-label">PRs (30d)</div>
+      <section class="flex gap-3">
+        <div class="flex-1 bg-surface-container rounded-lg px-4 py-3">
+          <div class="text-xl font-bold text-on-surface">{{ data.recent_activity.prs_last_30d }}</div>
+          <div class="text-[10px] text-outline uppercase tracking-wider font-semibold">PRs (30d)</div>
         </div>
-        <div class="stat">
-          <div class="stat-value">{{ Math.round(data.recent_activity.avg_bayesian_score) }}</div>
-          <div class="stat-label">Avg skill</div>
+        <div class="flex-1 bg-surface-container rounded-lg px-4 py-3">
+          <div class="text-xl font-bold text-on-surface">
+            {{ Math.round(data.recent_activity.avg_bayesian_score) }}
+          </div>
+          <div class="text-[10px] text-outline uppercase tracking-wider font-semibold">Avg skill</div>
         </div>
       </section>
 
       <!-- Trending -->
-      <section v-if="data.trending_up.length || data.trending_down.length" class="trending">
-        <div v-if="data.trending_up.length" class="trend-col">
-          <h4 class="trend-title trend-up">Trending up</h4>
-          <ul>
-            <li v-for="s in data.trending_up" :key="'u-' + s">{{ s }}</li>
+      <section
+        v-if="data.trending_up.length || data.trending_down.length"
+        class="grid grid-cols-2 gap-4 text-sm"
+      >
+        <div v-if="data.trending_up.length">
+          <h4 class="text-[10px] font-bold uppercase tracking-widest mb-1" style="color: rgb(134 239 172);">
+            Trending up
+          </h4>
+          <ul class="list-none p-0 m-0 text-on-surface-variant">
+            <li v-for="s in data.trending_up" :key="'u-' + s" class="py-0.5">{{ s }}</li>
           </ul>
         </div>
-        <div v-if="data.trending_down.length" class="trend-col">
-          <h4 class="trend-title trend-down">Trending down</h4>
-          <ul>
-            <li v-for="s in data.trending_down" :key="'d-' + s">{{ s }}</li>
+        <div v-if="data.trending_down.length">
+          <h4 class="text-[10px] font-bold uppercase tracking-widest mb-1 text-error">
+            Trending down
+          </h4>
+          <ul class="list-none p-0 m-0 text-on-surface-variant">
+            <li v-for="s in data.trending_down" :key="'d-' + s" class="py-0.5">{{ s }}</li>
           </ul>
         </div>
       </section>
 
       <!-- Recurring patterns -->
-      <section class="patterns">
-        <h4>Recurring patterns</h4>
-        <ul v-if="data.recurring_patterns.length" class="pattern-list">
+      <section>
+        <h4 class="text-[11px] font-bold uppercase tracking-widest text-outline mb-2">
+          Recurring patterns
+        </h4>
+        <ul v-if="data.recurring_patterns.length" class="list-none p-0 m-0 flex flex-col gap-1.5">
           <li
             v-for="p in data.recurring_patterns"
             :key="p.pattern_key"
-            class="pattern-item"
-            :class="severityClass(p.severity)"
+            :class="[
+              'px-3 py-2 rounded-lg border-l-2',
+              severityClass(p.severity) === 'sev-warning'
+                ? 'bg-tertiary/10 border-tertiary'
+                : 'bg-surface-container border-primary',
+            ]"
             data-testid="pattern-item"
           >
-            <div class="pattern-head">
-              <span class="pattern-name">{{ formatPatternKey(p.pattern_key) }}</span>
-              <span class="pattern-count">×{{ p.frequency }}</span>
+            <div class="flex justify-between text-sm text-on-surface">
+              <span>{{ formatPatternKey(p.pattern_key) }}</span>
+              <span class="font-bold">×{{ p.frequency }}</span>
             </div>
-            <div class="pattern-meta">
-              <span class="muted">{{ p.pattern_type }}</span>
-              <span v-if="p.last_seen_days_ago !== null" class="muted">
+            <div class="text-[11px] mt-0.5 text-on-surface-variant">
+              <span>{{ p.pattern_type }}</span>
+              <span v-if="p.last_seen_days_ago !== null">
                 · {{ p.last_seen_days_ago }}d ago
               </span>
             </div>
           </li>
         </ul>
-        <p v-else class="muted">No recurring issues. Nice work.</p>
+        <p v-else class="text-on-surface-variant text-sm m-0">No recurring issues. Nice work.</p>
       </section>
 
       <!-- Categories w/ trend (table) -->
-      <section v-if="data.skill_radar.length" class="category-table">
-        <h4>Skill categories</h4>
-        <ul>
-          <li v-for="s in data.skill_radar" :key="'c-' + s.category">
-            <span class="cat-name">{{ s.category }}</span>
-            <span class="cat-level muted">{{ s.level_label || '—' }}</span>
-            <span class="cat-trend" :class="trendClass(s.trend)">{{ trendIcon(s.trend) }}</span>
-            <span class="cat-score">{{ Math.round(s.score) }}</span>
+      <section v-if="data.skill_radar.length">
+        <h4 class="text-[11px] font-bold uppercase tracking-widest text-outline mb-2">
+          Skill categories
+        </h4>
+        <ul class="list-none p-0 m-0">
+          <li
+            v-for="s in data.skill_radar"
+            :key="'c-' + s.category"
+            class="grid grid-cols-[1fr_auto_auto_auto] gap-2 text-sm py-1.5 border-t border-outline-variant/5 items-center first:border-t-0"
+          >
+            <span class="text-on-surface">{{ s.category }}</span>
+            <span class="text-[11px] text-on-surface-variant">{{ s.level_label || '—' }}</span>
+            <span
+              :class="[
+                'font-bold text-sm',
+                s.trend === 'up' ? 'text-[rgb(134,239,172)]' : s.trend === 'down' ? 'text-error' : 'text-on-surface-variant',
+              ]"
+            >
+              {{ trendIcon(s.trend) }}
+            </span>
+            <span class="font-bold text-on-surface tabular-nums min-w-[2.2rem] text-right">
+              {{ Math.round(s.score) }}
+            </span>
           </li>
         </ul>
       </section>
@@ -287,191 +328,3 @@ function formatPatternKey(key: string): string {
   </aside>
 </template>
 
-<style scoped>
-.snapshot-panel {
-  background: rgb(15 23 42);
-  border: 1px solid rgb(30 41 59);
-  border-radius: 0.75rem;
-  padding: 1rem 1.1rem 1.2rem;
-  color: rgb(226 232 240);
-  display: flex;
-  flex-direction: column;
-  gap: 1rem;
-}
-
-.panel-header {
-  display: flex;
-  justify-content: space-between;
-  align-items: baseline;
-  border-bottom: 1px solid rgb(30 41 59);
-  padding-bottom: 0.6rem;
-}
-.panel-header h3 {
-  font-size: 0.95rem;
-  font-weight: 600;
-  color: rgb(241 245 249);
-  margin: 0;
-}
-.link {
-  color: rgb(147 197 253);
-  font-size: 0.8rem;
-  text-decoration: none;
-}
-.link:hover { text-decoration: underline; }
-
-.loading, .error-banner {
-  padding: 1rem;
-  font-size: 0.85rem;
-  color: rgb(148 163 184);
-  text-align: center;
-}
-.error-banner {
-  background: rgb(239 68 68 / 0.08);
-  border: 1px solid rgb(239 68 68 / 0.3);
-  color: rgb(252 165 165);
-  border-radius: 0.5rem;
-}
-
-.student-meta .student-name {
-  font-size: 1rem;
-  font-weight: 600;
-  color: rgb(241 245 249);
-}
-.student-sub {
-  display: flex;
-  gap: 0.5rem;
-  align-items: center;
-  font-size: 0.75rem;
-  margin-top: 0.2rem;
-}
-.cohort-pill {
-  background: rgb(59 130 246 / 0.15);
-  color: rgb(147 197 253);
-  padding: 0.15rem 0.5rem;
-  border-radius: 0.35rem;
-  font-weight: 500;
-}
-.muted { color: rgb(148 163 184); }
-
-.radar-section .radar-wrap {
-  height: 220px;
-}
-.radar-fallback .bar-row { margin-bottom: 0.5rem; }
-.bar-label {
-  display: flex;
-  justify-content: space-between;
-  font-size: 0.75rem;
-  margin-bottom: 0.25rem;
-}
-.bar-track {
-  background: rgb(30 41 59);
-  height: 0.4rem;
-  border-radius: 0.2rem;
-  overflow: hidden;
-}
-.bar-fill {
-  background: rgb(96 165 250);
-  height: 100%;
-}
-
-.activity {
-  display: flex;
-  gap: 1rem;
-}
-.stat {
-  background: rgb(30 41 59 / 0.5);
-  flex: 1;
-  padding: 0.6rem 0.8rem;
-  border-radius: 0.5rem;
-}
-.stat-value {
-  font-size: 1.2rem;
-  font-weight: 700;
-  color: rgb(241 245 249);
-}
-.stat-label {
-  font-size: 0.7rem;
-  color: rgb(148 163 184);
-  text-transform: uppercase;
-  letter-spacing: 0.04em;
-}
-
-.trending {
-  display: grid;
-  grid-template-columns: 1fr 1fr;
-  gap: 0.8rem;
-  font-size: 0.8rem;
-}
-.trend-title {
-  font-size: 0.7rem;
-  font-weight: 600;
-  text-transform: uppercase;
-  letter-spacing: 0.05em;
-  margin-bottom: 0.3rem;
-}
-.trend-title.trend-up { color: rgb(134 239 172); }
-.trend-title.trend-down { color: rgb(252 165 165); }
-.trending ul { list-style: none; padding: 0; margin: 0; }
-.trending li {
-  padding: 0.15rem 0;
-  color: rgb(203 213 225);
-}
-
-.patterns h4, .category-table h4 {
-  font-size: 0.75rem;
-  font-weight: 600;
-  text-transform: uppercase;
-  letter-spacing: 0.05em;
-  color: rgb(148 163 184);
-  margin: 0 0 0.4rem 0;
-}
-.pattern-list { list-style: none; padding: 0; margin: 0; }
-.pattern-item {
-  padding: 0.45rem 0.6rem;
-  border-radius: 0.4rem;
-  margin-bottom: 0.4rem;
-  background: rgb(30 41 59 / 0.5);
-  border-left: 3px solid rgb(148 163 184);
-}
-.pattern-item.sev-warning {
-  border-left-color: rgb(249 115 22);
-  background: rgb(249 115 22 / 0.08);
-}
-.pattern-item.sev-info {
-  border-left-color: rgb(59 130 246);
-}
-.pattern-head {
-  display: flex;
-  justify-content: space-between;
-  font-size: 0.85rem;
-  color: rgb(226 232 240);
-}
-.pattern-count { font-weight: 700; color: rgb(241 245 249); }
-.pattern-meta { font-size: 0.7rem; margin-top: 0.1rem; }
-
-.category-table ul { list-style: none; padding: 0; margin: 0; }
-.category-table li {
-  display: grid;
-  grid-template-columns: 1fr auto auto auto;
-  gap: 0.5rem;
-  font-size: 0.8rem;
-  padding: 0.25rem 0;
-  border-top: 1px solid rgb(30 41 59 / 0.5);
-  align-items: center;
-}
-.cat-name { color: rgb(226 232 240); }
-.cat-level { font-size: 0.7rem; }
-.cat-trend { font-weight: 700; }
-.trend-up { color: rgb(134 239 172); }
-.trend-down { color: rgb(252 165 165); }
-.trend-flat { color: rgb(148 163 184); }
-.cat-score {
-  font-weight: 700;
-  color: rgb(241 245 249);
-  font-variant-numeric: tabular-nums;
-  min-width: 2.2rem;
-  text-align: right;
-}
-
-.empty-block { padding: 1rem 0; text-align: center; }
-</style>

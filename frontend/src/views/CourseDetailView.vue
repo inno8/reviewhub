@@ -11,6 +11,7 @@ import { ref, computed, onMounted, watch } from 'vue';
 import { useRoute, useRouter } from 'vue-router';
 import { api } from '@/composables/useApi';
 import { useAuthStore } from '@/stores/auth';
+import AppShell from '@/components/layout/AppShell.vue';
 
 interface Course {
   id: number;
@@ -96,194 +97,102 @@ watch(id, load);
 </script>
 
 <template>
-  <div class="course-detail">
-    <header class="page-header">
-      <button class="btn-ghost" @click="goToCohort">← Cohort</button>
-      <div v-if="course" class="header-meta">
-        <h1>{{ course.name }}</h1>
-        <p class="muted">
-          <span v-if="course.cohort_name">{{ course.cohort_name }} · </span>
-          {{ course.student_count }} students
-          <span v-if="course.archived_at"> · Archived</span>
-        </p>
-      </div>
-    </header>
-
-    <div v-if="loading" class="loading">Loading course…</div>
-    <div v-else-if="error" class="error-banner">{{ error }}</div>
-    <div v-else-if="course" class="detail-body">
-      <section class="card">
-        <div class="card-head">
-          <h2>Details</h2>
-          <div class="head-actions">
-            <button
-              v-if="!course.archived_at"
-              class="btn-ghost btn-danger"
-              @click="archive"
-            >
-              Archive
-            </button>
+  <AppShell>
+    <div class="p-8 flex-1">
+      <div class="max-w-4xl mx-auto">
+        <header class="flex items-start gap-4 mb-8">
+          <button
+            class="text-sm text-on-surface-variant hover:text-on-surface transition-colors mt-1"
+            @click="goToCohort"
+          >
+            ← Cohort
+          </button>
+          <div v-if="course">
+            <h1 class="text-4xl font-extrabold text-on-surface tracking-tight">
+              {{ course.name }}
+            </h1>
+            <p class="text-on-surface-variant mt-2">
+              <span v-if="course.cohort_name">{{ course.cohort_name }} · </span>
+              {{ course.student_count }} students
+              <span v-if="course.archived_at"> · Archived</span>
+            </p>
           </div>
+        </header>
+
+        <div v-if="loading" class="p-12 text-center text-outline">
+          <span class="material-symbols-outlined animate-spin text-2xl text-primary">progress_activity</span>
+          <p class="mt-2 text-sm">Loading course…</p>
         </div>
-
-        <dl class="kv">
-          <dt>Owner</dt>
-          <dd>{{ course.owner_email }}</dd>
-
-          <dt>Rubric</dt>
-          <dd>{{ course.rubric_name || '— (no rubric assigned)' }}</dd>
-
-          <dt>Source control</dt>
-          <dd>{{ course.source_control_type }}</dd>
-
-          <dt>Created</dt>
-          <dd>{{ new Date(course.created_at).toLocaleDateString() }}</dd>
-        </dl>
-
-        <div class="edit-form" v-if="!course.archived_at && auth.isSchoolAdmin">
-          <h3>Edit</h3>
-          <form @submit.prevent="save" class="form">
-            <label>
-              Name
-              <input v-model="editName" required />
-            </label>
-            <label>
-              Target branch pattern
-              <input v-model="editBranchPattern" placeholder="main" />
-            </label>
-            <div class="form-actions">
-              <button type="submit" class="btn-primary" :disabled="saveBusy">
-                {{ saveBusy ? 'Saving…' : 'Save' }}
+        <div
+          v-else-if="error"
+          class="bg-error/10 border border-error/20 text-error rounded-lg px-4 py-3 text-sm"
+        >
+          {{ error }}
+        </div>
+        <div v-else-if="course" class="flex flex-col gap-6">
+          <section class="bg-surface-container-low rounded-xl border border-outline-variant/10 overflow-hidden">
+            <div class="flex justify-between items-center px-6 py-4 border-b border-outline-variant/10">
+              <h2 class="text-base font-bold text-on-surface m-0">Details</h2>
+              <button
+                v-if="!course.archived_at"
+                class="text-xs text-error hover:text-error/80 font-semibold transition-colors"
+                @click="archive"
+              >
+                Archive
               </button>
             </div>
-          </form>
+
+            <dl class="grid grid-cols-[max-content_1fr] gap-x-6 gap-y-3 px-6 py-5 text-sm">
+              <dt class="font-bold uppercase tracking-widest text-[10px] text-outline self-center">Owner</dt>
+              <dd class="m-0 text-on-surface">{{ course.owner_email }}</dd>
+
+              <dt class="font-bold uppercase tracking-widest text-[10px] text-outline self-center">Rubric</dt>
+              <dd class="m-0 text-on-surface">{{ course.rubric_name || '— (no rubric assigned)' }}</dd>
+
+              <dt class="font-bold uppercase tracking-widest text-[10px] text-outline self-center">Source control</dt>
+              <dd class="m-0 text-on-surface">{{ course.source_control_type }}</dd>
+
+              <dt class="font-bold uppercase tracking-widest text-[10px] text-outline self-center">Created</dt>
+              <dd class="m-0 text-on-surface">{{ new Date(course.created_at).toLocaleDateString() }}</dd>
+            </dl>
+
+            <div
+              v-if="!course.archived_at && auth.isSchoolAdmin"
+              class="px-6 py-5 border-t border-outline-variant/10"
+            >
+              <h3 class="text-xs font-bold uppercase tracking-widest text-outline mb-3">Edit</h3>
+              <form @submit.prevent="save" class="space-y-4">
+                <div class="space-y-1.5">
+                  <label class="text-xs font-bold uppercase tracking-widest text-outline">Name</label>
+                  <input
+                    v-model="editName"
+                    required
+                    class="w-full bg-surface-container-lowest border-none rounded-lg text-on-surface placeholder:text-outline/40 focus:ring-1 focus:ring-primary/50 py-3 px-4"
+                  />
+                </div>
+                <div class="space-y-1.5">
+                  <label class="text-xs font-bold uppercase tracking-widest text-outline">Target branch pattern</label>
+                  <input
+                    v-model="editBranchPattern"
+                    placeholder="main"
+                    class="w-full bg-surface-container-lowest border-none rounded-lg text-on-surface placeholder:text-outline/40 focus:ring-1 focus:ring-primary/50 py-3 px-4"
+                  />
+                </div>
+                <div class="flex justify-end">
+                  <button
+                    type="submit"
+                    :disabled="saveBusy"
+                    class="primary-gradient text-on-primary px-5 py-2.5 rounded-lg font-bold disabled:opacity-50 transition-all active:scale-95 shadow-lg shadow-primary/20"
+                  >
+                    {{ saveBusy ? 'Saving…' : 'Save' }}
+                  </button>
+                </div>
+              </form>
+            </div>
+          </section>
         </div>
-      </section>
+      </div>
     </div>
-  </div>
+  </AppShell>
 </template>
 
-<style scoped>
-.course-detail {
-  max-width: 900px;
-  margin: 0 auto;
-  padding: 1.5rem;
-  color: rgb(226 232 240);
-}
-
-.page-header {
-  display: flex;
-  align-items: flex-start;
-  gap: 1rem;
-  margin-bottom: 1.5rem;
-}
-.page-header h1 { font-size: 1.4rem; font-weight: 600; color: rgb(241 245 249); margin: 0; }
-.muted { color: rgb(148 163 184); font-size: 0.85rem; }
-
-.btn-ghost {
-  background: transparent;
-  border: 1px solid rgb(51 65 85);
-  color: rgb(203 213 225);
-  padding: 0.35rem 0.8rem;
-  border-radius: 0.35rem;
-  font-size: 0.8rem;
-  cursor: pointer;
-}
-.btn-ghost:hover { background: rgb(30 41 59); }
-.btn-ghost.btn-danger { color: rgb(252 165 165); border-color: rgb(127 29 29); }
-
-.btn-primary {
-  background: rgb(59 130 246);
-  color: white;
-  border: none;
-  padding: 0.5rem 1rem;
-  border-radius: 0.4rem;
-  font-size: 0.85rem;
-  cursor: pointer;
-  font-weight: 500;
-}
-.btn-primary:hover { background: rgb(37 99 235); }
-.btn-primary:disabled { opacity: 0.5; cursor: not-allowed; }
-
-.loading {
-  text-align: center;
-  padding: 2rem 1rem;
-  color: rgb(148 163 184);
-}
-.error-banner {
-  background: rgb(239 68 68 / 0.08);
-  border: 1px solid rgb(239 68 68 / 0.3);
-  color: rgb(252 165 165);
-  border-radius: 0.5rem;
-  padding: 0.8rem 1rem;
-}
-
-.card {
-  background: rgb(15 23 42);
-  border: 1px solid rgb(30 41 59);
-  border-radius: 0.75rem;
-  padding: 1rem 1.1rem 1.2rem;
-}
-.card-head {
-  display: flex;
-  justify-content: space-between;
-  align-items: baseline;
-  border-bottom: 1px solid rgb(30 41 59);
-  padding-bottom: 0.6rem;
-  margin-bottom: 0.8rem;
-}
-.card-head h2 { font-size: 1rem; font-weight: 600; color: rgb(241 245 249); margin: 0; }
-
-.kv {
-  display: grid;
-  grid-template-columns: max-content 1fr;
-  gap: 0.4rem 1rem;
-  font-size: 0.85rem;
-  margin: 0;
-}
-.kv dt {
-  font-weight: 600;
-  color: rgb(148 163 184);
-  text-transform: uppercase;
-  font-size: 0.7rem;
-  letter-spacing: 0.05em;
-  align-self: center;
-}
-.kv dd {
-  margin: 0;
-  color: rgb(226 232 240);
-}
-
-.edit-form {
-  margin-top: 1.2rem;
-  padding-top: 1rem;
-  border-top: 1px solid rgb(30 41 59);
-}
-.edit-form h3 {
-  font-size: 0.8rem;
-  font-weight: 600;
-  color: rgb(148 163 184);
-  text-transform: uppercase;
-  letter-spacing: 0.05em;
-  margin: 0 0 0.6rem 0;
-}
-
-.form { display: flex; flex-direction: column; gap: 0.7rem; }
-.form label {
-  display: flex;
-  flex-direction: column;
-  gap: 0.3rem;
-  font-size: 0.8rem;
-  color: rgb(148 163 184);
-}
-.form input {
-  background: rgb(30 41 59);
-  border: 1px solid rgb(51 65 85);
-  border-radius: 0.35rem;
-  padding: 0.5rem 0.6rem;
-  color: rgb(226 232 240);
-  font-size: 0.85rem;
-}
-.form input:focus { outline: none; border-color: rgb(59 130 246); }
-.form-actions { display: flex; justify-content: flex-end; gap: 0.6rem; }
-</style>

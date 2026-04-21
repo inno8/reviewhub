@@ -80,140 +80,71 @@ onMounted(load);
 </script>
 
 <template>
-  <div v-if="loading" class="mcw mcw-loading">Loading your cohort…</div>
-  <div v-else-if="error" class="mcw mcw-error">{{ error }}</div>
-  <div v-else-if="!cohort" class="mcw mcw-empty">
-    <p class="title">You're not in a cohort yet</p>
-    <p class="muted">Ask your school admin to add you to a cohort.</p>
+  <div
+    v-if="loading"
+    class="bg-surface-container-low rounded-xl border border-outline-variant/10 p-6 text-center text-outline text-sm"
+  >
+    Loading your cohort…
   </div>
-  <div v-else class="mcw" data-testid="my-cohort-widget">
-    <header class="mcw-head">
-      <h2>My cohort</h2>
-      <span class="pill">{{ cohort.name }}</span>
+  <div
+    v-else-if="error"
+    class="bg-error/10 border border-error/20 text-error rounded-xl p-6 text-center text-sm"
+  >
+    {{ error }}
+  </div>
+  <div
+    v-else-if="!cohort"
+    class="bg-surface-container-low rounded-xl border border-outline-variant/10 p-6 text-center"
+  >
+    <p class="text-on-surface font-medium m-0 mb-1">You're not in a cohort yet</p>
+    <p class="text-on-surface-variant text-sm m-0">Ask your school admin to add you to a cohort.</p>
+  </div>
+  <div
+    v-else
+    class="bg-surface-container-low rounded-xl border border-outline-variant/10 p-6 flex flex-col gap-5"
+    data-testid="my-cohort-widget"
+  >
+    <header class="flex justify-between items-center border-b border-outline-variant/10 pb-4">
+      <h2 class="text-base font-bold text-on-surface m-0">My cohort</h2>
+      <span class="bg-primary/15 text-primary px-3 py-1 rounded-md text-xs font-semibold">
+        {{ cohort.name }}
+      </span>
     </header>
 
     <!-- Teachers -->
-    <section v-if="teachers.length" class="block">
-      <h3>Teachers</h3>
-      <ul class="teacher-list">
-        <li v-for="t in teachers" :key="t" class="teacher-item">
-          <span class="material-symbols-outlined icon">person</span>
+    <section v-if="teachers.length">
+      <h3 class="text-[11px] font-bold uppercase tracking-widest text-outline mb-2">Teachers</h3>
+      <ul class="list-none p-0 m-0 flex flex-col gap-1.5">
+        <li
+          v-for="t in teachers"
+          :key="t"
+          class="flex items-center gap-2 text-sm text-on-surface-variant"
+        >
+          <span class="material-symbols-outlined text-base text-outline">person</span>
           {{ t }}
         </li>
       </ul>
     </section>
 
     <!-- Courses + rubrics -->
-    <section class="block">
-      <h3>Current courses</h3>
-      <div v-if="!courses.length" class="muted">No active courses yet.</div>
-      <ul v-else class="course-list">
-        <li v-for="c in courses" :key="c.id" class="course-item">
-          <div class="course-name">{{ c.name }}</div>
-          <div class="course-meta">
-            <span v-if="c.rubric_name" class="rubric-tag">
+    <section>
+      <h3 class="text-[11px] font-bold uppercase tracking-widest text-outline mb-2">Current courses</h3>
+      <div v-if="!courses.length" class="text-on-surface-variant text-sm">No active courses yet.</div>
+      <ul v-else class="list-none p-0 m-0 flex flex-col gap-2">
+        <li
+          v-for="c in courses"
+          :key="c.id"
+          class="px-3 py-2.5 bg-surface-container rounded-lg border-l-2 border-primary/60"
+        >
+          <div class="text-sm font-semibold text-on-surface">{{ c.name }}</div>
+          <div class="mt-1 text-xs">
+            <span v-if="c.rubric_name" class="text-tertiary">
               Rubric: {{ c.rubric_name }}
             </span>
-            <span v-else class="muted tiny">No rubric assigned</span>
+            <span v-else class="text-outline">No rubric assigned</span>
           </div>
         </li>
       </ul>
     </section>
   </div>
 </template>
-
-<style scoped>
-.mcw {
-  background: rgb(15 23 42);
-  border: 1px solid rgb(30 41 59);
-  border-radius: 0.75rem;
-  padding: 1rem 1.1rem 1.2rem;
-  color: rgb(226 232 240);
-  display: flex;
-  flex-direction: column;
-  gap: 1rem;
-}
-
-.mcw-loading, .mcw-error, .mcw-empty {
-  text-align: center;
-  color: rgb(148 163 184);
-  font-size: 0.85rem;
-}
-.mcw-error { color: rgb(252 165 165); }
-.mcw-empty .title { color: rgb(226 232 240); font-weight: 500; margin: 0 0 0.4rem 0; }
-
-.mcw-head {
-  display: flex;
-  justify-content: space-between;
-  align-items: baseline;
-  border-bottom: 1px solid rgb(30 41 59);
-  padding-bottom: 0.6rem;
-}
-.mcw-head h2 {
-  font-size: 0.95rem;
-  font-weight: 600;
-  color: rgb(241 245 249);
-  margin: 0;
-}
-.pill {
-  background: rgb(59 130 246 / 0.15);
-  color: rgb(147 197 253);
-  padding: 0.2rem 0.6rem;
-  border-radius: 0.35rem;
-  font-size: 0.8rem;
-  font-weight: 500;
-}
-
-.block h3 {
-  font-size: 0.7rem;
-  font-weight: 600;
-  text-transform: uppercase;
-  letter-spacing: 0.05em;
-  color: rgb(148 163 184);
-  margin: 0 0 0.5rem 0;
-}
-
-.teacher-list {
-  list-style: none;
-  padding: 0;
-  margin: 0;
-  display: flex;
-  flex-direction: column;
-  gap: 0.25rem;
-}
-.teacher-item {
-  display: flex;
-  align-items: center;
-  gap: 0.4rem;
-  font-size: 0.85rem;
-  color: rgb(203 213 225);
-}
-.icon {
-  font-size: 1rem;
-  color: rgb(148 163 184);
-}
-
-.course-list {
-  list-style: none;
-  padding: 0;
-  margin: 0;
-  display: flex;
-  flex-direction: column;
-  gap: 0.5rem;
-}
-.course-item {
-  padding: 0.5rem 0.7rem;
-  background: rgb(30 41 59 / 0.4);
-  border-radius: 0.4rem;
-  border-left: 3px solid rgb(59 130 246 / 0.6);
-}
-.course-name {
-  font-size: 0.9rem;
-  font-weight: 500;
-  color: rgb(226 232 240);
-}
-.course-meta { margin-top: 0.2rem; font-size: 0.75rem; }
-.rubric-tag { color: rgb(134 239 172); }
-.muted { color: rgb(148 163 184); }
-.tiny { font-size: 0.7rem; }
-</style>

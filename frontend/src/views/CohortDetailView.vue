@@ -17,6 +17,7 @@
 import { ref, computed, onMounted, watch } from 'vue';
 import { useRoute, useRouter } from 'vue-router';
 import { api } from '@/composables/useApi';
+import AppShell from '@/components/layout/AppShell.vue';
 
 interface Cohort {
   id: number;
@@ -126,307 +127,219 @@ watch(id, load);
 </script>
 
 <template>
-  <div class="cohort-detail">
-    <header class="page-header">
-      <button class="btn-ghost" @click="goBack">← Cohorts</button>
-      <div v-if="cohort" class="header-meta">
-        <h1>{{ cohort.name }}</h1>
-        <p class="muted">
-          <span v-if="cohort.year">Year {{ cohort.year }} · </span>
-          {{ cohort.student_count }} students · {{ cohort.course_count }} courses
-          <span v-if="cohort.archived_at"> · Archived</span>
-        </p>
-      </div>
-    </header>
-
-    <div v-if="loading" class="loading">Loading cohort…</div>
-    <div v-else-if="error" class="error-banner">{{ error }}</div>
-    <div v-else-if="cohort" class="detail-body">
-      <!-- Members -->
-      <section class="card">
-        <div class="card-head">
-          <h2>Members ({{ members.length }})</h2>
+  <AppShell>
+    <div class="p-8 flex-1">
+      <div class="max-w-6xl mx-auto">
+        <header class="flex items-start gap-4 mb-8">
           <button
-            v-if="!cohort.archived_at"
-            class="btn-primary"
-            @click="showAddMember = true"
-            data-testid="add-member-btn"
+            class="text-sm text-on-surface-variant hover:text-on-surface transition-colors mt-1"
+            @click="goBack"
           >
-            + Add member
+            ← Cohorts
           </button>
-        </div>
-        <div v-if="!members.length" class="empty">
-          No students enrolled yet.
-        </div>
-        <table v-else class="table">
-          <thead>
-            <tr>
-              <th>Student</th>
-              <th>Email</th>
-              <th>Repo</th>
-              <th>Joined</th>
-              <th></th>
-            </tr>
-          </thead>
-          <tbody>
-            <tr v-for="m in members" :key="m.id">
-              <td>{{ m.student_name || '—' }}</td>
-              <td>{{ m.student_email }}</td>
-              <td>
-                <a v-if="m.student_repo_url" :href="m.student_repo_url" target="_blank" class="link">
-                  {{ m.student_repo_url.split('/').slice(-2).join('/') }}
-                </a>
-                <span v-else class="muted">—</span>
-              </td>
-              <td class="muted">{{ new Date(m.joined_at).toLocaleDateString() }}</td>
-              <td class="row-actions">
-                <button
-                  v-if="!cohort.archived_at"
-                  class="btn-ghost btn-danger"
-                  @click="removeMember(m)"
-                >
-                  Remove
-                </button>
-              </td>
-            </tr>
-          </tbody>
-        </table>
-      </section>
-
-      <!-- Courses -->
-      <section class="card">
-        <div class="card-head">
-          <h2>Courses ({{ courses.length }})</h2>
-        </div>
-        <div v-if="!courses.length" class="empty">
-          No courses in this cohort. Create one from the admin API or the course detail view (coming soon).
-        </div>
-        <div v-else class="course-grid">
-          <div
-            v-for="c in courses"
-            :key="c.id"
-            class="course-card"
-            :class="{ archived: c.archived_at }"
-            @click="openCourse(c)"
-            data-testid="course-card"
-          >
-            <h3>{{ c.name }}</h3>
-            <p class="muted">{{ c.owner_email }}</p>
-            <div class="card-meta">
-              <span class="pill">{{ c.student_count }} students</span>
-              <span v-if="c.rubric_name" class="pill">Rubric: {{ c.rubric_name }}</span>
-              <span v-if="c.archived_at" class="pill archived-pill">Archived</span>
-            </div>
+          <div v-if="cohort">
+            <h1 class="text-4xl font-extrabold text-on-surface tracking-tight">
+              {{ cohort.name }}
+            </h1>
+            <p class="text-on-surface-variant mt-2">
+              <span v-if="cohort.year">Year {{ cohort.year }} · </span>
+              {{ cohort.student_count }} students · {{ cohort.course_count }} courses
+              <span v-if="cohort.archived_at"> · Archived</span>
+            </p>
           </div>
+        </header>
+
+        <div v-if="loading" class="p-12 text-center text-outline">
+          <span class="material-symbols-outlined animate-spin text-2xl text-primary">progress_activity</span>
+          <p class="mt-2 text-sm">Loading cohort…</p>
         </div>
-      </section>
+        <div
+          v-else-if="error"
+          class="bg-error/10 border border-error/20 text-error rounded-lg px-4 py-3 text-sm"
+        >
+          {{ error }}
+        </div>
+        <div v-else-if="cohort" class="flex flex-col gap-6">
+          <!-- Members -->
+          <section class="bg-surface-container-low rounded-xl border border-outline-variant/10 overflow-hidden">
+            <div class="flex justify-between items-center px-6 py-4 border-b border-outline-variant/10">
+              <h2 class="text-base font-bold text-on-surface m-0">
+                Members ({{ members.length }})
+              </h2>
+              <button
+                v-if="!cohort.archived_at"
+                class="primary-gradient text-on-primary px-4 py-2 rounded-lg font-bold text-sm flex items-center gap-2 shadow-lg shadow-primary/10 hover:shadow-primary/20 transition-all active:scale-95"
+                @click="showAddMember = true"
+                data-testid="add-member-btn"
+              >
+                <span class="material-symbols-outlined text-sm">person_add</span>
+                Add member
+              </button>
+            </div>
+            <div
+              v-if="!members.length"
+              class="p-8 text-center text-outline text-sm"
+            >
+              No students enrolled yet.
+            </div>
+            <div v-else class="overflow-x-auto">
+              <table class="w-full text-left border-collapse">
+                <thead>
+                  <tr class="bg-surface-container text-outline text-xs uppercase tracking-widest font-semibold">
+                    <th class="px-6 py-4">Student</th>
+                    <th class="px-6 py-4">Email</th>
+                    <th class="px-6 py-4">Repo</th>
+                    <th class="px-6 py-4">Joined</th>
+                    <th class="px-6 py-4"></th>
+                  </tr>
+                </thead>
+                <tbody class="divide-y divide-outline-variant/5">
+                  <tr
+                    v-for="m in members"
+                    :key="m.id"
+                    class="hover:bg-surface-container-high/40 transition-colors"
+                  >
+                    <td class="px-6 py-4 text-sm text-on-surface">{{ m.student_name || '—' }}</td>
+                    <td class="px-6 py-4 text-sm text-on-surface-variant">{{ m.student_email }}</td>
+                    <td class="px-6 py-4 text-sm">
+                      <a
+                        v-if="m.student_repo_url"
+                        :href="m.student_repo_url"
+                        target="_blank"
+                        class="text-primary hover:underline"
+                      >
+                        {{ m.student_repo_url.split('/').slice(-2).join('/') }}
+                      </a>
+                      <span v-else class="text-outline">—</span>
+                    </td>
+                    <td class="px-6 py-4 text-xs text-on-surface-variant">
+                      {{ new Date(m.joined_at).toLocaleDateString() }}
+                    </td>
+                    <td class="px-6 py-4 text-right">
+                      <button
+                        v-if="!cohort.archived_at"
+                        class="text-xs text-error hover:text-error/80 font-semibold transition-colors"
+                        @click="removeMember(m)"
+                      >
+                        Remove
+                      </button>
+                    </td>
+                  </tr>
+                </tbody>
+              </table>
+            </div>
+          </section>
+
+          <!-- Courses -->
+          <section class="bg-surface-container-low rounded-xl border border-outline-variant/10 overflow-hidden">
+            <div class="flex justify-between items-center px-6 py-4 border-b border-outline-variant/10">
+              <h2 class="text-base font-bold text-on-surface m-0">
+                Courses ({{ courses.length }})
+              </h2>
+            </div>
+            <div
+              v-if="!courses.length"
+              class="p-8 text-center text-outline text-sm"
+            >
+              No courses in this cohort. Create one from the admin API or the course detail view (coming soon).
+            </div>
+            <div v-else class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4 p-6">
+              <div
+                v-for="c in courses"
+                :key="c.id"
+                class="bg-surface-container rounded-lg border border-outline-variant/10 p-4 cursor-pointer hover:border-primary/40 transition-colors"
+                :class="{ 'opacity-55': c.archived_at }"
+                @click="openCourse(c)"
+                data-testid="course-card"
+              >
+                <h3 class="text-sm font-bold text-on-surface m-0 mb-1">{{ c.name }}</h3>
+                <p class="text-xs text-on-surface-variant m-0">{{ c.owner_email }}</p>
+                <div class="flex flex-wrap gap-2 mt-3">
+                  <span class="px-2 py-0.5 rounded-md text-[11px] font-medium bg-surface-container-high text-on-surface-variant">
+                    {{ c.student_count }} students
+                  </span>
+                  <span
+                    v-if="c.rubric_name"
+                    class="px-2 py-0.5 rounded-md text-[11px] font-medium bg-surface-container-high text-on-surface-variant"
+                  >
+                    Rubric: {{ c.rubric_name }}
+                  </span>
+                  <span
+                    v-if="c.archived_at"
+                    class="px-2 py-0.5 rounded-md text-[11px] font-medium bg-on-surface-variant/10 text-on-surface-variant"
+                  >
+                    Archived
+                  </span>
+                </div>
+              </div>
+            </div>
+          </section>
+        </div>
+      </div>
     </div>
 
     <!-- Add member modal -->
-    <div v-if="showAddMember" class="modal-backdrop" @click.self="showAddMember = false">
-      <div class="modal">
-        <h2>Add student to cohort</h2>
-        <p class="muted tiny">
-          Student must already exist in your organisation.
-          Find the user ID on the Members page or invite them first.
-        </p>
-        <form @submit.prevent="addMember" class="form">
-          <label>
-            Student user ID
-            <input
-              v-model="memberForm.studentId"
-              type="number"
-              required
-              placeholder="e.g. 42"
-              data-testid="student-id-input"
-            />
-          </label>
-          <label>
-            Student repo URL (optional)
-            <input
-              v-model="memberForm.repoUrl"
-              type="url"
-              placeholder="https://github.com/student/repo"
-            />
-          </label>
-          <p v-if="memberError" class="error-inline">{{ memberError }}</p>
-          <div class="form-actions">
-            <button type="button" class="btn-ghost" @click="showAddMember = false">Cancel</button>
-            <button type="submit" class="btn-primary" :disabled="addingMember">
-              {{ addingMember ? 'Adding…' : 'Add' }}
-            </button>
-          </div>
-        </form>
+    <div
+      v-if="showAddMember"
+      class="fixed inset-0 z-[100] flex items-center justify-center p-6 bg-background/80 backdrop-blur-sm"
+      @click.self="showAddMember = false"
+    >
+      <div class="glass-panel w-full max-w-md rounded-xl overflow-hidden shadow-2xl">
+        <div class="px-6 py-4 border-b border-outline-variant/10 flex justify-between items-center">
+          <h2 class="text-lg font-bold text-on-surface m-0">Add student to cohort</h2>
+          <button
+            class="text-outline hover:text-on-surface transition-colors"
+            @click="showAddMember = false"
+          >
+            <span class="material-symbols-outlined">close</span>
+          </button>
+        </div>
+        <div class="p-6 space-y-4">
+          <p class="text-xs text-on-surface-variant">
+            Student must already exist in your organisation. Find the user ID on the Members page or invite them first.
+          </p>
+          <form @submit.prevent="addMember" class="space-y-4">
+            <div class="space-y-1.5">
+              <label class="text-xs font-bold uppercase tracking-widest text-outline">Student user ID</label>
+              <input
+                v-model="memberForm.studentId"
+                type="number"
+                required
+                placeholder="e.g. 42"
+                data-testid="student-id-input"
+                class="w-full bg-surface-container-lowest border-none rounded-lg text-on-surface placeholder:text-outline/40 focus:ring-1 focus:ring-primary/50 py-3 px-4"
+              />
+            </div>
+            <div class="space-y-1.5">
+              <label class="text-xs font-bold uppercase tracking-widest text-outline">Student repo URL (optional)</label>
+              <input
+                v-model="memberForm.repoUrl"
+                type="url"
+                placeholder="https://github.com/student/repo"
+                class="w-full bg-surface-container-lowest border-none rounded-lg text-on-surface placeholder:text-outline/40 focus:ring-1 focus:ring-primary/50 py-3 px-4"
+              />
+            </div>
+            <p v-if="memberError" class="text-sm text-error">{{ memberError }}</p>
+            <div class="flex gap-3 pt-2">
+              <button
+                type="button"
+                class="flex-1 py-3 bg-surface-container-highest text-on-surface font-bold rounded-lg hover:bg-outline-variant transition-colors"
+                @click="showAddMember = false"
+              >
+                Cancel
+              </button>
+              <button
+                type="submit"
+                :disabled="addingMember"
+                class="flex-1 primary-gradient text-on-primary font-bold py-3 rounded-lg disabled:opacity-50 transition-all active:scale-95 shadow-lg shadow-primary/20"
+              >
+                {{ addingMember ? 'Adding…' : 'Add' }}
+              </button>
+            </div>
+          </form>
+        </div>
       </div>
     </div>
-  </div>
+  </AppShell>
 </template>
 
-<style scoped>
-.cohort-detail {
-  max-width: 1200px;
-  margin: 0 auto;
-  padding: 1.5rem;
-  color: rgb(226 232 240);
-}
-
-.page-header {
-  display: flex;
-  align-items: flex-start;
-  gap: 1rem;
-  margin-bottom: 1.5rem;
-}
-.page-header h1 { font-size: 1.4rem; font-weight: 600; color: rgb(241 245 249); margin: 0; }
-.muted { color: rgb(148 163 184); font-size: 0.85rem; }
-.tiny { font-size: 0.75rem; }
-
-.btn-ghost {
-  background: transparent;
-  border: 1px solid rgb(51 65 85);
-  color: rgb(203 213 225);
-  padding: 0.35rem 0.8rem;
-  border-radius: 0.35rem;
-  font-size: 0.8rem;
-  cursor: pointer;
-}
-.btn-ghost:hover { background: rgb(30 41 59); }
-.btn-ghost.btn-danger { color: rgb(252 165 165); border-color: rgb(127 29 29); }
-
-.btn-primary {
-  background: rgb(59 130 246);
-  color: white;
-  border: none;
-  padding: 0.5rem 1rem;
-  border-radius: 0.4rem;
-  font-size: 0.85rem;
-  cursor: pointer;
-  font-weight: 500;
-}
-.btn-primary:hover { background: rgb(37 99 235); }
-.btn-primary:disabled { opacity: 0.5; cursor: not-allowed; }
-
-.loading, .empty {
-  text-align: center;
-  padding: 2rem 1rem;
-  color: rgb(148 163 184);
-}
-.error-banner {
-  background: rgb(239 68 68 / 0.08);
-  border: 1px solid rgb(239 68 68 / 0.3);
-  color: rgb(252 165 165);
-  border-radius: 0.5rem;
-  padding: 0.8rem 1rem;
-}
-
-.detail-body { display: flex; flex-direction: column; gap: 1.2rem; }
-
-.card {
-  background: rgb(15 23 42);
-  border: 1px solid rgb(30 41 59);
-  border-radius: 0.75rem;
-  padding: 1rem 1.1rem 1.2rem;
-}
-.card-head {
-  display: flex;
-  justify-content: space-between;
-  align-items: baseline;
-  border-bottom: 1px solid rgb(30 41 59);
-  padding-bottom: 0.6rem;
-  margin-bottom: 0.8rem;
-}
-.card-head h2 { font-size: 1rem; font-weight: 600; color: rgb(241 245 249); margin: 0; }
-
-.table { width: 100%; border-collapse: collapse; font-size: 0.85rem; }
-.table th {
-  text-align: left;
-  padding: 0.4rem 0.6rem;
-  font-size: 0.7rem;
-  font-weight: 600;
-  text-transform: uppercase;
-  letter-spacing: 0.05em;
-  color: rgb(148 163 184);
-  border-bottom: 1px solid rgb(30 41 59);
-}
-.table td {
-  padding: 0.5rem 0.6rem;
-  border-bottom: 1px solid rgb(30 41 59 / 0.5);
-  color: rgb(203 213 225);
-}
-.row-actions { text-align: right; }
-
-.link { color: rgb(147 197 253); text-decoration: none; }
-.link:hover { text-decoration: underline; }
-
-.course-grid {
-  display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(260px, 1fr));
-  gap: 0.8rem;
-}
-.course-card {
-  background: rgb(30 41 59 / 0.4);
-  border: 1px solid rgb(30 41 59);
-  border-radius: 0.5rem;
-  padding: 0.8rem 1rem;
-  cursor: pointer;
-  transition: border-color 0.15s;
-}
-.course-card:hover { border-color: rgb(59 130 246 / 0.5); }
-.course-card.archived { opacity: 0.55; }
-.course-card h3 {
-  font-size: 0.95rem;
-  font-weight: 600;
-  color: rgb(241 245 249);
-  margin: 0 0 0.3rem 0;
-}
-
-.card-meta { display: flex; gap: 0.4rem; flex-wrap: wrap; margin-top: 0.5rem; }
-.pill {
-  display: inline-block;
-  padding: 0.15rem 0.5rem;
-  border-radius: 0.3rem;
-  font-size: 0.7rem;
-  font-weight: 500;
-  background: rgb(30 41 59);
-  color: rgb(203 213 225);
-}
-.archived-pill { background: rgb(100 116 139 / 0.3); }
-
-/* Modal */
-.modal-backdrop {
-  position: fixed;
-  inset: 0;
-  background: rgba(0,0,0,0.6);
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  z-index: 50;
-}
-.modal {
-  background: rgb(15 23 42);
-  border: 1px solid rgb(30 41 59);
-  border-radius: 0.75rem;
-  padding: 1.5rem;
-  width: min(440px, 90vw);
-}
-.modal h2 { font-size: 1.1rem; font-weight: 600; color: rgb(241 245 249); margin: 0 0 0.4rem 0; }
-
-.form { display: flex; flex-direction: column; gap: 0.8rem; margin-top: 0.8rem; }
-.form label {
-  display: flex;
-  flex-direction: column;
-  gap: 0.3rem;
-  font-size: 0.8rem;
-  color: rgb(148 163 184);
-}
-.form input {
-  background: rgb(30 41 59);
-  border: 1px solid rgb(51 65 85);
-  border-radius: 0.35rem;
-  padding: 0.5rem 0.6rem;
-  color: rgb(226 232 240);
-  font-size: 0.85rem;
-}
-.form input:focus { outline: none; border-color: rgb(59 130 246); }
-.form-actions { display: flex; justify-content: flex-end; gap: 0.6rem; margin-top: 0.6rem; }
-.error-inline { color: rgb(252 165 165); font-size: 0.8rem; margin: 0; }
-</style>

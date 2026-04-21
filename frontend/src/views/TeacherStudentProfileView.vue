@@ -33,6 +33,7 @@ import {
 import { Line } from 'vue-chartjs';
 import { api } from '@/composables/useApi';
 import StudentSnapshotPanel from '@/components/grading/StudentSnapshotPanel.vue';
+import AppShell from '@/components/layout/AppShell.vue';
 
 ChartJS.register(CategoryScale, LinearScale, PointElement, LineElement, Tooltip, Legend, Filler);
 
@@ -207,262 +208,165 @@ function goBack() {
 </script>
 
 <template>
-  <div class="teacher-profile">
-    <header class="profile-header">
-      <button @click="goBack" class="btn-ghost">← Back</button>
-      <h1>Student profile</h1>
-    </header>
+  <AppShell>
+    <div class="p-8 flex-1">
+      <div class="max-w-7xl mx-auto">
+        <header class="flex items-center gap-4 mb-8">
+          <button
+            @click="goBack"
+            class="text-sm text-on-surface-variant hover:text-on-surface transition-colors"
+          >
+            ← Back
+          </button>
+          <h1 class="text-4xl font-extrabold text-on-surface tracking-tight m-0">
+            Student profile
+          </h1>
+        </header>
 
-    <div class="profile-grid">
-      <!-- Left column: snapshot panel -->
-      <div class="col-left">
-        <StudentSnapshotPanel :student-id="studentId" />
-      </div>
+        <div class="grid grid-cols-1 lg:grid-cols-[minmax(300px,380px)_1fr] gap-6 items-start">
+          <!-- Left column: snapshot panel -->
+          <div>
+            <StudentSnapshotPanel :student-id="studentId" />
+          </div>
 
-      <!-- Right column: trajectory + history -->
-      <div class="col-right">
-        <section class="card">
-          <div class="card-head">
-            <h2>Skill trajectory</h2>
-            <span class="muted" v-if="trajectory">
-              {{ trajectory.weeks.length }} weeks
-            </span>
-          </div>
-          <div v-if="trajectoryLoading" class="loading">Loading trajectory…</div>
-          <div v-else-if="trajectoryError" class="error-banner">{{ trajectoryError }}</div>
-          <div v-else-if="trajectoryChart" class="chart-wrap">
-            <Line :data="trajectoryChart" :options="trajectoryOptions" />
-          </div>
-          <div v-else class="empty">No trajectory data yet.</div>
-
-          <!-- Milestones -->
-          <div v-if="trajectory?.milestones?.length" class="milestones">
-            <h3>Milestones</h3>
-            <ul>
-              <li v-for="(m, i) in trajectory.milestones" :key="i" class="milestone">
-                <span class="milestone-date">{{ formatDate(m.date) }}</span>
-                <span class="milestone-event">{{ m.event }}</span>
-                <span v-if="m.skill" class="milestone-skill muted">· {{ m.skill }}</span>
-              </li>
-            </ul>
-          </div>
-        </section>
-
-        <section class="card">
-          <div class="card-head">
-            <h2>Recent PRs</h2>
-            <span class="muted" v-if="history">
-              {{ history.sessions.length }} entries
-            </span>
-          </div>
-          <div v-if="historyLoading" class="loading">Loading PR history…</div>
-          <div v-else-if="historyError" class="error-banner">{{ historyError }}</div>
-          <div v-else-if="history?.sessions.length" class="table-wrap">
-            <table class="pr-table">
-              <thead>
-                <tr>
-                  <th>PR</th>
-                  <th>Course</th>
-                  <th>State</th>
-                  <th class="num">Score</th>
-                  <th class="num">Issues</th>
-                  <th>Submitted</th>
-                </tr>
-              </thead>
-              <tbody>
-                <tr
-                  v-for="entry in history.sessions"
-                  :key="entry.id"
-                  class="pr-row"
-                  @click="router.push({ name: 'grading-session-detail', params: { id: entry.id } })"
-                  data-testid="pr-history-row"
+          <!-- Right column: trajectory + history -->
+          <div class="flex flex-col gap-6">
+            <section class="bg-surface-container-low rounded-xl border border-outline-variant/10 overflow-hidden">
+              <div class="flex justify-between items-center px-6 py-4 border-b border-outline-variant/10">
+                <h2 class="text-base font-bold text-on-surface m-0">Skill trajectory</h2>
+                <span class="text-xs text-on-surface-variant" v-if="trajectory">
+                  {{ trajectory.weeks.length }} weeks
+                </span>
+              </div>
+              <div class="p-6">
+                <div v-if="trajectoryLoading" class="p-6 text-center text-outline text-sm">
+                  Loading trajectory…
+                </div>
+                <div
+                  v-else-if="trajectoryError"
+                  class="bg-error/10 border border-error/20 text-error rounded-lg px-4 py-3 text-sm"
                 >
-                  <td class="pr-cell">
-                    <div class="pr-title">{{ entry.pr_title || '#' + entry.pr_number }}</div>
-                    <div class="muted tiny">{{ entry.repo_full_name }} · #{{ entry.pr_number }}</div>
-                  </td>
-                  <td>{{ entry.course_name || '—' }}</td>
-                  <td><span :class="stateBadgeClass(entry.state)">{{ entry.state }}</span></td>
-                  <td class="num">
-                    {{ entry.rubric_score_avg !== null ? Math.round(entry.rubric_score_avg * 10) / 10 : '—' }}
-                  </td>
-                  <td class="num">{{ entry.findings_count }}</td>
-                  <td>{{ formatDate(entry.submitted_at) }}</td>
-                </tr>
-              </tbody>
-            </table>
+                  {{ trajectoryError }}
+                </div>
+                <div v-else-if="trajectoryChart" class="h-[320px]">
+                  <Line :data="trajectoryChart" :options="trajectoryOptions" />
+                </div>
+                <div v-else class="p-6 text-center text-outline text-sm">No trajectory data yet.</div>
+
+                <!-- Milestones -->
+                <div
+                  v-if="trajectory?.milestones?.length"
+                  class="mt-6 pt-4 border-t border-outline-variant/10"
+                >
+                  <h3 class="text-[11px] font-bold uppercase tracking-widest text-outline mb-2">
+                    Milestones
+                  </h3>
+                  <ul class="list-none p-0 m-0">
+                    <li
+                      v-for="(m, i) in trajectory.milestones"
+                      :key="i"
+                      class="flex gap-2 text-sm py-1 border-t border-outline-variant/5 items-baseline first:border-t-0"
+                    >
+                      <span class="tabular-nums text-on-surface-variant min-w-[6rem]">
+                        {{ formatDate(m.date) }}
+                      </span>
+                      <span class="text-on-surface">{{ m.event }}</span>
+                      <span v-if="m.skill" class="text-on-surface-variant">· {{ m.skill }}</span>
+                    </li>
+                  </ul>
+                </div>
+              </div>
+            </section>
+
+            <section class="bg-surface-container-low rounded-xl border border-outline-variant/10 overflow-hidden">
+              <div class="flex justify-between items-center px-6 py-4 border-b border-outline-variant/10">
+                <h2 class="text-base font-bold text-on-surface m-0">Recent PRs</h2>
+                <span class="text-xs text-on-surface-variant" v-if="history">
+                  {{ history.sessions.length }} entries
+                </span>
+              </div>
+              <div v-if="historyLoading" class="p-6 text-center text-outline text-sm">
+                Loading PR history…
+              </div>
+              <div
+                v-else-if="historyError"
+                class="m-6 bg-error/10 border border-error/20 text-error rounded-lg px-4 py-3 text-sm"
+              >
+                {{ historyError }}
+              </div>
+              <div v-else-if="history?.sessions.length" class="overflow-x-auto">
+                <table class="w-full text-left border-collapse">
+                  <thead>
+                    <tr class="bg-surface-container text-outline text-xs uppercase tracking-widest font-semibold">
+                      <th class="px-6 py-3">PR</th>
+                      <th class="px-6 py-3">Course</th>
+                      <th class="px-6 py-3">State</th>
+                      <th class="px-6 py-3 text-right">Score</th>
+                      <th class="px-6 py-3 text-right">Issues</th>
+                      <th class="px-6 py-3">Submitted</th>
+                    </tr>
+                  </thead>
+                  <tbody class="divide-y divide-outline-variant/5">
+                    <tr
+                      v-for="entry in history.sessions"
+                      :key="entry.id"
+                      class="cursor-pointer hover:bg-surface-container-high/40 transition-colors"
+                      @click="router.push({ name: 'grading-session-detail', params: { id: entry.id } })"
+                      data-testid="pr-history-row"
+                    >
+                      <td class="px-6 py-4">
+                        <div class="text-sm font-semibold text-on-surface">
+                          {{ entry.pr_title || '#' + entry.pr_number }}
+                        </div>
+                        <div class="text-[11px] text-on-surface-variant">
+                          {{ entry.repo_full_name }} · #{{ entry.pr_number }}
+                        </div>
+                      </td>
+                      <td class="px-6 py-4 text-sm text-on-surface-variant">
+                        {{ entry.course_name || '—' }}
+                      </td>
+                      <td class="px-6 py-4">
+                        <span :class="stateBadgeClass(entry.state)">{{ entry.state }}</span>
+                      </td>
+                      <td class="px-6 py-4 text-sm text-on-surface text-right tabular-nums">
+                        {{ entry.rubric_score_avg !== null ? Math.round(entry.rubric_score_avg * 10) / 10 : '—' }}
+                      </td>
+                      <td class="px-6 py-4 text-sm text-on-surface-variant text-right tabular-nums">
+                        {{ entry.findings_count }}
+                      </td>
+                      <td class="px-6 py-4 text-xs text-on-surface-variant">
+                        {{ formatDate(entry.submitted_at) }}
+                      </td>
+                    </tr>
+                  </tbody>
+                </table>
+              </div>
+              <div v-else class="p-6 text-center text-outline text-sm">No graded PRs yet.</div>
+            </section>
           </div>
-          <div v-else class="empty">No graded PRs yet.</div>
-        </section>
+        </div>
       </div>
     </div>
-  </div>
+  </AppShell>
 </template>
 
 <style scoped>
-.teacher-profile {
-  max-width: 1300px;
-  margin: 0 auto;
-  padding: 1.5rem;
-  color: rgb(226 232 240);
-}
-
-.profile-header {
-  display: flex;
-  align-items: center;
-  gap: 1rem;
-  margin-bottom: 1.5rem;
-}
-.profile-header h1 {
-  font-size: 1.4rem;
-  font-weight: 600;
-  color: rgb(241 245 249);
-  margin: 0;
-}
-
-.btn-ghost {
-  background: transparent;
-  border: none;
-  color: rgb(148 163 184);
-  cursor: pointer;
-  padding: 0.5rem 0.75rem;
-  font-size: 0.9rem;
-}
-.btn-ghost:hover { color: rgb(226 232 240); }
-
-.profile-grid {
-  display: grid;
-  grid-template-columns: minmax(300px, 380px) 1fr;
-  gap: 1.2rem;
-  align-items: start;
-}
-
-@media (max-width: 900px) {
-  .profile-grid { grid-template-columns: 1fr; }
-}
-
-.col-right {
-  display: flex;
-  flex-direction: column;
-  gap: 1.2rem;
-}
-
-.card {
-  background: rgb(15 23 42);
-  border: 1px solid rgb(30 41 59);
-  border-radius: 0.75rem;
-  padding: 1rem 1.1rem 1.2rem;
-}
-.card-head {
-  display: flex;
-  justify-content: space-between;
-  align-items: baseline;
-  border-bottom: 1px solid rgb(30 41 59);
-  padding-bottom: 0.6rem;
-  margin-bottom: 0.8rem;
-}
-.card-head h2 {
-  font-size: 0.95rem;
-  font-weight: 600;
-  color: rgb(241 245 249);
-  margin: 0;
-}
-
-.muted { color: rgb(148 163 184); font-size: 0.8rem; }
-.tiny { font-size: 0.7rem; }
-
-.loading, .empty {
-  padding: 1.5rem;
-  text-align: center;
-  color: rgb(148 163 184);
-  font-size: 0.85rem;
-}
-.error-banner {
-  background: rgb(239 68 68 / 0.08);
-  border: 1px solid rgb(239 68 68 / 0.3);
-  color: rgb(252 165 165);
-  border-radius: 0.5rem;
-  padding: 0.8rem 1rem;
-  font-size: 0.85rem;
-}
-
-.chart-wrap { height: 320px; }
-
-.milestones {
-  margin-top: 1rem;
-  padding-top: 0.8rem;
-  border-top: 1px solid rgb(30 41 59);
-}
-.milestones h3 {
-  font-size: 0.75rem;
-  font-weight: 600;
-  text-transform: uppercase;
-  letter-spacing: 0.05em;
-  color: rgb(148 163 184);
-  margin: 0 0 0.4rem 0;
-}
-.milestones ul { list-style: none; padding: 0; margin: 0; }
-.milestone {
-  display: flex;
-  gap: 0.6rem;
-  font-size: 0.8rem;
-  padding: 0.25rem 0;
-  border-top: 1px solid rgb(30 41 59 / 0.5);
-  align-items: baseline;
-}
-.milestone-date {
-  font-variant-numeric: tabular-nums;
-  color: rgb(148 163 184);
-  min-width: 6rem;
-}
-.milestone-event { color: rgb(226 232 240); }
-
-.table-wrap { overflow-x: auto; }
-.pr-table {
-  width: 100%;
-  border-collapse: collapse;
-  font-size: 0.85rem;
-}
-.pr-table th {
-  text-align: left;
-  padding: 0.5rem 0.6rem;
-  font-size: 0.7rem;
-  font-weight: 600;
-  text-transform: uppercase;
-  letter-spacing: 0.05em;
-  color: rgb(148 163 184);
-  border-bottom: 1px solid rgb(30 41 59);
-}
-.pr-table th.num, .pr-table td.num {
-  text-align: right;
-  font-variant-numeric: tabular-nums;
-}
-.pr-table td {
-  padding: 0.55rem 0.6rem;
-  border-bottom: 1px solid rgb(30 41 59 / 0.5);
-  color: rgb(203 213 225);
-}
-.pr-row { cursor: pointer; transition: background 0.1s; }
-.pr-row:hover { background: rgb(30 41 59 / 0.3); }
-
-.pr-cell .pr-title {
-  color: rgb(226 232 240);
-  font-weight: 500;
-}
-
+/* State badges — dynamic class names via stateBadgeClass(), so kept as scoped CSS.
+   Tokens map to Stitch palette via direct color values (no Tailwind runtime here). */
 .state-badge {
   display: inline-block;
-  padding: 0.15rem 0.5rem;
+  padding: 0.15rem 0.6rem;
   border-radius: 0.25rem;
   font-size: 0.7rem;
+  font-weight: 600;
   text-transform: uppercase;
   letter-spacing: 0.04em;
-  background: rgb(30 41 59);
-  color: rgb(203 213 225);
+  background: #262a31;
+  color: #c0c7d4;
 }
-.state-badge.state-drafted { background: rgb(59 130 246 / 0.2); color: rgb(147 197 253); }
-.state-badge.state-reviewing { background: rgb(234 179 8 / 0.2); color: rgb(253 224 71); }
-.state-badge.state-posted { background: rgb(34 197 94 / 0.2); color: rgb(134 239 172); }
-.state-badge.state-partial { background: rgb(249 115 22 / 0.2); color: rgb(253 186 116); }
-.state-badge.state-failed { background: rgb(239 68 68 / 0.2); color: rgb(252 165 165); }
+.state-badge.state-drafted { background: rgba(162, 201, 255, 0.15); color: #a2c9ff; }
+.state-badge.state-reviewing { background: rgba(255, 186, 66, 0.15); color: #ffba42; }
+.state-badge.state-posted { background: rgba(134, 239, 172, 0.15); color: rgb(134 239 172); }
+.state-badge.state-partial { background: rgba(255, 186, 66, 0.15); color: #ffba42; }
+.state-badge.state-failed { background: rgba(255, 180, 171, 0.15); color: #ffb4ab; }
 </style>

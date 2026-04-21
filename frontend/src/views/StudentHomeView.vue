@@ -9,37 +9,21 @@
  * Workstream E4 of Nakijken Copilot v1 Scope B1.
  */
 import MyCohortWidget from '@/components/grading/MyCohortWidget.vue';
+import AppShell from '@/components/layout/AppShell.vue';
 </script>
 
 <template>
-  <div class="student-home">
-    <header class="page-header">
-      <h1>My cohort</h1>
-      <p class="muted">Who teaches you, what courses you're in, which rubrics grade your work.</p>
-    </header>
-    <div class="widget-wrap">
-      <MyCohortWidget />
+  <AppShell>
+    <div class="p-8 flex-1">
+      <div class="max-w-3xl mx-auto">
+        <header class="mb-8">
+          <h1 class="text-4xl font-extrabold text-on-surface tracking-tight">My cohort</h1>
+          <p class="text-on-surface-variant mt-2 max-w-xl">
+            Who teaches you, what courses you're in, which rubrics grade your work.
+          </p>
+        </header>
+        <MyCohortWidget />
+      </div>
     </div>
-  </div>
+  </AppShell>
 </template>
-
-<style scoped>
-.student-home {
-  max-width: 720px;
-  margin: 0 auto;
-  padding: 1.5rem;
-  color: rgb(226 232 240);
-}
-.page-header { margin-bottom: 1.2rem; }
-.page-header h1 {
-  font-size: 1.4rem;
-  font-weight: 600;
-  color: rgb(241 245 249);
-  margin: 0;
-}
-.muted {
-  color: rgb(148 163 184);
-  font-size: 0.85rem;
-  margin: 0.25rem 0 0 0;
-}
-</style>
