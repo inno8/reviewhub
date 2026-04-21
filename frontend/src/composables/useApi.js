@@ -219,12 +219,30 @@ export const api = {
             update: (id, data) => client.patch(`/grading/rubrics/${id}/`, data),
             delete: (id) => client.delete(`/grading/rubrics/${id}/`),
         },
+        cohorts: {
+            list: (params = {}) => client.get('/grading/cohorts/', { params }),
+            get: (id) => client.get(`/grading/cohorts/${id}/`),
+            create: (data) => client.post('/grading/cohorts/', data),
+            update: (id, data) => client.patch(`/grading/cohorts/${id}/`, data),
+            archive: (id) => client.post(`/grading/cohorts/${id}/archive/`, {}),
+            members: (id) => client.get(`/grading/cohorts/${id}/members/`),
+            addMember: (id, studentId, repoUrl) => client.post(
+                `/grading/cohorts/${id}/members/`,
+                { student_id: studentId, student_repo_url: repoUrl || '' }
+            ),
+            removeMember: (id, membershipId) => client.delete(
+                `/grading/cohorts/${id}/members/${membershipId}/`,
+            ),
+            recurringErrors: (id) => client.get(`/grading/cohorts/${id}/recurring-errors/`),
+        },
         courses: {
-            list: () => client.get('/grading/courses/'),
+            list: (params = {}) => client.get('/grading/courses/', { params }),
             get: (id) => client.get(`/grading/courses/${id}/`),
             create: (data) => client.post('/grading/courses/', data),
             update: (id, data) => client.patch(`/grading/courses/${id}/`, data),
             delete: (id) => client.delete(`/grading/courses/${id}/`),
+            archive: (id) => client.post(`/grading/courses/${id}/archive/`, {}),
+            reassign: (id, newOwnerId) => client.post(`/grading/courses/${id}/reassign/`, { new_owner_id: newOwnerId }),
             members: (id) => client.get(`/grading/courses/${id}/members/`),
             addMember: (id, studentId, repoUrl) => client.post(
                 `/grading/courses/${id}/members/`,
@@ -234,6 +252,11 @@ export const api = {
                 `/grading/courses/${id}/members/`,
                 { params: { student_id: studentId } }
             ),
+        },
+        students: {
+            snapshot: (studentId) => client.get(`/grading/students/${studentId}/snapshot/`),
+            trajectory: (studentId, weeks) => client.get(`/grading/students/${studentId}/trajectory/`, { params: weeks ? { weeks } : {} }),
+            prHistory: (studentId, limit) => client.get(`/grading/students/${studentId}/pr-history/`, { params: limit ? { limit } : {} }),
         },
         submissions: {
             list: (params = {}) => client.get('/grading/submissions/', { params }),

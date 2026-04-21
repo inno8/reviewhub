@@ -23,6 +23,11 @@ import GradingInboxView from '@/views/GradingInboxView.vue';
 import GradingSessionDetailView from '@/views/GradingSessionDetailView.vue';
 import OpsDashboardView from '@/views/OpsDashboardView.vue';
 import OrgMembersView from '@/views/OrgMembersView.vue';
+import CohortListView from '@/views/CohortListView.vue';
+import CohortDetailView from '@/views/CohortDetailView.vue';
+import CourseDetailView from '@/views/CourseDetailView.vue';
+import TeacherStudentProfileView from '@/views/TeacherStudentProfileView.vue';
+import StudentHomeView from '@/views/StudentHomeView.vue';
 import { useAuthStore } from '@/stores/auth';
 const router = createRouter({
     history: createWebHistory(),
@@ -57,6 +62,14 @@ const router = createRouter({
         // Nakijken Copilot — teacher grading copilot
         { path: '/grading', name: 'grading-inbox', component: GradingInboxView },
         { path: '/grading/sessions/:id', name: 'grading-session-detail', component: GradingSessionDetailView, props: true },
+        // Workstream E3 — teacher-facing full student profile
+        { path: '/grading/students/:id', name: 'grading-student-profile', component: TeacherStudentProfileView, meta: { admin: true }, props: true },
+        // Workstream E1 — cohort + course management (admin-facing)
+        { path: '/org/cohorts', name: 'org-cohorts', component: CohortListView, meta: { admin: true } },
+        { path: '/org/cohorts/:id', name: 'cohort-detail', component: CohortDetailView, meta: { admin: true }, props: true },
+        { path: '/org/courses/:id', name: 'course-detail', component: CourseDetailView, meta: { admin: true }, props: true },
+        // Workstream E4 — student "My cohort" page (mount point for MyCohortWidget)
+        { path: '/my-cohort', name: 'my-cohort', component: StudentHomeView },
         // Platform ops — superuser only
         { path: '/ops', name: 'ops-dashboard', component: OpsDashboardView, meta: { ops: true } },
     ],

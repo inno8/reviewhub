@@ -53,6 +53,7 @@ onMounted(async () => {
 const navItems = [
   // Student experience (the learning loop)
   { name: 'Dashboard', icon: 'dashboard', path: '/', studentOnly: true },
+  { name: 'My Cohort', icon: 'groups', path: '/my-cohort', studentOnly: true },
   { name: 'Skills', icon: 'school', path: '/skills', studentOnly: true },
   { name: 'Recommendations', icon: 'route', path: '/recommendations', studentOnly: true },
   { name: 'Journey', icon: 'explore', path: '/journey', studentOnly: true },
@@ -66,6 +67,7 @@ const navItems = [
   // School admin experience (org governance).
   // Single unified members view replaces the old /team + /org-dashboard split.
   { name: 'Members', icon: 'group', path: '/org/members', schoolAdminOnly: true },
+  { name: 'Cohorts', icon: 'groups_2', path: '/org/cohorts', schoolAdminOnly: true },
 
   // Platform ops (us — superuser only)
   { name: 'Ops Dashboard', icon: 'admin_panel_settings', path: '/ops', opsOnly: true },

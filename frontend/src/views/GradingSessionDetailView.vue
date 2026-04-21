@@ -50,6 +50,13 @@
         </button>
       </div>
 
+      <!-- Student snapshot (Workstream E2) -->
+      <StudentSnapshotPanel
+        v-if="studentId"
+        :student-id="studentId"
+        :profile-link="true"
+      />
+
       <!-- Rubric scores editor -->
       <section class="rubric-section">
         <h2>Rubric scores</h2>
@@ -212,6 +219,8 @@
 import { ref, computed, onMounted, onBeforeUnmount, watch } from 'vue';
 import { useRoute, useRouter, onBeforeRouteLeave } from 'vue-router';
 import { useGradingStore, type GradingComment, type SessionState } from '@/stores/grading';
+import { api } from '@/composables/useApi';
+import StudentSnapshotPanel from '@/components/grading/StudentSnapshotPanel.vue';
 
 const route = useRoute();
 const router = useRouter();
@@ -229,6 +238,18 @@ const sendResult = ref<any>(null);
 const autosaveTimer = ref<number | null>(null);
 
 const id = computed(() => Number(route.params.id));
+const studentId = ref<number | null>(null);
+
+async function loadStudentIdFromSubmission() {
+  const subId = store.activeSession?.submission;
+  if (!subId) { studentId.value = null; return; }
+  try {
+    const { data } = await api.grading.submissions.get(subId);
+    studentId.value = data?.student ?? null;
+  } catch {
+    studentId.value = null;
+  }
+}
 
 const canSend = computed(() => {
   const st = store.activeSession?.state;
@@ -239,6 +260,7 @@ const canSend = computed(() => {
 onMounted(async () => {
   await store.fetchSession(id.value);
   hydrateEdits();
+  loadStudentIdFromSubmission();
   // Auto-transition to reviewing + start stopwatch
   if (store.activeSession?.state === 'drafted') {
     try { await store.startReview(id.value); } catch { /* non-fatal */ }
