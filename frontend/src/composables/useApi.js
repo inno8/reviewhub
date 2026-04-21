@@ -281,6 +281,9 @@ export const api = {
             courses: (params = {}) => client.get('/grading/ops/courses/', { params }),
             teachers: () => client.get('/grading/ops/teachers/'),
             llmLog: (params = {}) => client.get('/grading/ops/llm-log/', { params }),
+            metrics: {
+                weekly: (params = {}) => client.get('/grading/ops/metrics/weekly/', { params }),
+            },
         },
     },
 };

@@ -87,6 +87,181 @@ def _review_time_stats(sessions) -> tuple[Optional[float], Optional[float]]:
     return round(avg_min, 2), round(med_min, 2)
 
 
+def compute_daily_breakdown(
+    start: date,
+    end: date,
+    *,
+    org_ids: Optional[list[int]] = None,
+) -> dict[str, Any]:
+    """
+    Per-day breakdown of sessions/cost/findings across the period.
+
+    Used by the ops dashboard to drive time-series charts. Pure read,
+    same org-scoping rules as compute_weekly_metrics:
+      - org_ids is None → all orgs (superuser)
+      - org_ids = [id] → restricted
+
+    Returns:
+        {
+          "period": {"start": ..., "end": ...},
+          "days": [
+            {"date": "YYYY-MM-DD",
+             "sessions_started": int, "sessions_sent": int,
+             "llm_cost_eur": float, "findings_total": int,
+             "teachers_active": int},
+            ...
+          ],
+          "per_org": [
+            {"org_id", "org_name",
+             "sessions_started", "sessions_sent", "llm_cost_eur"},
+            ...
+          ],
+          "grand_totals": { ...same as compute_weekly_metrics }
+        }
+    """
+    from users.models import Organization
+
+    from ..models import GradingSession, LLMCostLog
+    from evaluations.models import Finding
+
+    start_dt = _to_aware_dt(start, end_of_day=False)
+    end_dt = _to_aware_dt(end, end_of_day=True)
+
+    started_qs = GradingSession.objects.filter(
+        ai_draft_generated_at__gte=start_dt,
+        ai_draft_generated_at__lte=end_dt,
+    ).select_related("submission__course__owner")
+    posted_qs = GradingSession.objects.filter(
+        state=GradingSession.State.POSTED,
+        posted_at__gte=start_dt,
+        posted_at__lte=end_dt,
+    )
+    cost_qs = LLMCostLog.objects.filter(
+        occurred_at__gte=start_dt, occurred_at__lte=end_dt,
+    )
+
+    if org_ids is not None:
+        started_qs = started_qs.filter(org_id__in=org_ids)
+        posted_qs = posted_qs.filter(org_id__in=org_ids)
+        cost_qs = cost_qs.filter(org_id__in=org_ids)
+
+    tz = timezone.get_current_timezone()
+
+    def _localdate(dt):
+        return timezone.localtime(dt, tz).date()
+
+    # Per-day buckets
+    started_by_day: dict[date, list] = defaultdict(list)
+    posted_by_day: dict[date, int] = defaultdict(int)
+    cost_by_day: dict[date, Decimal] = defaultdict(lambda: Decimal("0"))
+    teachers_by_day: dict[date, set[int]] = defaultdict(set)
+
+    for s in started_qs:
+        d = _localdate(s.ai_draft_generated_at)
+        started_by_day[d].append(s)
+        if s.submission and s.submission.course and s.submission.course.owner_id:
+            teachers_by_day[d].add(s.submission.course.owner_id)
+
+    for s in posted_qs:
+        if s.posted_at is None:
+            continue
+        d = _localdate(s.posted_at)
+        posted_by_day[d] += 1
+
+    for log in cost_qs:
+        d = _localdate(log.occurred_at)
+        cost_by_day[d] += log.cost_eur or Decimal("0")
+
+    # Findings per day (via started sessions)
+    started_ids = [s.id for ids in started_by_day.values() for s in ids]
+    findings_by_session: dict[int, int] = defaultdict(int)
+    if started_ids:
+        rows = (
+            Finding.objects
+            .filter(evaluation__grading_session_links__grading_session_id__in=started_ids)
+            .values("evaluation__grading_session_links__grading_session_id")
+            .annotate(total=Count("id"))
+        )
+        for r in rows:
+            findings_by_session[
+                r["evaluation__grading_session_links__grading_session_id"]
+            ] = r["total"]
+
+    # Build contiguous day series (include zero days)
+    days_out = []
+    cursor = start
+    while cursor <= end:
+        started_list = started_by_day.get(cursor, [])
+        findings_total = sum(findings_by_session.get(s.id, 0) for s in started_list)
+        days_out.append({
+            "date": cursor.isoformat(),
+            "sessions_started": len(started_list),
+            "sessions_sent": posted_by_day.get(cursor, 0),
+            "llm_cost_eur": round(_decimal_to_float(cost_by_day.get(cursor, Decimal("0"))), 4),
+            "findings_total": findings_total,
+            "teachers_active": len(teachers_by_day.get(cursor, set())),
+        })
+        cursor = cursor + timedelta(days=1)
+
+    # Per-org aggregation
+    per_org_sessions_started: dict[int, int] = defaultdict(int)
+    per_org_sessions_sent: dict[int, int] = defaultdict(int)
+    per_org_cost: dict[int, Decimal] = defaultdict(lambda: Decimal("0"))
+
+    for s in started_qs:
+        per_org_sessions_started[s.org_id] += 1
+    for s in posted_qs:
+        per_org_sessions_sent[s.org_id] += 1
+    for log in cost_qs:
+        per_org_cost[log.org_id] += log.cost_eur or Decimal("0")
+
+    org_qs = Organization.objects.all()
+    if org_ids is not None:
+        org_qs = org_qs.filter(id__in=org_ids)
+    org_name_by_id = {o.id: o.name for o in org_qs}
+
+    per_org_ids = (
+        set(per_org_sessions_started)
+        | set(per_org_sessions_sent)
+        | set(per_org_cost)
+    )
+    per_org_out = []
+    for oid in per_org_ids:
+        per_org_out.append({
+            "org_id": oid,
+            "org_name": org_name_by_id.get(oid, f"org#{oid}"),
+            "sessions_started": per_org_sessions_started.get(oid, 0),
+            "sessions_sent": per_org_sessions_sent.get(oid, 0),
+            "llm_cost_eur": round(_decimal_to_float(per_org_cost.get(oid, Decimal("0"))), 4),
+        })
+    per_org_out.sort(key=lambda r: r["sessions_started"], reverse=True)
+
+    # Grand totals — match weekly shape for convenience
+    grand_sessions_started = sum(d["sessions_started"] for d in days_out)
+    grand_sessions_sent = sum(d["sessions_sent"] for d in days_out)
+    grand_cost = sum((cost_by_day.get(d, Decimal("0")) for d in cost_by_day), Decimal("0"))
+    all_teachers = set()
+    for tset in teachers_by_day.values():
+        all_teachers |= tset
+    orgs_active = sum(
+        1 for r in per_org_out
+        if r["sessions_started"] or r["sessions_sent"] or r["llm_cost_eur"]
+    )
+
+    return {
+        "period": {"start": start.isoformat(), "end": end.isoformat()},
+        "days": days_out,
+        "per_org": per_org_out,
+        "grand_totals": {
+            "sessions_started": grand_sessions_started,
+            "sessions_sent": grand_sessions_sent,
+            "llm_cost_eur": round(_decimal_to_float(grand_cost), 4),
+            "orgs_active": orgs_active,
+            "teachers_active": len(all_teachers),
+        },
+    }
+
+
 def compute_weekly_metrics(
     start: date,
     end: date,

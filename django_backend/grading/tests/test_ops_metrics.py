@@ -438,3 +438,151 @@ def test_invalid_date_param_400(two_org_world):
     client.force_authenticate(user=two_org_world["superuser"])
     resp = client.get(URL, {"start": "not-a-date"})
     assert resp.status_code == 400
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Daily granularity (Workstream I1 — charts)
+# ─────────────────────────────────────────────────────────────────────────────
+@pytest.mark.django_db
+def test_daily_returns_contiguous_day_series(two_org_world):
+    """?granularity=daily emits a day entry for every date in the period, incl. zeros."""
+    client = APIClient()
+    client.force_authenticate(user=two_org_world["superuser"])
+    resp = client.get(URL, {"granularity": "daily", "start": "2026-04-14", "end": "2026-04-21"})
+    assert resp.status_code == 200
+    body = resp.json()
+    assert "days" in body
+    # 8 days inclusive
+    assert len(body["days"]) == 8
+    dates = [d["date"] for d in body["days"]]
+    assert dates[0] == "2026-04-14"
+    assert dates[-1] == "2026-04-21"
+    # Each day has the expected keys + zero values for an empty period
+    for d in body["days"]:
+        assert set(d.keys()) >= {
+            "date", "sessions_started", "sessions_sent",
+            "llm_cost_eur", "findings_total", "teachers_active",
+        }
+        assert d["sessions_started"] == 0
+        assert d["sessions_sent"] == 0
+
+
+@pytest.mark.django_db
+def test_daily_buckets_sessions_by_draft_date(two_org_world):
+    """sessions_started should appear on the day ai_draft_generated_at falls in."""
+    # Create two sessions (factory puts ai_draft_generated_at at now - 1d).
+    _make_session(
+        org=two_org_world["org_a"], course=two_org_world["course_a"],
+        student=two_org_world["student_a"],
+        state=GradingSession.State.POSTED, review_seconds=60,
+        pr_number=2000,
+    )
+    _make_session(
+        org=two_org_world["org_a"], course=two_org_world["course_a"],
+        student=two_org_world["student_a"],
+        state=GradingSession.State.DRAFTED, review_seconds=None,
+        pr_number=2001,
+    )
+
+    client = APIClient()
+    client.force_authenticate(user=two_org_world["superuser"])
+    resp = client.get(URL, {"granularity": "daily"})
+    assert resp.status_code == 200
+    body = resp.json()
+
+    total_started = sum(d["sessions_started"] for d in body["days"])
+    total_sent = sum(d["sessions_sent"] for d in body["days"])
+    assert total_started == 2
+    assert total_sent == 1
+    assert body["grand_totals"]["sessions_started"] == 2
+    assert body["grand_totals"]["sessions_sent"] == 1
+
+
+@pytest.mark.django_db
+def test_daily_per_org_breakdown_sorted_by_sessions(two_org_world):
+    """per_org array should list every org with activity, sorted by sessions_started."""
+    # Org A: 2 sessions. Org B: 1 session.
+    for i in range(2):
+        _make_session(
+            org=two_org_world["org_a"], course=two_org_world["course_a"],
+            student=two_org_world["student_a"],
+            state=GradingSession.State.POSTED, review_seconds=60,
+            pr_number=3000 + i,
+        )
+    _make_session(
+        org=two_org_world["org_b"], course=two_org_world["course_b"],
+        student=two_org_world["student_b"],
+        state=GradingSession.State.POSTED, review_seconds=60,
+        pr_number=3100,
+    )
+
+    client = APIClient()
+    client.force_authenticate(user=two_org_world["superuser"])
+    body = client.get(URL, {"granularity": "daily"}).json()
+
+    assert "per_org" in body
+    per_org = body["per_org"]
+    assert len(per_org) == 2
+    # Sorted highest-first
+    assert per_org[0]["org_name"] == "Org A"
+    assert per_org[0]["sessions_started"] == 2
+    assert per_org[1]["org_name"] == "Org B"
+    assert per_org[1]["sessions_started"] == 1
+
+
+@pytest.mark.django_db
+def test_daily_admin_scoped_to_own_org(two_org_world):
+    """Daily mode respects the same org-scoping as weekly."""
+    _make_session(
+        org=two_org_world["org_a"], course=two_org_world["course_a"],
+        student=two_org_world["student_a"],
+        state=GradingSession.State.POSTED, review_seconds=60,
+        pr_number=4000,
+    )
+    _make_session(
+        org=two_org_world["org_b"], course=two_org_world["course_b"],
+        student=two_org_world["student_b"],
+        state=GradingSession.State.POSTED, review_seconds=60,
+        pr_number=4001,
+    )
+
+    client = APIClient()
+    client.force_authenticate(user=two_org_world["admin_a"])
+    body = client.get(URL, {"granularity": "daily"}).json()
+
+    per_org_ids = {o["org_id"] for o in body["per_org"]}
+    assert two_org_world["org_a"].id in per_org_ids
+    assert two_org_world["org_b"].id not in per_org_ids
+    assert body["grand_totals"]["sessions_started"] == 1
+
+
+@pytest.mark.django_db
+def test_daily_cost_aggregation_across_days(two_org_world):
+    """LLM cost totals propagate into daily buckets + per_org + grand_totals."""
+    session = _make_session(
+        org=two_org_world["org_a"], course=two_org_world["course_a"],
+        student=two_org_world["student_a"],
+        state=GradingSession.State.POSTED, review_seconds=60,
+        pr_number=5000,
+    )
+    LLMCostLog.objects.create(
+        org=two_org_world["org_a"], docent=two_org_world["teacher_a"],
+        course=two_org_world["course_a"], grading_session=session,
+        tier="premium", model_name="gpt-5", cost_eur=Decimal("1.50"),
+    )
+    LLMCostLog.objects.create(
+        org=two_org_world["org_a"], docent=two_org_world["teacher_a"],
+        course=two_org_world["course_a"], grading_session=session,
+        tier="cheap", model_name="gpt-5-nano", cost_eur=Decimal("0.25"),
+    )
+
+    client = APIClient()
+    client.force_authenticate(user=two_org_world["admin_a"])
+    body = client.get(URL, {"granularity": "daily"}).json()
+
+    total_cost_days = sum(d["llm_cost_eur"] for d in body["days"])
+    assert round(total_cost_days, 4) == 1.75
+    assert body["grand_totals"]["llm_cost_eur"] == 1.75
+    # Per-org row matches
+    org_a_row = next(r for r in body["per_org"] if r["org_name"] == "Org A")
+    assert org_a_row["llm_cost_eur"] == 1.75

@@ -27,7 +27,11 @@ from rest_framework.response import Response
 from .models import Cohort, CohortMembership, Course, GradingSession, LLMCostLog
 from .permissions import _is_admin
 from .services.cost_metering import WEEKLY_COST_ALERT_EUR
-from .services.metrics import compute_weekly_metrics, parse_period
+from .services.metrics import (
+    compute_daily_breakdown,
+    compute_weekly_metrics,
+    parse_period,
+)
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -374,5 +378,9 @@ class OpsWeeklyMetricsView(views.APIView):
             org_id = getattr(user, "organization_id", None)
             org_ids = [org_id] if org_id else []
 
-        report = compute_weekly_metrics(start, end, org_ids=org_ids)
+        granularity = request.query_params.get("granularity", "weekly")
+        if granularity == "daily":
+            report = compute_daily_breakdown(start, end, org_ids=org_ids)
+        else:
+            report = compute_weekly_metrics(start, end, org_ids=org_ids)
         return Response(report)
