@@ -150,9 +150,19 @@
                 :data-testid="`comment-${idx}`"
               >
                 <div class="flex items-center justify-between mb-2">
-                  <code class="font-mono text-xs text-primary bg-surface-container px-2 py-0.5 rounded">
-                    {{ c.file }}:{{ c.line }}
-                  </code>
+                  <div class="flex items-center gap-2 min-w-0">
+                    <code class="font-mono text-xs text-primary bg-surface-container px-2 py-0.5 rounded">
+                      {{ c.file }}:{{ c.line }}
+                    </code>
+                    <span
+                      v-if="(c as any).suggested_snippet"
+                      class="px-2 py-0.5 rounded-full bg-primary/15 text-primary text-[10px] uppercase tracking-widest font-semibold"
+                      :data-testid="`suggestion-badge-${idx}`"
+                      title="Bevat een voorgestelde code-fix"
+                    >
+                      Suggestion
+                    </span>
+                  </div>
                   <div class="flex items-center gap-3">
                     <button
                       class="inline-flex items-center gap-1 bg-transparent border-none text-on-surface-variant hover:text-primary cursor-pointer text-xs transition-colors"
