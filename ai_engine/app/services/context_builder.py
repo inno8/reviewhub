@@ -35,6 +35,16 @@ LANGUAGE_IMPORT_PATTERNS: dict[str, list[re.Pattern]] = {
     "rust": [
         re.compile(r"^\s*use\s+([\w:]+)", re.MULTILINE),
     ],
+    "php": [
+        # matches: use App\Services\UserService;
+        # matches: use App\Services\UserService as SomeAlias;
+        # matches: use function App\helper;
+        # matches: use const App\SOME_CONSTANT;
+        re.compile(
+            r"^\s*use\s+(?:function\s+|const\s+)?([\w\\]+)(?:\s+as\s+\w+)?\s*;",
+            re.MULTILINE,
+        ),
+    ],
 }
 
 # File extensions to skip when reading context (binary / generated)
@@ -62,6 +72,9 @@ class ContextBuilder:
 
     def __init__(self, repo_path: Path):
         self.repo_path = repo_path
+        # Lazily-initialized PHP PSR-4 / PSR-0 resolver. Only loaded on first
+        # PHP import encountered, then reused across files in this build().
+        self._composer_resolver = None
 
     # ── Public API ──────────────────────────────────────────────────────────
 
@@ -133,7 +146,14 @@ class ContextBuilder:
         resolved: list[str] = []
         source_dir = Path(source_file).parent
 
+        # PHP namespaces contain backslashes — route them through ComposerResolver
+        php_imports = [imp for imp in imports if "\\" in imp]
+        if php_imports:
+            resolved.extend(self._resolve_php_imports(php_imports))
+
         for imp in imports:
+            if "\\" in imp:
+                continue  # already handled by PHP branch
             # Relative JS/TS imports
             if imp.startswith("."):
                 candidates = [
@@ -166,6 +186,36 @@ class ContextBuilder:
         except Exception:
             return False
 
+    # ── PHP: Composer PSR-4 / PSR-0 resolution ─────────────────────────────
+
+    def _resolve_php_imports(self, namespaces: list[str]) -> list[str]:
+        """
+        Resolve PHP fully-qualified namespaces to repo-relative file paths via
+        composer.json autoload. Returns only paths that exist in the repo HEAD.
+        """
+        # Lazy-init the resolver. Cheap when there's no composer.json.
+        if self._composer_resolver is None:
+            from .composer_resolver import ComposerResolver
+            self._composer_resolver = ComposerResolver(self.repo_path)
+            self._composer_resolver.load()
+
+        resolver = self._composer_resolver
+        resolved: list[str] = []
+        for ns in namespaces:
+            # Resolver returns an absolute path (filesystem). Convert to
+            # repo-relative for the git-backed existence check / reads.
+            abs_path = resolver.resolve(ns)
+            if abs_path is None:
+                continue
+            try:
+                rel = abs_path.resolve().relative_to(self.repo_path.resolve())
+            except ValueError:
+                continue
+            rel_str = str(rel).replace("\\", "/")
+            if self._file_exists_in_repo(rel_str):
+                resolved.append(rel_str)
+        return resolved
+
     # ── G2: Transitive import helpers ──────────────────────────────────────
 
     def _extract_imports_from_content(self, content: str, language: str) -> list[str]:
@@ -183,6 +233,7 @@ class ContextBuilder:
             '.py': 'python', '.js': 'javascript', '.ts': 'typescript',
             '.tsx': 'typescript', '.jsx': 'javascript', '.vue': 'vue',
             '.java': 'java', '.go': 'go', '.rs': 'rust',
+            '.php': 'php',
         }
         ext = Path(path).suffix.lower()
         return ext_map.get(ext, '')
