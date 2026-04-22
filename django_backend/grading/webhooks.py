@@ -186,6 +186,64 @@ def _course_for_membership(membership: CohortMembership) -> Course | None:
     )
 
 
+def _ensure_evaluation_link(submission: Submission, session: GradingSession, pr_payload: dict) -> None:
+    """
+    Ensure a lightweight Evaluation + SessionEvaluation link exists for this
+    GradingSession so downstream skill_binding / trajectory code can find it.
+
+    Idempotency:
+      * Evaluation uniquely keyed by (virtual project, commit_sha) — webhook
+        redelivery for the same head commit reuses the existing row. (Webhook
+        dedupe via WebhookDelivery.delivery_id is the first line of defense;
+        this is the second.)
+      * SessionEvaluation unique on (grading_session, evaluation) — create
+        is wrapped in get_or_create so a rerun with the same commit is a
+        no-op.
+
+    Failure isolation: callers MUST wrap this in try/except. The webhook's
+    200-OK contract to GitHub cannot be broken by an Evaluation write
+    failure — see callsite in _upsert_submission_and_session.
+
+    This helper does NOT fetch commit diffs / call the LLM. The created
+    Evaluation is a placeholder: overall_score stays null until the
+    teacher triggers generate_draft, at which point skill_binding will
+    attach SkillObservations to it.
+    """
+    from evaluations.models import Evaluation
+    from grading.models import SessionEvaluation
+    from grading.services.virtual_project import get_or_create_virtual_project
+
+    head_sha = ((pr_payload.get("head") or {}).get("sha") or "")[:40]
+    if not head_sha:
+        # Synthesize a stable placeholder so Evaluation.commit_sha isn't blank
+        # and redelivery still hits the same (project, commit_sha) row.
+        head_sha = f"pr-{submission.pr_number}-{submission.head_branch or 'head'}"[:40]
+
+    project = get_or_create_virtual_project(submission)
+    head_ref = (pr_payload.get("head") or {}).get("ref", "") or submission.head_branch or "unknown"
+    pr_title = (pr_payload.get("title") or submission.pr_title or "")[:500]
+
+    evaluation, _ = Evaluation.objects.get_or_create(
+        project=project,
+        commit_sha=head_sha,
+        defaults={
+            "author": submission.student,
+            "commit_message": pr_title,
+            "branch": head_ref[:100],
+            "author_name": (submission.student.username or submission.student.email or "")[:100],
+            "author_email": (submission.student.email or "")[:255],
+            "status": Evaluation.Status.PENDING,
+            "llm_model": "",
+        },
+    )
+
+    SessionEvaluation.objects.get_or_create(
+        grading_session=session,
+        evaluation=evaluation,
+        defaults={"included_in_draft": False},
+    )
+
+
 def _upsert_submission_and_session(
     *,
     memberships: list[CohortMembership],
@@ -251,6 +309,18 @@ def _upsert_submission_and_session(
                 "state": GradingSession.State.PENDING,
             },
         )
+
+        # Ensure an Evaluation + SessionEvaluation link exists so that
+        # skill_binding (runs after the teacher triggers generate_draft)
+        # has a representative Evaluation to attach SkillObservations to.
+        # Failure here must NOT fail the webhook: log and continue.
+        try:
+            _ensure_evaluation_link(submission, session, pr_payload)
+        except Exception:
+            log.exception(
+                "webhook: evaluation link creation failed for submission=%s session=%s",
+                submission.id, session.id,
+            )
 
     return submission, session, created
 

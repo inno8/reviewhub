@@ -58,31 +58,12 @@ def _map_score(raw) -> float | None:
 
 def _get_or_create_virtual_project(submission):
     """
-    Get or create a legacy projects.Project row that stands in for the
-    Submission's repo. Used solely to satisfy SkillObservation.project.
-
-    Matching key: (provider=github, repo_owner, repo_name). We split
-    repo_full_name ("owner/name") to derive owner and name.
+    Backwards-compatible shim — the real implementation lives in
+    grading.services.virtual_project so the grading webhook can share it.
     """
-    from projects.models import Project
+    from grading.services.virtual_project import get_or_create_virtual_project
 
-    repo_full_name = submission.repo_full_name or ""
-    if "/" in repo_full_name:
-        repo_owner, repo_name = repo_full_name.split("/", 1)
-    else:
-        repo_owner, repo_name = "unknown", repo_full_name or "unknown"
-
-    project, _created = Project.objects.get_or_create(
-        provider=Project.Provider.GITHUB,
-        repo_owner=repo_owner,
-        repo_name=repo_name,
-        defaults={
-            "name": repo_full_name or repo_name,
-            "created_by": submission.student,
-            "repo_url": submission.pr_url or "",
-        },
-    )
-    return project
+    return get_or_create_virtual_project(submission)
 
 
 def _pick_representative_evaluation(grading_session):
