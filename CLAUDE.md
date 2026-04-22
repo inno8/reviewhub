@@ -9,6 +9,13 @@ ceding the final word to an AI.
 
 For the long-form deep-dive see **[docs/ARCHITECTURE.md](docs/ARCHITECTURE.md)**.
 
+## Design System
+
+Always read **[docs/DESIGN.md](docs/DESIGN.md)** before making any visual or UI
+decision. All font choices, colors, spacing, motion, and aesthetic direction are
+defined there. Do not deviate without explicit user approval. In QA mode, flag any
+code that doesn't match DESIGN.md.
+
 ## Directory layout
 
 ```
