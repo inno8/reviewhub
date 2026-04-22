@@ -24,6 +24,7 @@ from .deterministic import (
     DeterministicFinding,
     ESLintRunner,
     PhpcsRunner,
+    PhpstanRunner,
     RuffRunner,
     runner_for_path,
 )
@@ -37,17 +38,27 @@ def run_layer1_runners(
     ruff: Optional[RuffRunner] = None,
     eslint: Optional[ESLintRunner] = None,
     phpcs: Optional[PhpcsRunner] = None,
+    phpstan: Optional[PhpstanRunner] = None,
+    project_root: Optional[str] = None,
 ) -> List[DeterministicFinding]:
     """
     Run Layer 1 runners over (file_path, source) pairs and return a
     flat list of findings. Synchronous — caller should run this in a
     threadpool if it's inside an async handler.
+
+    Phpstan is project-scoped (it needs cross-file type resolution), so
+    it only fires when `project_root` is provided AND at least one .php
+    file is in the diff. phpcs keeps running per-file as before.
     """
     ruff = ruff or RuffRunner()
     eslint = eslint or ESLintRunner()
     phpcs = phpcs or PhpcsRunner()
+    # Materialize the files list once — we need to iterate twice (per-file
+    # runners + the phpstan PHP-file collection).
+    file_list = list(files)
     out: List[DeterministicFinding] = []
-    for path, source in files:
+
+    for path, source in file_list:
         runner = runner_for_path(path, ruff=ruff, eslint=eslint, phpcs=phpcs)
         if runner is None:
             continue
@@ -55,6 +66,17 @@ def run_layer1_runners(
             out.extend(runner.run(path, source))
         except Exception as exc:  # pragma: no cover — safety net
             logger.exception("Layer 1 runner %s crashed on %s: %s", runner.name, path, exc)
+
+    # Phpstan: project-scoped, one invocation per diff.
+    if project_root:
+        php_files = [p for p, _ in file_list if p.lower().endswith(".php")]
+        if php_files:
+            phpstan = phpstan or PhpstanRunner()
+            try:
+                out.extend(phpstan.run(project_root, changed_files=php_files))
+            except Exception as exc:  # pragma: no cover — safety net
+                logger.exception("Layer 1 runner phpstan crashed on %s: %s", project_root, exc)
+
     return out
 
 
@@ -103,11 +125,18 @@ async def post_deterministic_findings(
 async def run_layer1_shadow(
     evaluation_id: int,
     files: Iterable[Tuple[str, str]],
+    *,
+    project_root: Optional[str] = None,
 ) -> int:
     """
     Top-level hook: run all runners, post results. Returns the number of
     findings shipped. Safe to fire-and-forget from the webhook handler.
+
+    `project_root` is optional — supplying it enables phpstan (which
+    needs cross-file type resolution) for any .php files in the diff.
     """
-    findings = await asyncio.to_thread(run_layer1_runners, list(files))
+    findings = await asyncio.to_thread(
+        run_layer1_runners, list(files), project_root=project_root
+    )
     ok = await post_deterministic_findings(evaluation_id, findings)
     return len(findings) if ok else 0

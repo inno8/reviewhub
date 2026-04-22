@@ -11,6 +11,7 @@ from .base import DeterministicFinding, DeterministicRunner, runner_for_path
 from .ruff_runner import RuffRunner
 from .eslint_runner import ESLintRunner
 from .phpcs_runner import PhpcsRunner
+from .phpstan_runner import PhpstanRunner
 
 __all__ = [
     "DeterministicFinding",
@@ -18,5 +19,6 @@ __all__ = [
     "RuffRunner",
     "ESLintRunner",
     "PhpcsRunner",
+    "PhpstanRunner",
     "runner_for_path",
 ]

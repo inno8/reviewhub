@@ -19,7 +19,10 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     composer \
     && rm -rf /var/lib/apt/lists/*
 
-RUN composer global require squizlabs/php_codesniffer:^3.9 --no-interaction
+RUN composer global require \
+    squizlabs/php_codesniffer:^3.9 \
+    phpstan/phpstan:^1.11 \
+    --no-interaction
 ENV PATH="/root/.composer/vendor/bin:${PATH}"
 
 COPY . .
