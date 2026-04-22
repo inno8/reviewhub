@@ -46,6 +46,7 @@ class DeterministicRunner(Protocol):
 
 _PY_EXT = (".py",)
 _JS_TS_EXT = (".js", ".jsx", ".ts", ".tsx", ".mjs", ".cjs")
+_PHP_EXT = (".php",)
 
 
 def runner_for_path(
@@ -53,6 +54,7 @@ def runner_for_path(
     *,
     ruff: Optional[DeterministicRunner] = None,
     eslint: Optional[DeterministicRunner] = None,
+    phpcs: Optional[DeterministicRunner] = None,
 ) -> Optional[DeterministicRunner]:
     """
     Return the appropriate runner for this file, or None if no runner
@@ -63,4 +65,6 @@ def runner_for_path(
         return ruff
     if eslint is not None and any(lower.endswith(ext) for ext in _JS_TS_EXT):
         return eslint
+    if phpcs is not None and lower.endswith(_PHP_EXT):
+        return phpcs
     return None

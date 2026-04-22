@@ -10,11 +10,13 @@ and decide when to swap the execution order.
 from .base import DeterministicFinding, DeterministicRunner, runner_for_path
 from .ruff_runner import RuffRunner
 from .eslint_runner import ESLintRunner
+from .phpcs_runner import PhpcsRunner
 
 __all__ = [
     "DeterministicFinding",
     "DeterministicRunner",
     "RuffRunner",
     "ESLintRunner",
+    "PhpcsRunner",
     "runner_for_path",
 ]

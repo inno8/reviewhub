@@ -23,6 +23,7 @@ from app.core.config import settings
 from .deterministic import (
     DeterministicFinding,
     ESLintRunner,
+    PhpcsRunner,
     RuffRunner,
     runner_for_path,
 )
@@ -35,6 +36,7 @@ def run_layer1_runners(
     *,
     ruff: Optional[RuffRunner] = None,
     eslint: Optional[ESLintRunner] = None,
+    phpcs: Optional[PhpcsRunner] = None,
 ) -> List[DeterministicFinding]:
     """
     Run Layer 1 runners over (file_path, source) pairs and return a
@@ -43,9 +45,10 @@ def run_layer1_runners(
     """
     ruff = ruff or RuffRunner()
     eslint = eslint or ESLintRunner()
+    phpcs = phpcs or PhpcsRunner()
     out: List[DeterministicFinding] = []
     for path, source in files:
-        runner = runner_for_path(path, ruff=ruff, eslint=eslint)
+        runner = runner_for_path(path, ruff=ruff, eslint=eslint, phpcs=phpcs)
         if runner is None:
             continue
         try:
