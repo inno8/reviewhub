@@ -19,6 +19,7 @@ User = get_user_model()
 from .models import (
     Cohort,
     CohortMembership,
+    CohortTeacher,
     Course,
     GradingSession,
     LLMCostLog,
@@ -173,8 +174,26 @@ class CohortMembershipSerializer(serializers.ModelSerializer):
         read_only_fields = ["id", "joined_at"]
 
 
+class CohortTeacherSerializer(serializers.ModelSerializer):
+    teacher_email = serializers.EmailField(source="teacher.email", read_only=True)
+    teacher_name = serializers.CharField(source="teacher.display_name", read_only=True)
+
+    class Meta:
+        model = CohortTeacher
+        fields = [
+            "id",
+            "cohort",
+            "teacher",
+            "teacher_email",
+            "teacher_name",
+            "added_at",
+        ]
+        read_only_fields = ["id", "added_at"]
+
+
 class CourseSerializer(serializers.ModelSerializer):
     owner_email = serializers.EmailField(source="owner.email", read_only=True)
+    owner_name = serializers.CharField(source="owner.display_name", read_only=True, default=None)
     rubric_name = serializers.CharField(source="rubric.name", read_only=True, default=None)
     cohort_name = serializers.CharField(source="cohort.name", read_only=True, default=None)
     student_count = serializers.SerializerMethodField()
@@ -194,6 +213,7 @@ class CourseSerializer(serializers.ModelSerializer):
             "cohort_name",
             "owner",
             "owner_email",
+            "owner_name",
             "secondary_docent",
             "name",
             "source_control_type",
@@ -211,6 +231,7 @@ class CourseSerializer(serializers.ModelSerializer):
             "id",
             "org",
             "owner_email",
+            "owner_name",
             "rubric_name",
             "cohort_name",
             "archived_at",
