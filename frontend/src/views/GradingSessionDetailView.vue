@@ -153,13 +153,24 @@
                   <code class="font-mono text-xs text-primary bg-surface-container px-2 py-0.5 rounded">
                     {{ c.file }}:{{ c.line }}
                   </code>
-                  <button
-                    class="bg-transparent border-none text-error hover:text-error/80 cursor-pointer text-xs transition-colors"
-                    @click="removeComment(idx)"
-                    :data-testid="`remove-comment-${idx}`"
-                  >
-                    Remove
-                  </button>
+                  <div class="flex items-center gap-3">
+                    <button
+                      class="inline-flex items-center gap-1 bg-transparent border-none text-on-surface-variant hover:text-primary cursor-pointer text-xs transition-colors"
+                      @click="openCodeModal(idx)"
+                      :data-testid="`view-in-code-${idx}`"
+                      title="Bekijk in code"
+                    >
+                      <span class="material-symbols-rounded text-base" aria-hidden="true">code</span>
+                      Bekijk in code
+                    </button>
+                    <button
+                      class="bg-transparent border-none text-error hover:text-error/80 cursor-pointer text-xs transition-colors"
+                      @click="removeComment(idx)"
+                      :data-testid="`remove-comment-${idx}`"
+                    >
+                      Remove
+                    </button>
+                  </div>
                 </div>
                 <textarea
                   v-model="c.body"
@@ -255,6 +266,15 @@
         </div>
       </div>
     </div>
+
+    <GradingCommentCodeModal
+      v-if="codeModalOpen && selectedComment"
+      :session-id="id"
+      :comment="selectedComment"
+      :session-state="store.activeSession?.state"
+      @save="onCodeModalSave"
+      @close="closeCodeModal"
+    />
   </AppShell>
 </template>
 
@@ -265,6 +285,7 @@ import { useGradingStore, type GradingComment, type SessionState } from '@/store
 import { api } from '@/composables/useApi';
 import StudentSnapshotPanel from '@/components/grading/StudentSnapshotPanel.vue';
 import ContributorsList from '@/components/grading/ContributorsList.vue';
+import GradingCommentCodeModal from '@/components/grading/GradingCommentCodeModal.vue';
 import AppShell from '@/components/layout/AppShell.vue';
 
 const route = useRoute();
@@ -284,6 +305,36 @@ const autosaveTimer = ref<number | null>(null);
 
 const id = computed(() => Number(route.params.id));
 const studentId = ref<number | null>(null);
+
+// View-in-code modal state
+const codeModalOpen = ref(false);
+const selectedCommentIdx = ref<number | null>(null);
+const selectedComment = computed<GradingComment | null>(() => {
+  const i = selectedCommentIdx.value;
+  if (i === null) return null;
+  return editedComments.value[i] || null;
+});
+
+function openCodeModal(idx: number) {
+  selectedCommentIdx.value = idx;
+  codeModalOpen.value = true;
+}
+
+function closeCodeModal() {
+  codeModalOpen.value = false;
+  selectedCommentIdx.value = null;
+}
+
+function onCodeModalSave(updated: GradingComment) {
+  const i = selectedCommentIdx.value;
+  if (i !== null && editedComments.value[i]) {
+    editedComments.value[i] = { ...editedComments.value[i], ...updated };
+    markDirty();
+    // Persist eagerly — don't wait for autosave.
+    onSave();
+  }
+  closeCodeModal();
+}
 
 async function loadStudentIdFromSubmission() {
   const subId = store.activeSession?.submission;
