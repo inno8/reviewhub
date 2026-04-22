@@ -111,6 +111,52 @@ def _fetch_pr_snapshot(owner: str, repo: str, pr_number: int, token: str | None)
 
 
 # ─────────────────────────────────────────────────────────────────────────────
+# Body formatting — GitHub suggestion syntax
+# ─────────────────────────────────────────────────────────────────────────────
+def _format_comment_body(
+    *,
+    body: str,
+    teacher_explanation: str = "",
+    suggested_snippet: str = "",
+) -> str:
+    """
+    Build the final comment body, optionally appending teacher explanation
+    and a GitHub ``` ```suggestion ``` ``` code-fence block.
+
+    Layout when all three are present:
+
+        {body}
+
+        {teacher_explanation}
+
+        ```suggestion
+        {suggested_snippet}
+        ```
+
+    When suggested_snippet is empty, no fence is appended. When
+    teacher_explanation is empty, it is omitted (body and fence are
+    separated by a single blank line).
+
+    Newlines + indentation of suggested_snippet are preserved verbatim —
+    GitHub's "Commit suggestion" button requires exact whitespace so the
+    diff applies cleanly.
+
+    Ref: https://docs.github.com/en/pull-requests/collaborating-with-pull-requests/reviewing-changes-in-pull-requests/commenting-on-a-pull-request#adding-line-comments-to-a-pull-request
+    """
+    parts: list[str] = [body or ""]
+    explanation = (teacher_explanation or "").strip()
+    if explanation:
+        parts.append(explanation)
+    snippet = suggested_snippet or ""
+    if snippet.strip():
+        # Preserve exact whitespace inside the fence; strip only a trailing
+        # newline so we don't produce a blank final line inside the block.
+        snippet_body = snippet.rstrip("\n")
+        parts.append(f"```suggestion\n{snippet_body}\n```")
+    return "\n\n".join(parts)
+
+
+# ─────────────────────────────────────────────────────────────────────────────
 # Comment posting
 # ─────────────────────────────────────────────────────────────────────────────
 def _post_single_inline_comment(
@@ -276,6 +322,8 @@ def post_all_or_nothing(
         path = c.get("file") or c.get("path") or ""
         line = int(c.get("line") or 0)
         body = c.get("body") or ""
+        teacher_explanation = c.get("teacher_explanation") or ""
+        suggested_snippet = c.get("suggested_snippet") or ""
 
         if not path or line <= 0 or not body.strip():
             log.warning(
@@ -284,7 +332,16 @@ def post_all_or_nothing(
             )
             continue
 
-        mutation_id = PostedComment.compute_mutation_id(session.id, path, line, body)
+        formatted_body = _format_comment_body(
+            body=body,
+            teacher_explanation=teacher_explanation,
+            suggested_snippet=suggested_snippet,
+        )
+
+        # mutation_id is based on the composed body: an edited explanation
+        # or snippet means a new comment, so Resume re-posts instead of
+        # skipping as a duplicate.
+        mutation_id = PostedComment.compute_mutation_id(session.id, path, line, formatted_body)
 
         # Dupe check (eng-review idempotency guarantee).
         existing = PostedComment.objects.filter(
@@ -303,7 +360,7 @@ def post_all_or_nothing(
                 commit_id=snap.head_sha,
                 path=path,
                 line=line,
-                body=body,
+                body=formatted_body,
             )
         except (GitHubError, GitHubAuthExpired) as e:
             # Partial failure. Raise so the ViewSet sees posted_ids so far.
@@ -326,7 +383,7 @@ def post_all_or_nothing(
                 github_comment_id=gh_id,
                 file_path=path,
                 line_number=line,
-                body_preview=body[:200],
+                body_preview=formatted_body[:200],
             )
         posted_ids.append(gh_id)
 

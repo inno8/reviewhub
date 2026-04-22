@@ -438,6 +438,15 @@ class GradingSessionDetailSerializer(serializers.ModelSerializer):
 class GradingSessionEditSerializer(serializers.ModelSerializer):
     """Used on PATCH: only the docent-editable fields are writable."""
 
+    # Optional per-comment snippet fields — added for the Leera suggested-snippet
+    # feature. All three default to empty string when absent, and non-string
+    # values are rejected (see validate_final_comments).
+    _OPTIONAL_COMMENT_STRING_FIELDS = (
+        "original_snippet",
+        "suggested_snippet",
+        "teacher_explanation",
+    )
+
     class Meta:
         model = GradingSession
         fields = [
@@ -447,6 +456,34 @@ class GradingSessionEditSerializer(serializers.ModelSerializer):
             "docent_review_started_at",
             "docent_review_time_seconds",
         ]
+
+    def validate_final_comments(self, value):
+        """
+        Shape check for the comments list:
+          - Must be a list.
+          - Each item is a dict.
+          - Optional snippet fields (original_snippet, suggested_snippet,
+            teacher_explanation) must be strings when present.
+
+        Backward compat: comments missing these fields are accepted.
+        Existing required fields (file, line, body) are validated by the
+        model layer, not here.
+        """
+        if value is None:
+            return value
+        if not isinstance(value, list):
+            raise serializers.ValidationError("final_comments must be a list")
+        for i, item in enumerate(value):
+            if not isinstance(item, dict):
+                raise serializers.ValidationError(
+                    f"final_comments[{i}] must be an object"
+                )
+            for field in self._OPTIONAL_COMMENT_STRING_FIELDS:
+                if field in item and not isinstance(item[field], str):
+                    raise serializers.ValidationError(
+                        f"final_comments[{i}].{field} must be a string"
+                    )
+        return value
 
 
 # ─────────────────────────────────────────────────────────────────────────────
