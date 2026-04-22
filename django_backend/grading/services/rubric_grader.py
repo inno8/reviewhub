@@ -86,6 +86,10 @@ class GraderInput:
     context: dict = field(default_factory=dict)  # past errors summary, etc.
     tier: str = "premium"  # "premium" | "cheap"
     docent_id: int | None = None
+    # Per-org LLM credentials fetched from LLMConfiguration (users.org_llm).
+    # When present, the AI engine uses these instead of its own env vars.
+    # Shape: {"provider": str, "api_key": str, "model": str | None}
+    llm_config: dict | None = None
 
 
 @dataclass
@@ -139,6 +143,16 @@ def generate_draft(*, org_id: int, grading_session_id: int, input_: GraderInput)
         "tier": input_.tier,
         "docent_id": input_.docent_id,
     }
+
+    # Forward per-org LLM credentials when present so the AI engine uses the
+    # school's own key/model instead of the engine's global env-var fallback.
+    if input_.llm_config:
+        if input_.llm_config.get("api_key"):
+            payload["llm_api_key"] = input_.llm_config["api_key"]
+        if input_.llm_config.get("provider"):
+            payload["llm_provider"] = input_.llm_config["provider"]
+        if input_.llm_config.get("model"):
+            payload["llm_model"] = input_.llm_config["model"]
 
     response_body, latency_ms = _call_ai_engine_with_retry(payload)
 
