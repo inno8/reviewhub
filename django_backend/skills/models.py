@@ -442,6 +442,18 @@ class SkillObservation(models.Model):
         on_delete=models.CASCADE,
         related_name='observations',
     )
+    # Optional link back to the GradingSession (Nakijken Copilot v1) that
+    # produced this observation. Nullable because legacy (pre-grading)
+    # observations are written by the evaluations app and have no session.
+    # Used for idempotent bind — re-running bind_rubric_to_observations
+    # update_or_creates per (session, user, skill) instead of duplicating.
+    grading_session = models.ForeignKey(
+        'grading.GradingSession',
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name='skill_observations',
+    )
     commit_sha = models.CharField(max_length=40)
 
     # Quality measurement

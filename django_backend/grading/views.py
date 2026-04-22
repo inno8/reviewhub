@@ -767,6 +767,21 @@ class GradingSessionViewSet(
                 ]
             )
 
+        # Bind rubric scores to per-skill SkillObservation rows so the
+        # student trajectory view has data. Wrapped in try/except: a skill-
+        # binding failure must never fail the grading flow itself.
+        try:
+            from .services.skill_binding import bind_rubric_to_observations
+            obs_count = bind_rubric_to_observations(s)
+            log.info(
+                "bound %d skill observations for session=%s", obs_count, s.id,
+            )
+        except Exception as e:  # defensive — never break grading on skill bind
+            log.warning(
+                "skill binding failed for session=%s: %s", s.id, e,
+                exc_info=True,
+            )
+
         return Response(
             {
                 **GradingSessionDetailSerializer(s).data,
