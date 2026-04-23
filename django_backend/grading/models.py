@@ -244,6 +244,17 @@ class Course(models.Model):
 
     class Meta:
         db_table = "grading_courses"
+        constraints = [
+            # One teacher can own at most ONE active course per cohort.
+            # Archived courses (archived_at IS NOT NULL) are exempt so a teacher
+            # whose course is archived can later get a fresh one in the same cohort.
+            # NULL cohort (legacy pre-refactor rows) is also exempt.
+            models.UniqueConstraint(
+                fields=["cohort", "owner"],
+                name="uniq_course_cohort_owner",
+                condition=models.Q(cohort__isnull=False, archived_at__isnull=True),
+            ),
+        ]
         indexes = [
             models.Index(fields=["org", "owner", "-created_at"]),
             models.Index(fields=["cohort", "-created_at"]),
@@ -252,6 +263,44 @@ class Course(models.Model):
 
     def __str__(self) -> str:
         return f"{self.name} ({self.owner.email})"
+
+
+class CohortTeacher(models.Model):
+    """
+    A teacher assigned to a Cohort (klas).
+
+    Decoupled from Course ownership so the school admin can pre-populate the
+    cohort's teacher list before any courses exist, and the course-create flow
+    can filter the teacher dropdown to only show teachers already assigned to
+    this cohort.
+
+    One teacher may be assigned to multiple cohorts (e.g., a JavaScript teacher
+    who teaches Klas 2A and Klas 2B).  The inverse — cohort.teacher_assignments —
+    is used by the UI to drive the teacher-select in CourseDetailView.
+    """
+
+    cohort = models.ForeignKey(
+        Cohort,
+        on_delete=models.CASCADE,
+        related_name="teacher_assignments",
+    )
+    teacher = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.CASCADE,
+        related_name="cohort_teacher_assignments",
+        help_text="Must have role=TEACHER.",
+    )
+    added_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        db_table = "grading_cohort_teachers"
+        constraints = [
+            models.UniqueConstraint(fields=["cohort", "teacher"], name="uniq_cohort_teacher"),
+        ]
+        ordering = ["added_at"]
+
+    def __str__(self) -> str:
+        return f"{self.teacher.email} → {self.cohort.name}"
 
 
 class CohortMembership(models.Model):

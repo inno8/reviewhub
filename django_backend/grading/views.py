@@ -38,6 +38,7 @@ from rest_framework.response import Response
 from .models import (
     Cohort,
     CohortMembership,
+    CohortTeacher,
     Course,
     GradingSession,
     LLMCostLog,
@@ -55,6 +56,7 @@ from .permissions import (
 from .serializers import (
     CohortMembershipSerializer,
     CohortSerializer,
+    CohortTeacherSerializer,
     CourseSerializer,
     GradingSessionDetailSerializer,
     GradingSessionEditSerializer,
@@ -136,8 +138,9 @@ class CohortViewSet(viewsets.ModelViewSet):
         # has a relationship to the cohort (enforced via queryset scoping).
         if self.action in {"list", "retrieve"}:
             return [IsAuthenticated()]
-        if self.action in {"members"}:
-            # GET/POST/DELETE on members is permission-checked inside the action.
+        if self.action in {"members", "teachers"}:
+            # GET/POST/DELETE on members/teachers is permission-checked inside
+            # the action (GET open to all, POST/DELETE admin-only).
             return [IsAuthenticated()]
         # create, update, partial_update, destroy, archive
         return [IsAuthenticated(), IsOrgAdmin()]
@@ -152,9 +155,11 @@ class CohortViewSet(viewsets.ModelViewSet):
         if _is_admin(user):
             return base.order_by("-created_at")
         if _is_teacher(user):
-            # Cohorts where the teacher owns a course or is secondary docent.
+            # Cohorts where the teacher is explicitly assigned, owns a course,
+            # or is secondary docent.
             return (
-                base.filter(courses__owner=user)
+                base.filter(teacher_assignments__teacher=user)
+                | base.filter(courses__owner=user)
                 | base.filter(courses__secondary_docent=user)
             ).distinct().order_by("-created_at")
         # Student: their own cohort only
@@ -266,6 +271,65 @@ class CohortViewSet(viewsets.ModelViewSet):
             m.save(update_fields=["removed_at"])
         return Response(status=status.HTTP_204_NO_CONTENT)
 
+    @action(detail=True, methods=["get", "post"], url_path="teachers")
+    def teachers(self, request, pk=None):
+        """
+        GET   /cohorts/{id}/teachers/   — list teachers assigned to this cohort.
+        POST  /cohorts/{id}/teachers/   — add a teacher (admin only).
+                                          body: {teacher_id}
+        """
+        cohort = self.get_object()
+
+        if request.method == "GET":
+            qs = cohort.teacher_assignments.select_related("teacher").order_by("added_at")
+            return Response(CohortTeacherSerializer(qs, many=True).data)
+
+        # POST — admin only
+        if not _is_admin(request.user):
+            raise PermissionDenied("Admin role required to add teachers.")
+
+        teacher_id = request.data.get("teacher_id")
+        if not teacher_id:
+            raise ValidationError({"teacher_id": "required"})
+
+        from users.models import User as _User
+        try:
+            teacher = _User.objects.get(pk=teacher_id)
+        except _User.DoesNotExist:
+            raise NotFound("teacher not found")
+
+        if (
+            not request.user.is_superuser
+            and teacher.organization_id != request.user.organization_id
+        ):
+            raise PermissionDenied("teacher is in a different organization")
+
+        if teacher.role not in ("teacher", "admin") and not teacher.is_superuser:
+            raise ValidationError({"teacher_id": "user does not have a teacher role"})
+
+        ct, created = CohortTeacher.objects.get_or_create(cohort=cohort, teacher=teacher)
+        return Response(
+            CohortTeacherSerializer(ct).data,
+            status=status.HTTP_201_CREATED if created else status.HTTP_200_OK,
+        )
+
+    @action(
+        detail=True,
+        methods=["delete"],
+        url_path=r"teachers/(?P<assignment_id>[^/.]+)",
+    )
+    def remove_teacher(self, request, pk=None, assignment_id=None):
+        """DELETE /cohorts/{id}/teachers/{assignment_id}/  — admin only."""
+        cohort = self.get_object()
+        if not _is_admin(request.user):
+            raise PermissionDenied("Admin role required to remove teachers.")
+        try:
+            ct = cohort.teacher_assignments.get(pk=assignment_id)
+        except CohortTeacher.DoesNotExist:
+            raise NotFound("teacher assignment not found")
+        ct.delete()
+        return Response(status=status.HTTP_204_NO_CONTENT)
+
 
 # ─────────────────────────────────────────────────────────────────────────────
 # Course (was "Classroom")
@@ -363,8 +427,19 @@ class CourseViewSet(viewsets.ModelViewSet):
         return {"org": user.organization, "owner": user, "cohort": cohort}
 
     def perform_create(self, serializer):
+        from django.db import IntegrityError
         overrides = self._resolve_create_payload(serializer)
-        serializer.save(**overrides)
+        try:
+            serializer.save(**overrides)
+        except IntegrityError as exc:
+            if "uniq_course_cohort_owner" in str(exc):
+                raise ValidationError(
+                    {"non_field_errors": [
+                        "This teacher already owns an active course in this cohort. "
+                        "A teacher can only have one course per cohort."
+                    ]}
+                )
+            raise
 
     def perform_update(self, serializer):
         # Don't let non-admins mutate owner via plain PATCH.
@@ -679,6 +754,12 @@ class GradingSessionViewSet(
                 ev = se.evaluation
                 combined_diff += (getattr(ev, "diff", "") or "") + "\n"
 
+        # Resolve the org's LLM configuration from the DB so the AI engine
+        # uses the school's own API key and model, not the engine env-var
+        # fallback. Returns None if no config is found (engine falls back).
+        from users.org_llm import get_org_llm_config
+        llm_config = get_org_llm_config(request.user)
+
         input_ = rubric_grader.GraderInput(
             diff=combined_diff,
             rubric_criteria=session.rubric.criteria,
@@ -704,6 +785,7 @@ class GradingSessionViewSet(
             context={},  # v1.1: fill with recurring-error summary etc.
             tier="premium",
             docent_id=request.user.id,
+            llm_config=llm_config,
         )
 
         try:

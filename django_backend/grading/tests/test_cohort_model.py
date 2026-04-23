@@ -133,7 +133,17 @@ class TestCourseCohortRelationship:
         assert course.cohort_id == cohort.id
         assert list(cohort.courses.values_list("id", flat=True)) == [course.id]
 
-    def test_multiple_courses_share_a_cohort(self, org_scaffold):
+    def test_multiple_courses_share_a_cohort_but_different_teachers(self, org_scaffold):
+        """
+        Business rule (uniq_course_cohort_owner): one teacher can own at most
+        ONE active course per cohort. Two different teachers sharing a cohort
+        is fine; the same teacher opening a second course in the same cohort
+        is an IntegrityError.
+        """
+        teacher2 = User.objects.create_user(
+            username="t2_klas", email="t2_klas@ex.com", password="pw",
+            role="teacher", organization=org_scaffold["org"],
+        )
         cohort = Cohort.objects.create(org=org_scaffold["org"], name="Klas 2A")
         c1 = Course.objects.create(
             org=org_scaffold["org"], cohort=cohort,
@@ -141,10 +151,19 @@ class TestCourseCohortRelationship:
         )
         c2 = Course.objects.create(
             org=org_scaffold["org"], cohort=cohort,
-            owner=org_scaffold["teacher"], name="Backend",
+            owner=teacher2, name="Backend",
         )
         assert cohort.courses.count() == 2
         assert {c1.id, c2.id} == set(cohort.courses.values_list("id", flat=True))
+
+        # Same teacher trying to open a second active course in the same cohort
+        # violates uniq_course_cohort_owner.
+        with pytest.raises(IntegrityError):
+            with transaction.atomic():
+                Course.objects.create(
+                    org=org_scaffold["org"], cohort=cohort,
+                    owner=org_scaffold["teacher"], name="FrontendDupe",
+                )
 
     def test_course_cohort_can_be_null(self, org_scaffold):
         """Cohort FK is nullable on Course (for the initial migration window)."""

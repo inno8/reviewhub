@@ -239,6 +239,14 @@ class CourseSerializer(serializers.ModelSerializer):
             "created_at",
             "updated_at",
         ]
+        # DRF auto-derives a UniqueTogetherValidator from Course.Meta.constraints
+        # (the uniq_course_cohort_owner partial constraint). That validator
+        # marks *all* constraint fields required at serializer level, which
+        # breaks the teacher create-flow where `owner` is filled in by the
+        # viewset (`_resolve_create_payload`) AFTER validation. We defer
+        # uniqueness enforcement to the DB and translate IntegrityError into
+        # a friendly 400 in CourseViewSet.perform_create.
+        validators = []
 
     def get_student_count(self, obj) -> int:
         if obj.cohort is None:
