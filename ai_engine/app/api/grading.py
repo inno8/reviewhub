@@ -86,6 +86,12 @@ class InlineComment(BaseModel):
     file: str
     line: int
     body: str
+    # May 7 hero feature: LLM produces an exact snippet from the diff and a
+    # rewritten snippet with the issue fixed. Both default to "" when the LLM
+    # omits them or when the comment is general (not code-specific) — the
+    # session detail UI renders empty placeholders in that case.
+    original_snippet: str = ""
+    suggested_snippet: str = ""
 
 
 class GradeResponse(BaseModel):
@@ -177,10 +183,50 @@ Return ONLY valid JSON matching this exact schema (no prose, no markdown fences)
     {{
       "file": "<file path from the diff>",
       "line": <integer line number>,
-      "body": "<teacher-voiced review comment referencing the student by pseudonym>"
+      "body": "<teacher-voiced review comment referencing the student by pseudonym>",
+      "original_snippet": "<the exact 1-10 line code snippet from the diff this comment refers to, copied verbatim, preserving indentation; empty string if not applicable>",
+      "suggested_snippet": "<the rewritten code with the issue fixed, same structure, ≤10 lines, preserving indentation; empty string if no obvious fix>"
     }}
   ]
 }}
+
+SNIPPET RULES (important — these fields drive the one-click "Commit suggestion"
+button on GitHub, so accuracy matters):
+  - `original_snippet` MUST be copied verbatim from the diff — same characters,
+    same indentation, same whitespace. Do not paraphrase, reformat, or rename.
+  - `suggested_snippet` is the minimal fix: same structure as the original,
+    just with the issue resolved. Do not rename unrelated variables or change
+    surrounding code. ≤10 lines.
+  - If there is no obvious single-snippet fix (e.g. the issue is architectural,
+    or the comment is general praise / a question), set `suggested_snippet`
+    to "" (empty string).
+  - If the comment is general and not pointing at specific code, set BOTH
+    `original_snippet` and `suggested_snippet` to "".
+  - Both snippets must be valid JSON strings: escape newlines as \\n, escape
+    backslashes and double quotes.
+
+FEW-SHOT EXAMPLES of good original/suggested pairs:
+
+Example 1 — Python hardcoded password:
+  file: "vault_cli/auth.py"
+  line: 12
+  body: "Student-A, hardcoding passwords in source code is a serious security vulnerability. Use an environment variable instead."
+  original_snippet: "ADMIN_PASSWORD = \\"admin123\\"  # tijdelijk wachtwoord, later aanpassen"
+  suggested_snippet: "ADMIN_PASSWORD = os.environ.get(\\"ADMIN_PASSWORD\\")\\nif not ADMIN_PASSWORD:\\n    raise RuntimeError(\\"Set ADMIN_PASSWORD env var\\")"
+
+Example 2 — PHP Laravel controller missing validation:
+  file: "app/Http/Controllers/UserController.php"
+  line: 24
+  body: "Student-A, the controller accepts raw request input. Use a FormRequest to centralize validation."
+  original_snippet: "public function store(Request $request) {{\\n    $user = User::create($request->all());\\n    return redirect()->route('users.index');\\n}}"
+  suggested_snippet: "public function store(StoreUserRequest $request) {{\\n    $user = User::create($request->validated());\\n    return redirect()->route('users.index');\\n}}"
+
+Example 3 — Python bare except:
+  file: "services/user_service.py"
+  line: 45
+  body: "Bare except swallows all errors including KeyboardInterrupt. Catch specific exceptions."
+  original_snippet: "try:\\n    user = User.objects.get(id=user_id)\\nexcept:\\n    return None"
+  suggested_snippet: "try:\\n    user = User.objects.get(id=user_id)\\nexcept User.DoesNotExist:\\n    return None"
 
 Keep comments focused on real issues. Quality over quantity.
 If language is 'nl', write comments in Dutch. If 'en', English. If 'mix', use the language of the code comments in the diff.
@@ -235,6 +281,32 @@ def _parse_grade_json(text: str) -> dict:
             status_code=502,
             detail={"error": "llm_upstream_failed", "inner": "missing scores/comments"},
         )
+
+    # Normalize comments: ensure original_snippet + suggested_snippet exist as
+    # strings, defaulting to "" when the LLM omits them. Backward compat with
+    # older prompts that only produced file/line/body.
+    normalized_comments: list[dict] = []
+    raw_comments = parsed.get("comments") or []
+    if not isinstance(raw_comments, list):
+        raise HTTPException(
+            status_code=502,
+            detail={"error": "llm_upstream_failed", "inner": "comments not a list"},
+        )
+    for c in raw_comments:
+        if not isinstance(c, dict):
+            # Skip malformed entries rather than failing the whole draft.
+            continue
+        normalized_comments.append(
+            {
+                **c,
+                "file": str(c.get("file", "")),
+                "line": c.get("line", 0),
+                "body": str(c.get("body", "")),
+                "original_snippet": str(c.get("original_snippet") or ""),
+                "suggested_snippet": str(c.get("suggested_snippet") or ""),
+            }
+        )
+    parsed["comments"] = normalized_comments
     return parsed
 
 
