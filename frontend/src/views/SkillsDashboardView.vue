@@ -5,7 +5,7 @@ import AppShell from '@/components/layout/AppShell.vue';
 import SkillRadarChart from '@/components/charts/SkillRadarChart.vue';
 import ProgressChart from '@/components/charts/ProgressChart.vue';
 import RecentFindings from '@/components/dashboard/RecentFindings.vue';
-import SkillCard from '@/components/dashboard/SkillCard.vue';
+import CategoryRadarChart from '@/components/charts/CategoryRadarChart.vue';
 import RecommendationsWidget from '@/components/skills/RecommendationsWidget.vue';
 import SkillBreakdownDialog from '@/components/skills/SkillBreakdownDialog.vue';
 import { api } from '@/composables/useApi';
@@ -689,8 +689,8 @@ const selectedUserObj = computed(() => adminUsers.value.find(u => u.id === selec
 
           <section v-if="skillCategories.length" class="mb-12">
             <h4 class="text-2xl font-black tracking-tight mb-6">Skill Breakdown by Category</h4>
-            <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
-              <SkillCard v-for="cat in skillCategories" :key="cat.id" :category="cat" @click-skill="openSkillBreakdown" />
+            <div class="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-6">
+              <CategoryRadarChart v-for="cat in skillCategories" :key="cat.id" :category="cat" @click-skill="openSkillBreakdown" />
             </div>
           </section>
 
