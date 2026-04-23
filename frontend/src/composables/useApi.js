@@ -95,7 +95,7 @@ export const api = {
         getContent: (projectId, branch, filePath) => client.get(`/files/${projectId}/${encodeURIComponent(branch)}/${encodeURIComponent(filePath)}`),
     },
     users: {
-        list: () => client.get('/users/'),
+        list: (params = {}) => client.get('/users/', { params }),
         me: () => client.get('/users/me/'),
         updateMe: (data) => client.patch('/users/me/', data),
         create: (data) => client.post('/users/', data),
@@ -232,6 +232,14 @@ export const api = {
             ),
             removeMember: (id, membershipId) => client.delete(
                 `/grading/cohorts/${id}/members/${membershipId}/`,
+            ),
+            teachers: (id) => client.get(`/grading/cohorts/${id}/teachers/`),
+            addTeacher: (id, teacherId) => client.post(
+                `/grading/cohorts/${id}/teachers/`,
+                { teacher_id: teacherId }
+            ),
+            removeTeacher: (id, assignmentId) => client.delete(
+                `/grading/cohorts/${id}/teachers/${assignmentId}/`,
             ),
             recurringErrors: (id) => client.get(`/grading/cohorts/${id}/recurring-errors/`),
         },

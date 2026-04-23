@@ -64,7 +64,8 @@ const router = createRouter({
         { path: '/grading/sessions/:id', name: 'grading-session-detail', component: GradingSessionDetailView, props: true },
         // Workstream E3 — teacher-facing full student profile
         { path: '/grading/students/:id', name: 'grading-student-profile', component: TeacherStudentProfileView, meta: { admin: true }, props: true },
-        // Workstream E1 — cohort + course management (admin-facing)
+        // Workstream E1 — cohort + course management.
+        // Teachers can view their own cohorts; the backend queryset scopes results.
         { path: '/org/cohorts', name: 'org-cohorts', component: CohortListView, meta: { admin: true } },
         { path: '/org/cohorts/:id', name: 'cohort-detail', component: CohortDetailView, meta: { admin: true }, props: true },
         { path: '/org/courses/:id', name: 'course-detail', component: CourseDetailView, meta: { admin: true }, props: true },
