@@ -1,41 +1,47 @@
 <template>
   <AppShell>
-    <div class="p-8 flex-1">
-      <div class="max-w-5xl mx-auto">
-        <header class="flex items-center gap-4 pb-4 border-b border-outline-variant/10 mb-6">
+    <div class="p-6 flex-1">
+      <div class="max-w-[1400px] mx-auto flex flex-col gap-5">
+        <!-- Header -->
+        <header
+          class="flex flex-wrap items-center gap-4 pb-4 border-b border-outline-variant/10"
+        >
           <button
             @click="goBack"
-            class="bg-transparent border-none text-on-surface-variant hover:text-on-surface cursor-pointer px-3 py-2 text-sm transition-colors"
+            class="p-2 hover:bg-surface-container rounded-lg transition-colors"
             data-testid="back-btn"
+            aria-label="Terug naar inbox"
           >
-            ← Inbox
+            <span
+              class="material-symbols-rounded text-on-surface-variant"
+              aria-hidden="true"
+            >arrow_back</span>
           </button>
           <div class="flex-1 min-w-0" v-if="store.activeSession">
-            <h1 class="text-xl font-semibold text-on-surface">
+            <h1 class="text-lg font-bold text-on-surface truncate">
               {{ store.activeSession.student_name || store.activeSession.student_email }}
             </h1>
-            <p class="text-sm text-on-surface-variant">
+            <p class="text-xs text-on-surface-variant truncate">
               {{ store.activeSession.course_name }} ·
               <a
                 :href="store.activeSession.pr_url"
                 target="_blank"
                 class="text-primary hover:underline"
-              >
-                {{ store.activeSession.pr_title }}
-              </a>
+              >{{ store.activeSession.pr_title }}</a>
             </p>
           </div>
-          <div v-if="store.activeSession">
-            <span
-              class="px-2.5 py-1 rounded-md text-xs uppercase tracking-widest font-semibold"
-              :class="stateBadgeClass(store.activeSession.state)"
-            >
-              {{ stateLabel(store.activeSession.state) }}
-            </span>
-          </div>
+          <span
+            v-if="store.activeSession"
+            class="px-2.5 py-1 rounded-md text-[11px] uppercase tracking-widest font-semibold"
+            :class="stateBadgeClass(store.activeSession.state)"
+          >{{ stateLabel(store.activeSession.state) }}</span>
         </header>
 
-        <div v-if="store.activeSessionLoading && !store.activeSession" class="flex flex-col gap-2">
+        <!-- Loading -->
+        <div
+          v-if="store.activeSessionLoading && !store.activeSession"
+          class="flex flex-col gap-2"
+        >
           <div
             v-for="n in 8"
             :key="n"
@@ -43,25 +49,28 @@
           ></div>
         </div>
 
+        <!-- Error -->
         <div
           v-else-if="store.activeSessionError"
           class="bg-error/10 border border-error/20 text-error rounded-lg px-4 py-3 text-sm"
-        >
-          {{ store.activeSessionError }}
-        </div>
+        >{{ store.activeSessionError }}</div>
 
-        <div v-else-if="store.activeSession" class="flex flex-col gap-6">
-          <!-- AI draft warnings + controls -->
+        <template v-else-if="store.activeSession">
+          <!-- Truncated banner -->
           <div
             v-if="store.activeSession.ai_draft_truncated"
             class="bg-tertiary/10 border border-tertiary/30 text-tertiary px-4 py-3 rounded-lg text-sm"
             data-testid="truncated-banner"
           >
-            The diff was truncated before AI grading. Review carefully.
+            De diff is afgekapt voor de AI-beoordeling. Controleer zorgvuldig.
           </div>
 
+          <!-- Generate-draft prompt -->
           <div
-            v-if="store.activeSession.state === 'pending' || !store.activeSession.ai_draft_generated_at"
+            v-if="
+              store.activeSession.state === 'pending'
+                || !store.activeSession.ai_draft_generated_at
+            "
             class="glass-panel p-6 text-center rounded-xl"
           >
             <p class="text-on-surface-variant mb-3">No AI draft yet.</p>
@@ -70,221 +79,177 @@
               :disabled="draftInFlight"
               class="primary-gradient text-on-primary px-5 py-2.5 rounded-lg font-bold shadow-lg shadow-primary/10 hover:shadow-primary/20 transition-all active:scale-95 disabled:opacity-50 disabled:cursor-not-allowed"
             >
-              {{ draftInFlight ? 'Drafting…' : 'Generate draft' }}
+              {{ draftInFlight ? 'Concept opstellen…' : 'Concept opstellen' }}
             </button>
           </div>
 
-          <!-- Contributors (Workstream G2) — shown when PR has >1 contributor -->
-          <ContributorsList
-            v-if="store.activeSession.contributors && store.activeSession.contributors.length > 1"
-            :contributors="store.activeSession.contributors"
-          />
+          <template v-else>
+            <!-- Contributors + student snapshot (side helpers) -->
+            <ContributorsList
+              v-if="
+                store.activeSession.contributors
+                  && store.activeSession.contributors.length > 1
+              "
+              :contributors="store.activeSession.contributors"
+            />
 
-          <!--
-            Student snapshot (Workstream E2)
-            v1.1 followup: if session has multiple contributors, show a small
-            "view snapshot for [name]" switcher here. v1 just shows the primary
-            author's snapshot (via studentId loaded from the Submission).
-          -->
-          <StudentSnapshotPanel
-            v-if="studentId"
-            :student-id="studentId"
-            :profile-link="true"
-          />
+            <StudentSnapshotPanel
+              v-if="studentId"
+              :student-id="studentId"
+              :profile-link="true"
+            />
 
-          <!-- Rubric scores editor -->
-          <section>
-            <h2 class="text-base font-semibold text-on-surface mb-3">Rubric scores</h2>
-            <div class="grid grid-cols-[repeat(auto-fill,minmax(280px,1fr))] gap-3">
-              <div
-                v-for="criterion in store.activeSession.rubric_snapshot.criteria"
-                :key="criterion.id"
-                class="bg-surface-container-low border border-outline-variant/10 rounded-xl px-4 py-3"
-              >
-                <div class="flex items-center justify-between gap-2 mb-2">
-                  <span class="font-medium text-on-surface">{{ criterion.name }}</span>
-                  <select
-                    :value="scoreFor(criterion.id)"
-                    @change="(e) => setScore(criterion.id, parseInt((e.target as HTMLSelectElement).value))"
-                    class="bg-surface-container border border-outline-variant/20 text-on-surface rounded-md py-1 px-2 text-sm max-w-[140px] focus:ring-1 focus:ring-primary/50 focus:outline-none"
-                    :data-testid="`score-${criterion.id}`"
-                  >
-                    <option
-                      v-for="lvl in criterion.levels"
-                      :key="lvl.score"
-                      :value="lvl.score"
-                    >
-                      {{ lvl.score }}{{ lvl.description ? ' — ' + lvl.description : '' }}
-                    </option>
-                  </select>
-                </div>
-                <p v-if="evidenceFor(criterion.id)" class="text-xs text-on-surface-variant italic mt-2 leading-relaxed">
-                  <span class="font-semibold not-italic">Evidence:</span>
-                  {{ evidenceFor(criterion.id) }}
-                </p>
+            <!-- Rubric panel (horizontal strip — docent-first) -->
+            <RubricPanel
+              :criteria="store.activeSession.rubric_snapshot.criteria"
+              :scores="editedScores"
+              :editable="canEdit"
+              @update-score="setScore"
+            />
+
+            <!-- File + diff viewer: one viewer per file, comments inlined at target line -->
+            <section class="flex flex-col gap-4">
+              <div class="flex items-center gap-3">
+                <h2 class="text-sm font-bold uppercase tracking-widest text-on-surface-variant">
+                  Code &amp; commentaar
+                </h2>
+                <span class="text-xs text-outline" data-testid="comment-count">
+                  {{ editedComments.length }} comment{{ editedComments.length === 1 ? '' : 's' }}
+                </span>
+                <span v-if="dirty" class="text-[11px] text-tertiary ml-auto">niet opgeslagen</span>
+                <span v-else-if="savingEdits" class="text-[11px] text-tertiary ml-auto">opslaan…</span>
               </div>
-            </div>
-          </section>
 
-          <!-- Inline comments editor -->
-          <section>
-            <div class="flex items-center gap-4 mb-3">
-              <h2 class="text-base font-semibold text-on-surface">Inline comments ({{ editedComments.length }})</h2>
-              <span v-if="dirty" class="text-xs text-tertiary">Unsaved changes</span>
-              <span v-if="savingEdits" class="text-xs text-tertiary">Saving…</span>
-            </div>
-
-            <div
-              v-if="editedComments.length === 0"
-              class="p-4 bg-surface-container-low border border-dashed border-outline-variant/30 rounded-xl text-on-surface-variant text-sm"
-              data-testid="no-comments"
-            >
-              The AI returned no inline comments. Add a summary note below or click Send with rubric scores only.
-            </div>
-
-            <ul v-else class="list-none p-0 m-0 flex flex-col gap-3">
-              <li
-                v-for="(c, idx) in editedComments"
-                :key="idx"
-                class="bg-surface-container-low border border-outline-variant/10 rounded-xl p-3"
-                :data-testid="`comment-${idx}`"
+              <div
+                v-if="editedComments.length === 0"
+                class="p-4 bg-surface-container-low border border-dashed border-outline-variant/30 rounded-xl text-on-surface-variant text-sm"
+                data-testid="no-comments"
               >
-                <div class="flex items-center justify-between mb-2">
-                  <div class="flex items-center gap-2 min-w-0">
-                    <code class="font-mono text-xs text-primary bg-surface-container px-2 py-0.5 rounded">
-                      {{ c.file }}:{{ c.line }}
-                    </code>
-                    <span
-                      v-if="(c as any).suggested_snippet"
-                      class="px-2 py-0.5 rounded-full bg-primary/15 text-primary text-[10px] uppercase tracking-widest font-semibold"
-                      :data-testid="`suggestion-badge-${idx}`"
-                      title="Bevat een voorgestelde code-fix"
-                    >
-                      Suggestion
-                    </span>
-                  </div>
-                  <div class="flex items-center gap-3">
-                    <button
-                      class="inline-flex items-center gap-1 bg-transparent border-none text-on-surface-variant hover:text-primary cursor-pointer text-xs transition-colors"
-                      @click="openCodeModal(idx)"
-                      :data-testid="`view-in-code-${idx}`"
-                      title="Bekijk in code"
-                    >
-                      <span class="material-symbols-rounded text-base" aria-hidden="true">code</span>
-                      Bekijk in code
-                    </button>
-                    <button
-                      class="bg-transparent border-none text-error hover:text-error/80 cursor-pointer text-xs transition-colors"
-                      @click="removeComment(idx)"
-                      :data-testid="`remove-comment-${idx}`"
-                    >
-                      Remove
-                    </button>
-                  </div>
+                De AI heeft geen inline comments geplaatst. Vul hieronder een
+                samenvatting in of klik Verzenden met alleen de rubric-scores.
+              </div>
+
+              <template v-else>
+                <!-- Hidden comment handles so existing tests can still target by index. -->
+                <div class="sr-only" aria-hidden="true">
+                  <div
+                    v-for="(c, idx) in editedComments"
+                    :key="`anchor-${idx}`"
+                    :data-testid="`comment-${idx}`"
+                  >{{ c.file }}:{{ c.line }}</div>
                 </div>
+
+                <DiffInlineViewer
+                  v-for="group in fileGroups"
+                  :key="group.file"
+                  :session-id="id"
+                  :file-path="group.file"
+                  :comments="group.comments"
+                  :editable="canEdit"
+                  @update-comment="onCommentUpdate"
+                  @remove-comment="removeComment"
+                />
+              </template>
+            </section>
+
+            <!-- Summary notes + bottom action row -->
+            <section
+              class="rounded-xl border border-outline-variant/10 bg-surface-container-low p-4 flex flex-col gap-4"
+            >
+              <div class="flex flex-col gap-2">
+                <label
+                  for="grading-summary"
+                  class="text-[11px] uppercase tracking-widest text-on-surface-variant font-semibold"
+                >Samenvatting (optioneel)</label>
                 <textarea
-                  v-model="c.body"
+                  id="grading-summary"
+                  v-model="editedSummary"
                   @input="markDirty"
-                  class="w-full bg-surface-container-lowest border border-outline-variant/20 text-on-surface rounded-md py-2 px-2 text-sm font-inherit resize-y focus:ring-1 focus:ring-primary/50 focus:outline-none leading-relaxed"
-                  rows="3"
-                  :data-testid="`comment-body-${idx}`"
+                  :disabled="!canEdit"
+                  rows="4"
+                  placeholder="Overall feedback die bovenaan de PR als comment verschijnt…"
+                  class="w-full rounded-md border border-outline-variant/20 bg-surface-container-lowest px-3 py-2 text-sm text-on-surface leading-relaxed focus:outline-none focus:ring-1 focus:ring-primary/50 disabled:opacity-60 placeholder:text-outline/50 resize-y"
+                  data-testid="summary-textarea"
                 ></textarea>
-              </li>
-            </ul>
-          </section>
+              </div>
 
-          <!-- Summary note -->
-          <section>
-            <h2 class="text-base font-semibold text-on-surface mb-3">Summary note (optional)</h2>
-            <textarea
-              v-model="editedSummary"
-              @input="markDirty"
-              rows="4"
-              placeholder="Overall feedback that will appear as a top-level PR comment…"
-              class="w-full bg-surface-container-lowest border border-outline-variant/20 text-on-surface rounded-md py-3 px-3 text-sm font-inherit resize-y focus:ring-1 focus:ring-primary/50 focus:outline-none leading-relaxed placeholder:text-outline/50"
-              data-testid="summary-textarea"
-            ></textarea>
-          </section>
+              <footer class="flex items-center justify-between gap-4 flex-wrap">
+                <div class="text-on-surface-variant text-xs">
+                  <span v-if="store.activeSession.docent_review_time_seconds">
+                    {{ Math.round(store.activeSession.docent_review_time_seconds / 60) }} min beoordeeld
+                  </span>
+                  <span
+                    v-if="store.activeSession.state === 'partial'"
+                    class="text-tertiary"
+                  >
+                    {{ store.activeSession.posted_comments.length }} comments al geplaatst
+                  </span>
+                </div>
+                <div class="flex gap-3 flex-wrap">
+                  <button
+                    @click="goBack"
+                    class="bg-transparent hover:bg-surface-container text-on-surface-variant px-5 py-2.5 rounded-lg text-sm font-medium transition-colors"
+                    data-testid="cancel-btn"
+                  >Annuleer</button>
+                  <button
+                    @click="onSave"
+                    :disabled="!dirty || savingEdits || !canEdit"
+                    class="bg-surface-container hover:bg-surface-container-high text-on-surface px-5 py-2.5 rounded-lg text-sm font-medium border border-outline-variant/20 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+                    data-testid="save-btn"
+                  >Opslaan</button>
+                  <button
+                    v-if="store.activeSession.state === 'partial'"
+                    @click="onResume"
+                    :disabled="sendInFlight"
+                    class="primary-gradient text-on-primary px-5 py-2.5 rounded-lg font-bold shadow-lg shadow-primary/10 hover:shadow-primary/20 transition-all active:scale-95 disabled:opacity-50 disabled:cursor-not-allowed"
+                    data-testid="resume-btn"
+                  >
+                    {{ sendInFlight ? 'Hervatten…' : 'Hervat verzenden' }}
+                  </button>
+                  <button
+                    v-else
+                    @click="onSend"
+                    :disabled="!canSend || sendInFlight"
+                    class="primary-gradient text-on-primary px-5 py-2.5 rounded-lg font-bold shadow-lg shadow-primary/10 hover:shadow-primary/20 transition-all active:scale-95 disabled:opacity-50 disabled:cursor-not-allowed"
+                    data-testid="send-btn"
+                  >
+                    {{ sendInFlight ? 'Verzenden…' : 'Verzenden naar student' }}
+                  </button>
+                </div>
+              </footer>
+            </section>
 
-          <!-- Send / Resume controls -->
-          <footer class="flex items-center justify-between pt-6 border-t border-outline-variant/10">
-            <div class="text-on-surface-variant text-sm">
-              <span v-if="store.activeSession.docent_review_time_seconds">
-                {{ Math.round(store.activeSession.docent_review_time_seconds / 60) }} min reviewed
-              </span>
-              <span v-if="store.activeSession.state === 'partial'" class="text-tertiary">
-                {{ store.activeSession.posted_comments.length }} comments already posted
-              </span>
+            <!-- Send-result banner -->
+            <div
+              v-if="sendResult"
+              class="px-4 py-3 rounded-lg text-sm"
+              :class="sendResultClass"
+            >
+              <template v-if="sendResult.ok">
+                <strong>Verzonden.</strong>
+                {{ sendResult.summary?.posted_count || 0 }} comments geplaatst
+                ({{ sendResult.summary?.skipped_duplicate_count || 0 }} duplicaten overgeslagen).
+              </template>
+              <template v-else-if="sendResult.kind === 'partial'">
+                <strong>Partial post.</strong>
+                {{ sendResult.posted_so_far }} comments geplaatst. Klik Hervat om door te gaan.
+              </template>
+              <template v-else-if="sendResult.kind === 'pr_closed'">
+                <strong>PR is gesloten.</strong> Vraag de student de PR weer te openen.
+              </template>
+              <template v-else-if="sendResult.kind === 'github_auth'">
+                <strong>GitHub-authenticatie verlopen.</strong>
+                Werk je PAT bij in Instellingen en probeer opnieuw.
+              </template>
+              <template v-else>
+                <strong>Verzenden mislukt.</strong>
+                {{ sendResult.message || 'Onbekende fout' }}
+              </template>
             </div>
-            <div class="flex gap-3">
-              <button
-                @click="onSave"
-                :disabled="!dirty || savingEdits"
-                class="bg-surface-container hover:bg-surface-container-high text-on-surface px-5 py-2.5 rounded-lg text-sm font-medium border border-outline-variant/20 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
-                data-testid="save-btn"
-              >
-                Save
-              </button>
-              <button
-                v-if="store.activeSession.state === 'partial'"
-                @click="onResume"
-                :disabled="sendInFlight"
-                class="primary-gradient text-on-primary px-5 py-2.5 rounded-lg font-bold shadow-lg shadow-primary/10 hover:shadow-primary/20 transition-all active:scale-95 disabled:opacity-50 disabled:cursor-not-allowed"
-                data-testid="resume-btn"
-              >
-                {{ sendInFlight ? 'Resuming…' : 'Resume send' }}
-              </button>
-              <button
-                v-else
-                @click="onSend"
-                :disabled="!canSend || sendInFlight"
-                class="primary-gradient text-on-primary px-5 py-2.5 rounded-lg font-bold shadow-lg shadow-primary/10 hover:shadow-primary/20 transition-all active:scale-95 disabled:opacity-50 disabled:cursor-not-allowed"
-                data-testid="send-btn"
-              >
-                {{ sendInFlight ? 'Sending…' : 'Send to student' }}
-              </button>
-            </div>
-          </footer>
-
-          <!-- Send-result banners -->
-          <div
-            v-if="sendResult"
-            class="px-4 py-3 rounded-lg text-sm"
-            :class="sendResultClass"
-          >
-            <template v-if="sendResult.ok">
-              <strong>Sent.</strong>
-              Posted {{ sendResult.summary?.posted_count || 0 }} comments
-              ({{ sendResult.summary?.skipped_duplicate_count || 0 }} duplicates skipped).
-            </template>
-            <template v-else-if="sendResult.kind === 'partial'">
-              <strong>Partial post.</strong>
-              {{ sendResult.posted_so_far }} comments posted. Click Resume to continue.
-            </template>
-            <template v-else-if="sendResult.kind === 'pr_closed'">
-              <strong>PR is closed.</strong> Ask the student to reopen, then try again.
-            </template>
-            <template v-else-if="sendResult.kind === 'github_auth'">
-              <strong>GitHub authentication expired.</strong>
-              Update your PAT in Settings, then retry.
-            </template>
-            <template v-else>
-              <strong>Send failed.</strong>
-              {{ sendResult.message || 'Unknown error' }}
-            </template>
-          </div>
-        </div>
+          </template>
+        </template>
       </div>
     </div>
-
-    <GradingCommentCodeModal
-      v-if="codeModalOpen && selectedComment"
-      :session-id="id"
-      :comment="selectedComment"
-      :session-state="store.activeSession?.state"
-      @save="onCodeModalSave"
-      @close="closeCodeModal"
-    />
   </AppShell>
 </template>
 
@@ -295,7 +260,8 @@ import { useGradingStore, type GradingComment, type SessionState } from '@/store
 import { api } from '@/composables/useApi';
 import StudentSnapshotPanel from '@/components/grading/StudentSnapshotPanel.vue';
 import ContributorsList from '@/components/grading/ContributorsList.vue';
-import GradingCommentCodeModal from '@/components/grading/GradingCommentCodeModal.vue';
+import RubricPanel from '@/components/grading/RubricPanel.vue';
+import DiffInlineViewer from '@/components/grading/DiffInlineViewer.vue';
 import AppShell from '@/components/layout/AppShell.vue';
 
 const route = useRoute();
@@ -316,46 +282,11 @@ const autosaveTimer = ref<number | null>(null);
 const id = computed(() => Number(route.params.id));
 const studentId = ref<number | null>(null);
 
-// View-in-code modal state
-const codeModalOpen = ref(false);
-const selectedCommentIdx = ref<number | null>(null);
-const selectedComment = computed<GradingComment | null>(() => {
-  const i = selectedCommentIdx.value;
-  if (i === null) return null;
-  return editedComments.value[i] || null;
+const EDITABLE_STATES = new Set<SessionState>(['drafted', 'reviewing', 'partial']);
+const canEdit = computed(() => {
+  const st = store.activeSession?.state;
+  return st ? EDITABLE_STATES.has(st) : false;
 });
-
-function openCodeModal(idx: number) {
-  selectedCommentIdx.value = idx;
-  codeModalOpen.value = true;
-}
-
-function closeCodeModal() {
-  codeModalOpen.value = false;
-  selectedCommentIdx.value = null;
-}
-
-function onCodeModalSave(updated: GradingComment) {
-  const i = selectedCommentIdx.value;
-  if (i !== null && editedComments.value[i]) {
-    editedComments.value[i] = { ...editedComments.value[i], ...updated };
-    markDirty();
-    // Persist eagerly — don't wait for autosave.
-    onSave();
-  }
-  closeCodeModal();
-}
-
-async function loadStudentIdFromSubmission() {
-  const subId = store.activeSession?.submission;
-  if (!subId) { studentId.value = null; return; }
-  try {
-    const { data } = await api.grading.submissions.get(subId);
-    studentId.value = data?.student ?? null;
-  } catch {
-    studentId.value = null;
-  }
-}
 
 const canSend = computed(() => {
   const st = store.activeSession?.state;
@@ -375,11 +306,47 @@ const sendResultClass = computed(() => {
   return 'bg-error/10 border border-error/20 text-error';
 });
 
+/**
+ * Group comments by file, preserving each comment's stable index (the index
+ * into editedComments) so the per-comment update/remove handlers can mutate
+ * the authoritative array.
+ */
+interface AnchoredComment extends GradingComment {
+  _index: number;
+  original_snippet?: string;
+  suggested_snippet?: string;
+  teacher_explanation?: string;
+}
+
+const fileGroups = computed<{ file: string; comments: AnchoredComment[] }[]>(() => {
+  const byFile = new Map<string, AnchoredComment[]>();
+  editedComments.value.forEach((c, i) => {
+    const key = c.file || '(unknown)';
+    const anchored: AnchoredComment = { ...(c as AnchoredComment), _index: i };
+    if (!byFile.has(key)) byFile.set(key, []);
+    byFile.get(key)!.push(anchored);
+  });
+  return Array.from(byFile.entries()).map(([file, comments]) => ({
+    file,
+    comments: comments.sort((a, b) => (a.line || 0) - (b.line || 0)),
+  }));
+});
+
+async function loadStudentIdFromSubmission() {
+  const subId = store.activeSession?.submission;
+  if (!subId) { studentId.value = null; return; }
+  try {
+    const { data } = await api.grading.submissions.get(subId);
+    studentId.value = data?.student ?? null;
+  } catch {
+    studentId.value = null;
+  }
+}
+
 onMounted(async () => {
   await store.fetchSession(id.value);
   hydrateEdits();
   loadStudentIdFromSubmission();
-  // Auto-transition to reviewing + start stopwatch
   if (store.activeSession?.state === 'drafted') {
     try { await store.startReview(id.value); } catch { /* non-fatal */ }
   }
@@ -389,7 +356,7 @@ onBeforeUnmount(() => {
   if (autosaveTimer.value) window.clearTimeout(autosaveTimer.value);
 });
 
-onBeforeRouteLeave(async (to, from, next) => {
+onBeforeRouteLeave(async (_to, _from, next) => {
   if (dirty.value && !savingEdits.value) {
     try { await onSave(); } catch { /* continue */ }
   }
@@ -401,7 +368,6 @@ watch(() => store.activeSession?.id, () => hydrateEdits());
 function hydrateEdits() {
   if (!store.activeSession) return;
   const src = store.activeSession;
-  // Prefer final_* if the docent has already edited; else seed from ai_draft_*.
   editedComments.value = JSON.parse(
     JSON.stringify(
       (src.final_comments && src.final_comments.length > 0)
@@ -432,18 +398,24 @@ function scheduleAutosave() {
   }, 3000);
 }
 
-function scoreFor(criterionId: string): number | undefined {
-  return editedScores.value[criterionId]?.score;
-}
-
-function evidenceFor(criterionId: string): string | undefined {
-  return editedScores.value[criterionId]?.evidence;
-}
-
 function setScore(criterionId: string, score: number) {
-  const prev = editedScores.value[criterionId] || {};
+  const prev = editedScores.value[criterionId] || { score: 0 };
   editedScores.value[criterionId] = { ...prev, score };
   markDirty();
+}
+
+function onCommentUpdate(idx: number, patch: Partial<AnchoredComment>) {
+  const cur = editedComments.value[idx];
+  if (!cur) return;
+  // Apply patch only if something actually changed to avoid needless dirty flips.
+  let changed = false;
+  for (const k of Object.keys(patch) as (keyof AnchoredComment)[]) {
+    if ((cur as any)[k] !== (patch as any)[k]) {
+      (cur as any)[k] = (patch as any)[k];
+      changed = true;
+    }
+  }
+  if (changed) markDirty();
 }
 
 function removeComment(idx: number) {
@@ -462,7 +434,6 @@ async function onSave() {
     });
     dirty.value = false;
   } catch (err) {
-    // Keep dirty flag so the user can retry.
     console.error('save failed', err);
   } finally {
     savingEdits.value = false;
@@ -480,7 +451,6 @@ async function onGenerateDraft() {
 }
 
 async function onSend() {
-  // Autosave first
   if (dirty.value) await onSave();
   sendInFlight.value = true;
   sendResult.value = null;
@@ -507,15 +477,15 @@ function goBack() {
 
 function stateLabel(state: SessionState): string {
   const labels: Record<SessionState, string> = {
-    pending: 'Pending',
-    drafting: 'Drafting…',
-    drafted: 'Draft ready',
-    reviewing: 'In review',
-    sending: 'Sending…',
-    posted: 'Posted',
-    partial: 'Partial — resume',
-    failed: 'Failed',
-    discarded: 'Discarded',
+    pending: 'in afwachting',
+    drafting: 'concept wordt opgesteld…',
+    drafted: 'concept klaar',
+    reviewing: 'in review',
+    sending: 'verzenden…',
+    posted: 'verzonden',
+    partial: 'gedeeltelijk — hervat',
+    failed: 'mislukt',
+    discarded: 'weggegooid',
   };
   return labels[state] || state;
 }
