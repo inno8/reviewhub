@@ -1,38 +1,35 @@
 /**
- * Smoke tests for GradingInboxView.vue.
+ * Smoke tests for GradingInboxView.vue — student browser (Piece 1).
  *
- * Keeps the scope tight: renders the three states (loading, empty, populated),
- * click fires router.push, and the state/course filters trigger fetchSessions.
- *
- * We stub useRouter + mock the api module. No Django required.
+ * The inbox aggregates students from the teacher's assigned cohorts and
+ * shows one card per student. Tests cover:
+ *   - empty state when no cohorts are assigned
+ *   - card grid when cohorts + members exist
+ *   - search filters by name/email
+ *   - clicking a card routes to /grading/students/:id/prs
+ *   - error banner on API failure
  */
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { mount, flushPromises } from '@vue/test-utils';
 import { createPinia, setActivePinia } from 'pinia';
 
-// Mock useApi FIRST so the store picks up the mock.
 vi.mock('@/composables/useApi', () => {
-  const sessionsList = vi.fn();
+  const cohortsList = vi.fn();
   const coursesList = vi.fn();
+  const cohortMembers = vi.fn();
+  const sessionsList = vi.fn();
   return {
     api: {
       grading: {
-        rubrics: { list: vi.fn() },
-        courses: { list: coursesList },
-        sessions: {
-          list: sessionsList,
-          get: vi.fn(),
-          update: vi.fn(),
-          startReview: vi.fn(),
-          generateDraft: vi.fn(),
-          send: vi.fn(),
-          resume: vi.fn(),
+        cohorts: {
+          list: cohortsList,
+          members: cohortMembers,
         },
-        submissions: { list: vi.fn() },
-        costLogs: { list: vi.fn() },
+        courses: { list: coursesList },
+        sessions: { list: sessionsList },
       },
     },
-    __mocks: { sessionsList, coursesList },
+    __mocks: { cohortsList, coursesList, cohortMembers, sessionsList },
   };
 });
 
@@ -48,111 +45,117 @@ vi.mock('vue-router', async () => {
 
 import GradingInboxView from '@/views/GradingInboxView.vue';
 import * as apiModule from '@/composables/useApi';
-
 const mocks = (apiModule as any).__mocks;
 
 beforeEach(() => {
   setActivePinia(createPinia());
   push.mockReset();
-  mocks.sessionsList.mockReset();
+  mocks.cohortsList.mockReset();
   mocks.coursesList.mockReset();
+  mocks.cohortMembers.mockReset();
+  mocks.sessionsList.mockReset();
 });
 
-describe('GradingInboxView', () => {
-  it('renders the empty state when API returns no sessions', async () => {
-    mocks.sessionsList.mockResolvedValue({ data: { count: 0, results: [] } });
+describe('GradingInboxView (student browser)', () => {
+  it('renders the no-cohorts empty state when the teacher has none assigned', async () => {
+    mocks.cohortsList.mockResolvedValue({ data: { count: 0, results: [] } });
     mocks.coursesList.mockResolvedValue({ data: { count: 0, results: [] } });
     const wrapper = mount(GradingInboxView);
     await flushPromises();
-    expect(wrapper.find('[data-testid="empty-state"]').exists()).toBe(true);
-    expect(wrapper.find('[data-testid="session-list"]').exists()).toBe(false);
+    expect(wrapper.find('[data-testid="empty-no-cohorts"]').exists()).toBe(true);
+    expect(wrapper.find('[data-testid="student-grid"]').exists()).toBe(false);
   });
 
-  it('renders session rows when API returns sessions', async () => {
-    mocks.sessionsList.mockResolvedValue({
+  it('renders a student card per cohort member', async () => {
+    mocks.cohortsList.mockResolvedValue({
       data: {
-        count: 2,
         results: [
-          {
-            id: 10, state: 'drafted', student_email: 'jan@ex.com',
-            student_name: 'Jan de Boer',
-            course_id: 1, course_name: 'MBO-4 ICT Y2',
-            pr_url: 'https://github.com/jan/repo/pull/1',
-            pr_title: 'Add null-check to parser',
-            due_at: null, ai_draft_generated_at: null, posted_at: null,
-            docent_review_time_seconds: null,
-            created_at: '', updated_at: '',
-          },
-          {
-            id: 11, state: 'posted', student_email: 'piet@ex.com',
-            student_name: 'Piet Jansen',
-            course_id: 1, course_name: 'MBO-4 ICT Y2',
-            pr_url: 'https://github.com/piet/repo/pull/2',
-            pr_title: 'Refactor login',
-            due_at: null, ai_draft_generated_at: '', posted_at: '',
-            docent_review_time_seconds: 120,
-            created_at: '', updated_at: '',
-          },
+          { id: 1, name: 'MBO-4 ICT Y2', course_count: 1, student_count: 2 },
         ],
       },
     });
-    mocks.coursesList.mockResolvedValue({ data: { count: 0, results: [] } });
+    mocks.coursesList.mockResolvedValue({
+      data: { results: [{ id: 7, name: 'Programmeren', cohort: 1 }] },
+    });
+    mocks.cohortMembers.mockResolvedValue({
+      data: [
+        {
+          id: 100, student: 10,
+          student_email: 'jan@ex.com', student_name: 'Jan de Boer',
+          joined_at: '',
+        },
+        {
+          id: 101, student: 11,
+          student_email: 'piet@ex.com', student_name: 'Piet Jansen',
+          joined_at: '',
+        },
+      ],
+    });
+    mocks.sessionsList.mockResolvedValue({
+      data: {
+        results: [
+          { id: 500, state: 'drafted', student_email: 'jan@ex.com', course_id: 7 },
+          { id: 501, state: 'posted', student_email: 'piet@ex.com', course_id: 7 },
+        ],
+      },
+    });
     const wrapper = mount(GradingInboxView);
     await flushPromises();
-    expect(wrapper.find('[data-testid="session-list"]').exists()).toBe(true);
-    expect(wrapper.find('[data-testid="empty-state"]').exists()).toBe(false);
-    expect(wrapper.find('[data-testid="session-row-10"]').exists()).toBe(true);
-    expect(wrapper.find('[data-testid="session-row-11"]').exists()).toBe(true);
-    // Student name renders
+    expect(wrapper.find('[data-testid="student-grid"]').exists()).toBe(true);
+    expect(wrapper.find('[data-testid="student-card-10"]').exists()).toBe(true);
+    expect(wrapper.find('[data-testid="student-card-11"]').exists()).toBe(true);
     expect(wrapper.text()).toContain('Jan de Boer');
     expect(wrapper.text()).toContain('Piet Jansen');
   });
 
-  it('renders the error banner on API failure', async () => {
-    mocks.sessionsList.mockRejectedValue({
-      response: { data: { detail: 'server exploded' } },
+  it('filters students by the search input (name OR email, case-insensitive)', async () => {
+    mocks.cohortsList.mockResolvedValue({
+      data: { results: [{ id: 1, name: 'MBO-4', course_count: 0, student_count: 2 }] },
     });
-    mocks.coursesList.mockResolvedValue({ data: { count: 0, results: [] } });
+    mocks.coursesList.mockResolvedValue({ data: { results: [] } });
+    mocks.cohortMembers.mockResolvedValue({
+      data: [
+        { id: 100, student: 10, student_email: 'jan@ex.com', student_name: 'Jan de Boer', joined_at: '' },
+        { id: 101, student: 11, student_email: 'piet@ex.com', student_name: 'Piet Jansen', joined_at: '' },
+      ],
+    });
+    mocks.sessionsList.mockResolvedValue({ data: { results: [] } });
     const wrapper = mount(GradingInboxView);
     await flushPromises();
-    expect(wrapper.find('[data-testid="error-banner"]').exists()).toBe(true);
-    expect(wrapper.text()).toContain('server exploded');
+    await wrapper.find('[data-testid="student-search"]').setValue('piet');
+    await flushPromises();
+    expect(wrapper.find('[data-testid="student-card-11"]').exists()).toBe(true);
+    expect(wrapper.find('[data-testid="student-card-10"]').exists()).toBe(false);
   });
 
-  it('routes to the session detail view when a row is clicked', async () => {
-    mocks.sessionsList.mockResolvedValue({
-      data: {
-        count: 1,
-        results: [
-          {
-            id: 42, state: 'drafted', student_email: 'x@ex.com', student_name: 'X',
-            course_id: 1, course_name: 'A', pr_url: '', pr_title: 'X',
-            due_at: null, ai_draft_generated_at: null, posted_at: null,
-            docent_review_time_seconds: null,
-            created_at: '', updated_at: '',
-          },
-        ],
-      },
+  it('routes to the student PR list when a card is clicked', async () => {
+    mocks.cohortsList.mockResolvedValue({
+      data: { results: [{ id: 1, name: 'MBO-4', course_count: 0, student_count: 1 }] },
     });
-    mocks.coursesList.mockResolvedValue({ data: { count: 0, results: [] } });
+    mocks.coursesList.mockResolvedValue({ data: { results: [] } });
+    mocks.cohortMembers.mockResolvedValue({
+      data: [
+        { id: 100, student: 42, student_email: 'x@ex.com', student_name: 'X', joined_at: '' },
+      ],
+    });
+    mocks.sessionsList.mockResolvedValue({ data: { results: [] } });
     const wrapper = mount(GradingInboxView);
     await flushPromises();
-    await wrapper.find('[data-testid="session-row-42"]').trigger('click');
+    await wrapper.find('[data-testid="student-card-42"]').trigger('click');
     expect(push).toHaveBeenCalledWith({
-      name: 'grading-session-detail',
+      name: 'grading-student-prs',
       params: { id: 42 },
     });
   });
 
-  it('changing the state filter re-fetches with the new param', async () => {
-    mocks.sessionsList.mockResolvedValue({ data: { count: 0, results: [] } });
-    mocks.coursesList.mockResolvedValue({ data: { count: 0, results: [] } });
+  it('renders the error banner when the cohorts API fails', async () => {
+    mocks.cohortsList.mockRejectedValue({
+      response: { data: { detail: 'server exploded' } },
+    });
+    mocks.coursesList.mockResolvedValue({ data: { results: [] } });
     const wrapper = mount(GradingInboxView);
     await flushPromises();
-    expect(mocks.sessionsList).toHaveBeenCalledTimes(1);
-    await wrapper.find('[data-testid="filter-state"]').setValue('drafted');
-    await flushPromises();
-    expect(mocks.sessionsList).toHaveBeenCalledTimes(2);
-    expect(mocks.sessionsList.mock.calls[1][0]).toEqual({ state: 'drafted' });
+    expect(wrapper.find('[data-testid="error-banner"]').exists()).toBe(true);
+    expect(wrapper.text()).toContain('server exploded');
   });
 });
