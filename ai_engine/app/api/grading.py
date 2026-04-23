@@ -2,7 +2,6 @@
 Rubric-aware grading endpoint for Nakijken Copilot v1.
 
 Called by Django's grading.services.rubric_grader.generate_draft().
-See ~/.gstack/projects/inno8-reviewhub/yanic-main-design-20260417-175102.md.
 
 Contract (matches the Django-side client):
   POST /api/v1/grade
@@ -18,27 +17,32 @@ Contract (matches the Django-side client):
   429: { "error": "ceiling_exceeded", "docent_id": ... }
   502: { "error": "llm_upstream_failed", "inner": str }
 
-v1 notes (tech debt acknowledged):
-  - Calls Anthropic directly (bypasses LLMAdapter). Refactor in v1.1 to add
-    grade_with_rubric() on the adapter so OpenAI/Google/OpenClaw work too.
-  - Hard per-docent daily cost ceiling is a stub in v1; the Django side does
-    weekly €15 alerts. Full daily-ceiling enforcement lands in v1.1 (needs
-    Redis or a dedicated cost table queried on the hot path).
+Two-tier LLM routing (v1.1+)
+  "premium" → LLMAdapter(tier="quality") — uses LLM_MODEL_QUALITY env var.
+              Best available model for teacher-facing rubric drafts.
+  "cheap"   → LLMAdapter(tier="fast")    — uses LLM_MODEL_FAST env var.
+              Lighter model; useful for cost-sensitive orgs or previews.
+
+  The adapter is provider-agnostic: openai / anthropic / google all work.
+  Configure via LLM_PROVIDER + LLM_API_KEY + LLM_MODEL_QUALITY/FAST.
+
+Notes:
   - PII redaction is done on the Django side BEFORE the payload arrives here.
     This endpoint never touches raw student identity data.
+  - Hard per-docent daily cost ceiling is a stub; Django side does weekly
+    €15 alerts. Full daily-ceiling enforcement needs Redis (future).
 """
 from __future__ import annotations
 
 import json
-import os
 import time
-from typing import Any
 
 import httpx
 from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel, Field
 
 from app.core.config import settings
+from app.services.llm_adapter import LLMAdapter
 
 
 router = APIRouter()
@@ -65,6 +69,12 @@ class GradeRequest(BaseModel):
     context: dict = Field(default_factory=dict)
     tier: str = "premium"
     docent_id: int | None = None
+    # Per-org LLM credentials forwarded by the Django backend (from
+    # LLMConfiguration in the DB).  When present these take precedence over
+    # the engine's own LLM_API_KEY / LLM_PROVIDER / LLM_MODEL_* env vars.
+    llm_api_key: str | None = None
+    llm_provider: str | None = None
+    llm_model: str | None = None
 
 
 class CriterionScore(BaseModel):
@@ -178,84 +188,19 @@ If language is 'nl', write comments in Dutch. If 'en', English. If 'mix', use th
 
 
 # ─────────────────────────────────────────────────────────────────────────────
-# LLM call (Anthropic direct for v1; refactor into adapter in v1.1)
+# LLM tier helpers
 # ─────────────────────────────────────────────────────────────────────────────
-_ANTHROPIC_URL = "https://api.anthropic.com/v1/messages"
-_ANTHROPIC_VERSION = "2023-06-01"
 
+def _tier_to_adapter_tier(request_tier: str) -> tuple[str, int]:
+    """
+    Map the request's tier field to an LLMAdapter tier + max_tokens.
 
-def _tier_to_model(tier: str) -> tuple[str, int]:
-    """Return (model_name, max_tokens) for the tier."""
-    if tier == "cheap":
-        return ("claude-haiku-4-5", 2048)  # or claude-3-5-haiku; model name tracks provider
-    return ("claude-sonnet-4-5", 4096)
-
-
-async def _call_anthropic(model: str, max_tokens: int, system: str, user: str) -> dict:
-    """Direct Anthropic messages call. Returns parsed response dict."""
-    api_key = os.getenv("ANTHROPIC_API_KEY") or getattr(settings, "ANTHROPIC_API_KEY", None)
-    if not api_key:
-        raise HTTPException(
-            status_code=502,
-            detail={"error": "llm_upstream_failed", "inner": "No ANTHROPIC_API_KEY configured"},
-        )
-
-    payload = {
-        "model": model,
-        "max_tokens": max_tokens,
-        "system": system,
-        "messages": [{"role": "user", "content": user}],
-    }
-    headers = {
-        "x-api-key": api_key,
-        "anthropic-version": _ANTHROPIC_VERSION,
-        "content-type": "application/json",
-    }
-
-    try:
-        async with httpx.AsyncClient(timeout=28.0) as client:
-            resp = await client.post(_ANTHROPIC_URL, json=payload, headers=headers)
-    except httpx.TimeoutException as e:
-        raise HTTPException(
-            status_code=502,
-            detail={"error": "llm_upstream_failed", "inner": f"timeout: {e}"},
-        )
-    except httpx.RequestError as e:
-        raise HTTPException(
-            status_code=502,
-            detail={"error": "llm_upstream_failed", "inner": str(e)},
-        )
-
-    if resp.status_code == 429:
-        raise HTTPException(
-            status_code=502,
-            detail={"error": "llm_upstream_failed", "inner": "rate_limited"},
-        )
-    if resp.status_code >= 500:
-        raise HTTPException(
-            status_code=502,
-            detail={"error": "llm_upstream_failed", "inner": f"anthropic_{resp.status_code}"},
-        )
-    if resp.status_code != 200:
-        raise HTTPException(
-            status_code=502,
-            detail={"error": "llm_upstream_failed", "inner": resp.text[:500]},
-        )
-
-    return resp.json()
-
-
-def _extract_text_from_anthropic(body: dict) -> tuple[str, int, int]:
-    """Pull the text content + token counts out of an Anthropic response."""
-    content_blocks = body.get("content") or []
-    text_parts = [b.get("text", "") for b in content_blocks if b.get("type") == "text"]
-    text = "".join(text_parts).strip()
-    usage = body.get("usage") or {}
-    return (
-        text,
-        int(usage.get("input_tokens", 0)),
-        int(usage.get("output_tokens", 0)),
-    )
+    "premium" → quality tier, 4096 tokens  (teacher rubric draft — full model)
+    "cheap"   → fast tier,    2048 tokens  (previews / cost-sensitive orgs)
+    """
+    if request_tier == "cheap":
+        return ("fast", 2048)
+    return ("quality", 4096)
 
 
 def _parse_grade_json(text: str) -> dict:
@@ -301,10 +246,12 @@ async def grade(request: GradeRequest) -> GradeResponse:
     """
     Rubric-aware grading. Called by Django-side grading.services.rubric_grader.
 
-    v1 short-circuit: no hard per-docent daily cost ceiling here yet. The
-    Django side logs every call to LLMCostLog and alerts when a docent's
-    rolling-week cost exceeds €15. Hard daily ceiling lands in v1.1 when
-    Redis is in the deploy stack.
+    Uses LLMAdapter so the grading pipeline works with any configured
+    provider (openai / anthropic / google), not just Anthropic.
+
+    Tier mapping:
+      "premium" → quality tier (LLM_MODEL_QUALITY) — default for PR reviews
+      "cheap"   → fast tier    (LLM_MODEL_FAST)    — cost-saving option
     """
     if not request.redacted_diff.strip():
         raise HTTPException(
@@ -312,15 +259,52 @@ async def grade(request: GradeRequest) -> GradeResponse:
             detail={"error": "invalid_request", "inner": "redacted_diff is empty"},
         )
 
-    model, max_tokens = _tier_to_model(request.tier)
+    adapter_tier, max_tokens = _tier_to_adapter_tier(request.tier)
+
+    try:
+        adapter = LLMAdapter(
+            tier=adapter_tier,
+            # Use per-org credentials when the Django backend supplies them;
+            # fall through to engine env vars when they are absent.
+            api_key=request.llm_api_key or None,
+            provider_override=request.llm_provider or None,
+            model_override=request.llm_model or None,
+        )
+    except ValueError as e:
+        raise HTTPException(
+            status_code=502,
+            detail={"error": "llm_upstream_failed", "inner": str(e)},
+        )
+
     system = _SYSTEM_PROMPT
     user = _build_user_prompt(request)
 
     started = time.monotonic()
-    body = await _call_anthropic(model, max_tokens, system, user)
+    try:
+        text, tokens_in, tokens_out = await adapter.call_raw(system, user, max_tokens)
+    except (httpx.TimeoutException, httpx.RequestError) as e:
+        raise HTTPException(
+            status_code=502,
+            detail={"error": "llm_upstream_failed", "inner": f"network: {e}"},
+        )
+    except httpx.HTTPStatusError as e:
+        if e.response.status_code == 429:
+            raise HTTPException(
+                status_code=502,
+                detail={"error": "llm_upstream_failed", "inner": "rate_limited"},
+            )
+        raise HTTPException(
+            status_code=502,
+            detail={"error": "llm_upstream_failed", "inner": f"upstream_{e.response.status_code}"},
+        )
+    except ValueError as e:
+        # Provider not supported for call_raw (e.g. openclaw)
+        raise HTTPException(
+            status_code=502,
+            detail={"error": "llm_upstream_failed", "inner": str(e)},
+        )
     latency_ms = int((time.monotonic() - started) * 1000)
 
-    text, tokens_in, tokens_out = _extract_text_from_anthropic(body)
     if not text:
         raise HTTPException(
             status_code=502,
@@ -332,7 +316,7 @@ async def grade(request: GradeRequest) -> GradeResponse:
     return GradeResponse(
         scores=parsed["scores"],
         comments=parsed["comments"],
-        model=model,
+        model=adapter.model_name,
         tokens_in=tokens_in,
         tokens_out=tokens_out,
         latency_ms=latency_ms,
