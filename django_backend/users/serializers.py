@@ -25,12 +25,12 @@ class UserSerializer(serializers.ModelSerializer):
         model = User
         fields = [
             'id', 'email', 'username', 'first_name', 'last_name',
-            'display_name', 'role', 'avatar_url', 'has_llm_configured',
-            'llm_provider', 'llm_model', 'dev_profile_completed',
-            'organization_name',
+            'display_name', 'role', 'is_superuser', 'avatar_url',
+            'has_llm_configured', 'llm_provider', 'llm_model',
+            'dev_profile_completed', 'organization_name',
             'created_at', 'updated_at',
         ]
-        read_only_fields = ['id', 'created_at', 'updated_at']
+        read_only_fields = ['id', 'is_superuser', 'created_at', 'updated_at']
 
 
 class UserDevProfileSerializer(serializers.ModelSerializer):
@@ -81,7 +81,8 @@ class UserCreateSerializer(serializers.ModelSerializer):
     
     class Meta:
         model = User
-        fields = ['email', 'username', 'password', 'first_name', 'last_name']
+        fields = ['email', 'username', 'password', 'first_name', 'last_name', 'role']
+        extra_kwargs = {'role': {'required': False}}
     
     def create(self, validated_data):
         """Create user with hashed password."""

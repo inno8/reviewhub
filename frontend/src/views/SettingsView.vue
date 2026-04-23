@@ -613,11 +613,19 @@ function showToast(msg: string, type: 'success' | 'error') {
 }
 
 const tabs = computed(() => {
+  // v1 grading-first: LLM Config migrated to the Ops Dashboard (/ops/llm-config,
+  // superuser only). Schools shouldn't manage the platform's LLM keys — we do.
+  // Existing LLM Config UI code below is preserved (tab just hidden) so the
+  // /ops page can lift it over in Phase 3.
   const t = [
     { id: 'profile', label: 'Profile', icon: 'person' },
     { id: 'notifications', label: 'Notifications', icon: 'notifications' },
   ];
-  if (auth.isAdmin) t.push({ id: 'llm', label: 'LLM Config', icon: 'smart_toy' });
+  if (auth.isSuperuser) {
+    // Platform ops can still access LLM Config from here if they land on
+    // settings directly. Primary entry point is /ops/llm-config.
+    t.push({ id: 'llm', label: 'LLM Config', icon: 'smart_toy' });
+  }
   if (!auth.isAdmin) {
     t.push({ id: 'git', label: 'Git account', icon: 'link' });
     t.push({ id: 'webhooks', label: 'Webhooks', icon: 'webhook' });
@@ -726,18 +734,19 @@ const tabs = computed(() => {
             class="bg-surface-container-highest text-on-surface font-bold py-3 px-6 rounded-lg hover:bg-outline-variant transition-colors disabled:opacity-50">Change Password</button>
         </div>
 
-        <!-- GitHub token (private repos / batch branch list) — developers only -->
-        <div v-if="!auth.isAdmin" class="glass-panel rounded-xl p-6 mb-6">
+        <!-- GitHub token — teachers (Send-to-GitHub comments) + students (batch on private repos) -->
+        <div v-if="!auth.isSchoolAdmin" class="glass-panel rounded-xl p-6 mb-6">
           <div class="flex items-center gap-3 mb-4">
             <span class="material-symbols-outlined text-primary">key</span>
             <h2 class="text-lg font-bold text-on-surface">GitHub personal access token</h2>
           </div>
           <p class="text-sm text-on-surface-variant mb-4">
-            Optional. Used only to call the GitHub API when listing branches for <strong class="text-on-surface">batch analysis</strong>
-            on <strong class="text-on-surface">private</strong> repositories. Stored encrypted (same as other secrets). Use a
-            fine-grained token with <strong class="text-on-surface">Contents: Read</strong> and
-            <strong class="text-on-surface">Metadata</strong> on the repos you analyze, or a classic token with
-            <code class="text-xs">repo</code> scope for private repos.
+            Required for teachers to <strong class="text-on-surface">Send graded feedback as PR comments</strong>
+            on GitHub (comments post as you). Optional for students for <strong class="text-on-surface">batch
+            analysis</strong> on private repos. Stored encrypted (same as other secrets). Use a fine-grained token
+            with <strong class="text-on-surface">Contents: Read &amp; Write</strong> and <strong class="text-on-surface">Pull
+            requests: Read &amp; Write</strong> on the repos you grade, or a classic token with
+            <code class="text-xs">repo</code> scope.
           </p>
           <p v-if="githubPat.configured" class="text-sm text-on-surface mb-3">
             Token on file<span v-if="githubPat.last_four"> (ends with <span class="font-mono">{{ githubPat.last_four }}</span>)</span>.
@@ -877,7 +886,7 @@ const tabs = computed(() => {
       </template>
 
       <!-- LLM Config Tab (Admin only) -->
-      <template v-if="activeTab === 'llm' && auth.isAdmin">
+      <template v-if="activeTab === 'llm' && auth.isSuperuser">
         <div class="glass-panel rounded-xl p-6 mb-6">
           <div class="flex items-center gap-3 mb-6">
             <span class="material-symbols-outlined text-primary">smart_toy</span>

@@ -30,7 +30,7 @@ const filterProject = ref<number | null>(null);
 // User modal
 const isUserModalOpen = ref(false);
 const editingUserId = ref<number | null>(null);
-const userForm = ref({ username: '', email: '', password: '', role: 'developer', categoryId: null as number | null });
+const userForm = ref({ username: '', email: '', password: '', role: 'teacher', categoryId: null as number | null });
 
 // Category modal
 const isCategoryModalOpen = ref(false);
@@ -39,7 +39,7 @@ const categoryError = ref('');
 const categorySaving = ref(false);
 
 function resetUserForm() {
-  userForm.value = { username: '', email: '', password: '', role: 'developer', categoryId: null };
+  userForm.value = { username: '', email: '', password: '', role: 'teacher', categoryId: null };
 }
 
 function openCreateUser() {
@@ -198,9 +198,9 @@ onMounted(fetchData);
         <!-- Header -->
         <div class="flex justify-between items-end mb-10">
           <div>
-            <h1 class="text-4xl font-extrabold text-on-surface tracking-tight">Team Management</h1>
+            <h1 class="text-4xl font-extrabold text-on-surface tracking-tight">Team Members</h1>
             <p class="text-on-surface-variant mt-2 max-w-lg">
-              Manage users, categories, and project assignments.
+              Manage admins and teachers in your organization.
             </p>
           </div>
           <button
@@ -208,7 +208,7 @@ onMounted(fetchData);
             @click="openCreateUser"
           >
             <span class="material-symbols-outlined">person_add</span>
-            Add User
+            Add Member
           </button>
         </div>
 
@@ -295,6 +295,8 @@ onMounted(fetchData);
                         'px-2 py-1 rounded-full text-[10px] font-bold uppercase tracking-wider border',
                         user.role === 'admin'
                           ? 'bg-primary/10 text-primary border-primary/20'
+                          : user.role === 'teacher'
+                          ? 'bg-secondary/10 text-secondary border-secondary/20'
                           : 'bg-tertiary/10 text-tertiary border-tertiary/20'
                       ]"
                     >
@@ -344,7 +346,7 @@ onMounted(fetchData);
     <div v-if="isUserModalOpen" class="fixed inset-0 z-[100] flex items-center justify-center p-6 bg-background/80 backdrop-blur-sm">
       <div class="glass-panel w-full max-w-lg rounded-xl overflow-hidden shadow-2xl">
         <div class="px-8 py-6 border-b border-outline-variant/10 flex justify-between items-center">
-          <h3 class="text-xl font-bold text-on-surface">{{ editingUserId ? 'Edit User' : 'Add User' }}</h3>
+          <h3 class="text-xl font-bold text-on-surface">{{ editingUserId ? 'Edit Member' : 'Add Team Member' }}</h3>
           <button class="text-outline hover:text-on-surface transition-colors" @click="isUserModalOpen = false">
             <span class="material-symbols-outlined">close</span>
           </button>
@@ -363,8 +365,8 @@ onMounted(fetchData);
                 <select v-model="userForm.role"
                   class="w-full bg-surface-container-lowest border-none rounded-lg text-on-surface focus:ring-1 focus:ring-primary/50 py-3 px-4">
                   <option value="admin">Admin</option>
-                  <option value="developer">Developer</option>
-                  <option value="viewer">Viewer</option>
+                  <option value="teacher">Teacher</option>
+                  <option value="developer">Student (developer)</option>
                 </select>
               </div>
             </div>

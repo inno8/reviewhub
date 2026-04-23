@@ -1,0 +1,71 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <title>Weekly Grading Report</title>
+</head>
+<body style="font-family: -apple-system, Segoe UI, Roboto, sans-serif; color: #1f2937; max-width: 720px; margin: 0 auto; padding: 24px;">
+  <h1 style="font-size: 20px; margin-bottom: 4px;">Weekly Grading Report</h1>
+  <p style="color: #6b7280; margin-top: 0;">Period: {{ period.start }} to {{ period.end }}</p>
+
+  <h2 style="font-size: 16px; border-bottom: 1px solid #e5e7eb; padding-bottom: 6px;">Grand totals</h2>
+  <ul>
+    <li>Sessions started: <strong>{{ grand_totals.sessions_started }}</strong></li>
+    <li>Sessions sent: <strong>{{ grand_totals.sessions_sent }}</strong></li>
+    <li>LLM cost: <strong>&euro;{{ grand_totals.llm_cost_eur }}</strong></li>
+    <li>Active orgs: <strong>{{ grand_totals.orgs_active }}</strong></li>
+    <li>Active cohorts: <strong>{{ grand_totals.cohorts_active }}</strong></li>
+  </ul>
+
+  {% if org %}
+    <h2 style="font-size: 16px; border-bottom: 1px solid #e5e7eb; padding-bottom: 6px;">
+      {{ org.org_name }}
+    </h2>
+    <p>
+      Started: <strong>{{ org.totals.sessions_started }}</strong> &middot;
+      Sent: <strong>{{ org.totals.sessions_sent }}</strong> &middot;
+      Cost: <strong>&euro;{{ org.totals.llm_cost_eur }}</strong> &middot;
+      Active teachers: <strong>{{ org.totals.teachers_active }}</strong>
+    </p>
+
+    {% if org.cohorts %}
+      <table style="border-collapse: collapse; width: 100%; font-size: 14px;">
+        <thead>
+          <tr style="background: #f3f4f6; text-align: left;">
+            <th style="padding: 6px 8px;">Cohort</th>
+            <th style="padding: 6px 8px;">Teachers</th>
+            <th style="padding: 6px 8px;">Started</th>
+            <th style="padding: 6px 8px;">Sent</th>
+            <th style="padding: 6px 8px;">Send rate</th>
+            <th style="padding: 6px 8px;">Avg review (min)</th>
+            <th style="padding: 6px 8px;">Cost (&euro;)</th>
+            <th style="padding: 6px 8px;">Template hit</th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for c in org.cohorts %}
+            <tr style="border-bottom: 1px solid #e5e7eb;">
+              <td style="padding: 6px 8px;">{{ c.cohort_name }}</td>
+              <td style="padding: 6px 8px;">{{ c.teachers_active }}</td>
+              <td style="padding: 6px 8px;">{{ c.sessions_started }}</td>
+              <td style="padding: 6px 8px;">{{ c.sessions_sent }}</td>
+              <td style="padding: 6px 8px;">{{ c.send_rate }}</td>
+              <td style="padding: 6px 8px;">{{ c.avg_review_time_minutes|default:"—" }}</td>
+              <td style="padding: 6px 8px;">{{ c.llm_cost_eur }}</td>
+              <td style="padding: 6px 8px;">{{ c.template_hit_rate }}</td>
+            </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    {% else %}
+      <p><em>No cohort activity in this period.</em></p>
+    {% endif %}
+  {% else %}
+    <p><em>No org activity in this period.</em></p>
+  {% endif %}
+
+  <p style="color: #9ca3af; font-size: 12px; margin-top: 32px;">
+    Automated weekly digest &middot; ReviewHub Nakijken Copilot
+  </p>
+</body>
+</html>

@@ -395,6 +395,73 @@ class Pattern(models.Model):
             pattern.apply_decay(decay_rate)
 
 
+class DeterministicFinding(models.Model):
+    """
+    Layer 1 shadow-mode finding produced by a deterministic runner
+    (ruff, ESLint, etc.). Kept SEPARATE from Finding so teachers never
+    see these until we've validated hit-rate against the LLM.
+
+    Scope B2 of Nakijken Copilot v1 — hybrid architecture Layer 1.
+    Purely additive, not surfaced in any teacher-facing API yet.
+    """
+
+    class Severity(models.TextChoices):
+        CRITICAL = 'critical', 'Critical'
+        WARNING = 'warning', 'Warning'
+        INFO = 'info', 'Info'
+        SUGGESTION = 'suggestion', 'Suggestion'
+
+    class Runner(models.TextChoices):
+        RUFF = 'ruff', 'ruff (Python)'
+        ESLINT = 'eslint', 'ESLint (JS/TS)'
+
+    evaluation = models.ForeignKey(
+        Evaluation,
+        on_delete=models.CASCADE,
+        related_name='deterministic_findings',
+    )
+    runner = models.CharField(
+        max_length=20,
+        choices=Runner.choices,
+        help_text="Which deterministic runner produced this finding.",
+    )
+    rule_id = models.CharField(
+        max_length=64,
+        help_text="Runner-native rule id, e.g. 'E501', 'no-unused-vars'.",
+    )
+    message = models.TextField()
+    severity = models.CharField(
+        max_length=20,
+        choices=Severity.choices,
+        default=Severity.WARNING,
+    )
+    file_path = models.CharField(max_length=500)
+    line_start = models.PositiveIntegerField()
+    line_end = models.PositiveIntegerField()
+    # Cross-reference: if the LLM also surfaced a matching finding, we can
+    # measure Layer 1 overlap. Nullable — shadow mode starts uncorrelated.
+    matched_llm_finding = models.ForeignKey(
+        Finding,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name='matched_deterministic_findings',
+    )
+
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        db_table = 'deterministic_findings'
+        ordering = ['-created_at']
+        indexes = [
+            models.Index(fields=['evaluation', 'runner']),
+            models.Index(fields=['runner', 'rule_id']),
+        ]
+
+    def __str__(self):
+        return f"[{self.runner}] {self.rule_id} {self.file_path}:{self.line_start}"
+
+
 class LearningRecommendation(models.Model):
     """
     Learning resource recommendations based on patterns.

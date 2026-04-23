@@ -3,7 +3,6 @@ import { ref, computed, onMounted, watch } from 'vue';
 import { useRoute, useRouter } from 'vue-router';
 import AppShell from '@/components/layout/AppShell.vue';
 import SkillRadarChart from '@/components/charts/SkillRadarChart.vue';
-import TrendChart from '@/components/charts/TrendChart.vue';
 import SkillBreakdownDialog from '@/components/skills/SkillBreakdownDialog.vue';
 import { useFindingsStore } from '@/stores/findings';
 import { useProjectsStore } from '@/stores/projects';
@@ -43,28 +42,6 @@ const adminCategories = ref<{ id: number; name: string }[]>([]);
 const adminProjects = ref<{ id: number; displayName: string }[]>([]);
 const drawerUser = ref<UserStat | null>(null);
 const adminTeam = ref<any>(null);
-const skillMatrix = ref<any>(null);
-
-async function loadSkillMatrix() {
-  try {
-    const axios = (await import('axios')).default;
-    const token = localStorage.getItem('reviewhub_token');
-    const { data } = await axios.get(
-      `${import.meta.env.VITE_API_URL}/skills/dashboard/admin-skill-matrix/`,
-      { headers: token ? { Authorization: `Bearer ${token}` } : {} }
-    );
-    skillMatrix.value = data;
-  } catch { skillMatrix.value = null; }
-}
-
-function heatColor(score: number | null): string {
-  if (score == null) return 'bg-surface-container-lowest text-outline';
-  if (score >= 90) return 'bg-green-500/30 text-green-300';
-  if (score >= 75) return 'bg-green-500/15 text-green-400';
-  if (score >= 60) return 'bg-yellow-500/15 text-yellow-400';
-  if (score >= 40) return 'bg-orange-500/15 text-orange-400';
-  return 'bg-red-500/20 text-red-400';
-}
 
 async function loadAdminTeam() {
   try {
@@ -166,7 +143,7 @@ function getLevelBg(level: string) {
 onMounted(async () => {
   await projectsStore.fetchProjects();
   if (authStore.isAdmin) {
-    await Promise.all([loadAdminData(), loadAdminTeam(), loadSkillMatrix()]);
+    await Promise.all([loadAdminData(), loadAdminTeam()]);
   } else {
     await loadDevHome();
   }
@@ -354,80 +331,7 @@ function scoreColor(score: number) {
           </div>
         </section>
 
-        <!-- ── Team Patterns ── -->
-        <section v-if="adminTeam?.teamPatterns?.length" class="mb-8">
-          <div class="bg-surface-container-low rounded-xl border border-outline-variant/10 p-5">
-            <h3 class="text-sm font-bold mb-3">Top Team-Wide Patterns</h3>
-            <div class="flex flex-wrap gap-3">
-              <div v-for="p in adminTeam.teamPatterns" :key="p.type" class="flex items-center gap-2 px-3 py-2 bg-tertiary/5 rounded-lg border border-tertiary/20">
-                <span class="material-symbols-outlined text-tertiary text-sm">repeat</span>
-                <span class="text-sm">{{ p.type }}</span>
-                <span class="text-xs font-bold text-tertiary">{{ p.count }} devs</span>
-              </div>
-            </div>
-          </div>
-        </section>
-
-        <!-- ── Skill Matrix Heatmap ── -->
-        <section v-if="skillMatrix?.developers?.length" class="mb-8">
-          <div class="bg-surface-container-low rounded-xl border border-outline-variant/10 overflow-hidden">
-            <div class="px-5 py-3 border-b border-outline-variant/10 flex items-center justify-between">
-              <div class="flex items-center gap-2">
-                <span class="material-symbols-outlined text-primary text-sm">grid_view</span>
-                <h3 class="text-sm font-bold">Team Skill Matrix</h3>
-              </div>
-              <div class="flex items-center gap-3 text-[9px]">
-                <span class="flex items-center gap-1"><span class="w-3 h-2 rounded-sm bg-red-500/20"></span> &lt;40</span>
-                <span class="flex items-center gap-1"><span class="w-3 h-2 rounded-sm bg-orange-500/15"></span> 40-59</span>
-                <span class="flex items-center gap-1"><span class="w-3 h-2 rounded-sm bg-yellow-500/15"></span> 60-74</span>
-                <span class="flex items-center gap-1"><span class="w-3 h-2 rounded-sm bg-green-500/15"></span> 75-89</span>
-                <span class="flex items-center gap-1"><span class="w-3 h-2 rounded-sm bg-green-500/30"></span> 90+</span>
-              </div>
-            </div>
-            <div class="overflow-x-auto">
-              <table class="w-full text-xs">
-                <thead>
-                  <tr class="border-b border-outline-variant/10">
-                    <th class="px-3 py-2 text-left text-outline font-medium sticky left-0 bg-surface-container-low z-10">Developer</th>
-                    <th v-for="cat in skillMatrix.categories" :key="cat" class="px-2 py-2 text-center text-outline font-medium whitespace-nowrap">
-                      {{ cat.length > 12 ? cat.slice(0, 10) + '..' : cat }}
-                    </th>
-                  </tr>
-                </thead>
-                <tbody>
-                  <tr v-for="dev in skillMatrix.developers" :key="dev.id" class="border-b border-outline-variant/5 hover:bg-surface-container-lowest/40">
-                    <td class="px-3 py-2 font-medium sticky left-0 bg-surface-container-low z-10">{{ dev.name }}</td>
-                    <td v-for="cat in skillMatrix.categories" :key="cat" class="px-1 py-1 text-center">
-                      <span class="inline-block w-full py-1 rounded text-[10px] font-bold"
-                        :class="heatColor(dev.scores[cat])">
-                        {{ dev.scores[cat] != null ? dev.scores[cat] : '—' }}
-                      </span>
-                    </td>
-                  </tr>
-                  <!-- Team average row -->
-                  <tr class="border-t-2 border-outline-variant/20 font-bold">
-                    <td class="px-3 py-2 text-primary sticky left-0 bg-surface-container-low z-10">TEAM AVG</td>
-                    <td v-for="cat in skillMatrix.categories" :key="cat" class="px-1 py-1 text-center">
-                      <span class="inline-block w-full py-1 rounded text-[10px] font-bold"
-                        :class="heatColor(skillMatrix.teamAverages[cat])">
-                        {{ skillMatrix.teamAverages[cat] != null ? skillMatrix.teamAverages[cat] : '—' }}
-                      </span>
-                    </td>
-                  </tr>
-                </tbody>
-              </table>
-            </div>
-            <!-- Weakest categories callout -->
-            <div v-if="skillMatrix.weakestCategories?.length" class="px-5 py-3 border-t border-outline-variant/10 flex items-center gap-2">
-              <span class="material-symbols-outlined text-sm text-orange-400">priority_high</span>
-              <span class="text-xs text-outline">Team weakest areas:</span>
-              <span v-for="w in skillMatrix.weakestCategories" :key="w.name"
-                class="text-xs font-bold text-orange-400 bg-orange-500/10 px-2 py-0.5 rounded">
-                {{ w.name }} ({{ w.avg }}%)
-              </span>
-            </div>
-          </div>
-        </section>
+        <!-- Team Patterns and Skill Matrix removed — available in Skills and Journey views -->
 
         <!-- ── Developer Cards (with enhanced data) ── -->
         <section>
@@ -670,19 +574,6 @@ function scoreColor(score: number) {
                 </div>
               </div>
 
-              <!-- Active pattern alerts (text) -->
-              <div v-if="devHome.patterns?.length" class="space-y-2">
-                <div v-for="pat in devHome.patterns" :key="pat.key"
-                  class="flex items-center gap-3 p-3 rounded-lg bg-tertiary/5 border border-tertiary/20">
-                  <span class="material-symbols-outlined text-tertiary">repeat</span>
-                  <p class="text-sm flex-1">
-                    <span class="font-bold text-tertiary">{{ pat.type.replace('_', ' ') }}:</span>
-                    {{ pat.message }}.
-                  </p>
-                  <router-link to="/skills" class="text-xs text-primary font-semibold whitespace-nowrap">Fix it</router-link>
-                </div>
-              </div>
-
               <!-- Recent Commits -->
               <div class="bg-surface-container-low rounded-xl border border-outline-variant/10">
                 <div class="flex items-center justify-between p-4 border-b border-outline-variant/10">
@@ -712,21 +603,6 @@ function scoreColor(score: number) {
                 </div>
               </div>
 
-              <!-- Top Issue Areas -->
-              <div v-if="devHome.topIssues?.length" class="bg-surface-container-low rounded-xl p-5 border border-outline-variant/10">
-                <h3 class="text-sm font-bold mb-4">Where you lose the most points</h3>
-                <div class="space-y-2">
-                  <div v-for="issue in devHome.topIssues" :key="issue.id"
-                    class="flex items-center gap-3 cursor-pointer hover:bg-surface-container-lowest rounded-lg p-1 -m-1 transition-colors"
-                    @click="issue.id && openSkillBreakdown(issue.id)">
-                    <span class="text-xs font-medium w-28 truncate">{{ issue.name }}</span>
-                    <div class="flex-1 bg-surface-container-lowest rounded-full h-3 overflow-hidden">
-                      <div class="h-full bg-tertiary rounded-full" :style="{ width: (issue.count / devHome.topIssues[0].count * 100) + '%' }"></div>
-                    </div>
-                    <span class="text-xs font-bold w-6 text-right">{{ issue.count }}</span>
-                  </div>
-                </div>
-              </div>
             </div>
 
             <!-- RIGHT: Visual Column (1/3 width) -->
@@ -738,34 +614,6 @@ function scoreColor(score: number) {
                 <SkillRadarChart :data="devHome.radar" />
               </div>
 
-              <!-- Score Sparkline -->
-              <div v-if="devHome.sparkline?.length >= 2" class="bg-surface-container-low rounded-xl p-5 border border-outline-variant/10">
-                <h3 class="text-sm font-bold mb-1">Score Progression</h3>
-                <p class="text-[10px] text-outline mb-3">Last {{ devHome.sparkline.length }} commits</p>
-                <TrendChart title=""
-                  :points="devHome.sparkline.map((s: number, i: number) => ({ label: String(i + 1), value: s }))"
-                  :width="300" :height="120" />
-              </div>
-
-              <!-- Severity Breakdown -->
-              <div v-if="devHome.severity" class="bg-surface-container-low rounded-xl p-5 border border-outline-variant/10">
-                <h3 class="text-sm font-bold mb-3">Finding Severity</h3>
-                <div class="space-y-2">
-                  <div v-for="(count, sev) in devHome.severity" :key="sev" class="flex items-center gap-2">
-                    <span class="text-[10px] font-bold uppercase w-16"
-                      :class="{ 'text-red-400': sev === 'critical', 'text-orange-400': sev === 'warning', 'text-blue-400': sev === 'info', 'text-green-400': sev === 'suggestion' }">
-                      {{ sev }}
-                    </span>
-                    <div class="flex-1 bg-surface-container-lowest rounded-full h-2.5 overflow-hidden">
-                      <div class="h-full rounded-full"
-                        :class="{ 'bg-red-500': sev === 'critical', 'bg-orange-500': sev === 'warning', 'bg-blue-500': sev === 'info', 'bg-green-500': sev === 'suggestion' }"
-                        :style="{ width: devHome.findingCount ? (count / devHome.findingCount * 100) + '%' : '0%' }">
-                      </div>
-                    </div>
-                    <span class="text-xs font-bold w-5 text-right">{{ count }}</span>
-                  </div>
-                </div>
-              </div>
             </div>
           </section>
 

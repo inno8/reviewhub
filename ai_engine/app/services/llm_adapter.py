@@ -106,6 +106,16 @@ Analyze this code change and return a JSON response with the following structure
             "original_code": "<the problematic code>",
             "suggested_code": "<the fixed code>",
             "explanation": "<why this is better>",
+            "skills_affected": ["<skill_slug>", ...],
+            "decision_quality": "<appropriate|suboptimal|poor>"
+        }}
+    ],
+    "decision_observations": [
+        {{
+            "observation": "<what design/architectural decision was made>",
+            "quality": "<appropriate|suboptimal|poor>",
+            "better_approach": "<what a senior developer would do differently and WHY>",
+            "category": "<decision category>",
             "skills_affected": ["<skill_slug>", ...]
         }}
     ],
@@ -162,6 +172,21 @@ THOROUGHNESS RULES:
 - A file with 5 different problems must produce at least 5 findings, not 1 summary finding.
 - Common issues to check separately: SQL injection, bare except, hardcoded credentials, missing input validation, resource leaks (unclosed files/connections), logging secrets, mutable default args, missing type hints, missing docstrings.
 
+DECISION QUALITY ASSESSMENT:
+Beyond correctness, evaluate the developer's architectural and design choices. For EACH finding, set "decision_quality" to:
+- "appropriate": The approach is what a senior developer would choose for this context.
+- "suboptimal": It works, but there is a clearly better approach (explain in "explanation").
+- "poor": Fundamentally wrong approach — demonstrates a gap in understanding.
+
+Also add a separate "decision_observations" array for approach-level feedback that goes beyond individual findings. Examples:
+- Used sequential awaits for independent operations (suboptimal — use Promise.all/asyncio.gather)
+- Used OOP for pure data transformation (suboptimal — functional approach is cleaner here)
+- Used array scan for repeated lookups (suboptimal — use a hash map)
+- Proper separation of concerns between controller and service (appropriate)
+- Over-engineered a simple CRUD operation with abstract factory pattern (suboptimal)
+Decision categories: error_handling, concurrency, data_structures, paradigm, validation, abstraction, performance, security_design, api_design, testing_strategy.
+Judge decisions relative to the context — a simple script does not need enterprise patterns. Penalize over-engineering as "suboptimal" too.
+
 Return ONLY the JSON object, no markdown formatting.'''
 
 
@@ -187,18 +212,26 @@ def normalize_llm_provider(raw: Optional[str]) -> str:
 class LLMAdapter:
     """
     Adapter for multiple LLM providers.
-    
-    Priority:
-    1. User-provided API key (from request)
-    2. System-configured provider (from settings)
-    3. OpenClaw fallback
+
+    Two-tier routing
+    ----------------
+    tier="fast"    → push/commit events: student feedback, cheap & quick.
+                     Model: LLM_MODEL_FAST env var (falls back to LLM_MODEL).
+    tier="quality" → PR grading events: teacher rubric draft, best available.
+                     Model: LLM_MODEL_QUALITY env var (falls back to LLM_MODEL).
+
+    Priority for provider + key:
+    1. Caller-supplied api_key / provider_override (e.g. per-org credentials)
+    2. LLM_API_KEY / LLM_PROVIDER env vars
+    3. OpenClaw rule-based fallback
     """
-    
+
     def __init__(
         self,
         api_key: Optional[str] = None,
         provider_override: Optional[str] = None,
         model_override: Optional[str] = None,
+        tier: str = "fast",  # "fast" | "quality"
     ):
         # Determine provider and key — priority:
         # 1. Caller-supplied (e.g. org admin credentials passed by Django for batch)
@@ -216,8 +249,145 @@ class LLMAdapter:
         else:
             raise ValueError("No LLM provider configured")
 
-        # model_name: caller override > env var default
-        self.model_name = model_override or settings.LLM_MODEL
+        self.tier = tier
+
+        # model_name resolution:
+        # 1. Explicit caller override (per-org model from Django DB)
+        # 2. LLM_MODEL_QUALITY / LLM_MODEL_FAST per tier
+        # 3. Backward-compat LLM_MODEL
+        if model_override:
+            self.model_name = model_override
+        elif tier == "quality":
+            self.model_name = settings.LLM_MODEL_QUALITY or settings.LLM_MODEL
+        else:  # fast (default)
+            self.model_name = settings.LLM_MODEL_FAST or settings.LLM_MODEL
+
+    # ── Public: raw LLM call (used by grading endpoint) ──────────────────
+
+    async def call_raw(
+        self,
+        system_prompt: str,
+        user_prompt: str,
+        max_tokens: int = 4096,
+    ) -> tuple[str, int, int]:
+        """
+        Make a raw LLM call and return (text, tokens_in, tokens_out).
+
+        Used by grading.py for rubric-based generation where the response
+        format differs from evaluate_diff(). Always uses self.model_name
+        (complexity routing does NOT apply — quality tier means full model).
+
+        Token counts are extracted from each provider's usage metadata so
+        the Django side can record real LLMCostLog entries and feed the
+        €15/week cost alert.
+
+        Raises ValueError if the provider doesn't support raw calls.
+        Raises RuntimeError on upstream failure.
+        """
+        model = self.model_name
+
+        if self.provider == "openai":
+            return await self._call_openai_text(system_prompt, user_prompt, model, max_tokens)
+        elif self.provider == "anthropic":
+            return await self._call_anthropic_text(system_prompt, user_prompt, model, max_tokens)
+        elif self.provider == "google":
+            return await self._call_google_text(system_prompt, user_prompt, model, max_tokens)
+        else:
+            raise ValueError(
+                f"Provider '{self.provider}' does not support call_raw() (grading). "
+                "Configure LLM_PROVIDER=openai|anthropic|google."
+            )
+
+    async def _call_openai_text(
+        self, system: str, user: str, model: str, max_tokens: int
+    ) -> tuple[str, int, int]:
+        async with httpx.AsyncClient() as client:
+            resp = await client.post(
+                "https://api.openai.com/v1/chat/completions",
+                headers={
+                    "Authorization": f"Bearer {self.api_key}",
+                    "Content-Type": "application/json",
+                },
+                json={
+                    "model": model,
+                    "messages": [
+                        {"role": "system", "content": system},
+                        {"role": "user", "content": user},
+                    ],
+                    "temperature": 0.3,
+                    "max_tokens": max_tokens,
+                    "response_format": {"type": "json_object"},
+                },
+                timeout=60.0,
+            )
+        resp.raise_for_status()
+        data = resp.json()
+        text = data["choices"][0]["message"]["content"]
+        usage = data.get("usage") or {}
+        tokens_in = int(usage.get("prompt_tokens", 0) or 0)
+        tokens_out = int(usage.get("completion_tokens", 0) or 0)
+        return text, tokens_in, tokens_out
+
+    async def _call_anthropic_text(
+        self, system: str, user: str, model: str, max_tokens: int
+    ) -> tuple[str, int, int]:
+        async with httpx.AsyncClient() as client:
+            resp = await client.post(
+                "https://api.anthropic.com/v1/messages",
+                headers={
+                    "x-api-key": self.api_key,
+                    "anthropic-version": "2023-06-01",
+                    "Content-Type": "application/json",
+                },
+                json={
+                    "model": model,
+                    "max_tokens": max_tokens,
+                    "system": system,
+                    "messages": [{"role": "user", "content": user}],
+                },
+                timeout=60.0,
+            )
+        resp.raise_for_status()
+        data = resp.json()
+        blocks = data.get("content") or []
+        text = "".join(b.get("text", "") for b in blocks if b.get("type") == "text").strip()
+        usage = data.get("usage") or {}
+        tokens_in = int(usage.get("input_tokens", 0) or 0)
+        tokens_out = int(usage.get("output_tokens", 0) or 0)
+        return text, tokens_in, tokens_out
+
+    async def _call_google_text(
+        self, system: str, user: str, model: str, max_tokens: int
+    ) -> tuple[str, int, int]:
+        from urllib.parse import urlencode
+        model_id = model.replace("models/", "").strip()
+        url = (
+            f"https://generativelanguage.googleapis.com/v1beta/models/"
+            f"{model_id}:generateContent?{urlencode({'key': self.api_key})}"
+        )
+        async with httpx.AsyncClient() as client:
+            resp = await client.post(
+                url,
+                headers={"Content-Type": "application/json"},
+                json={
+                    "systemInstruction": {"parts": [{"text": system}]},
+                    "contents": [{"role": "user", "parts": [{"text": user}]}],
+                    "generationConfig": {
+                        "temperature": 0.3,
+                        "maxOutputTokens": max_tokens,
+                        "responseMimeType": "application/json",
+                    },
+                },
+                timeout=60.0,
+            )
+        resp.raise_for_status()
+        data = resp.json()
+        parts = data["candidates"][0]["content"]["parts"]
+        text = parts[0].get("text", "")
+        meta = data.get("usageMetadata") or {}
+        tokens_in = int(meta.get("promptTokenCount", 0) or 0)
+        tokens_out = int(meta.get("candidatesTokenCount", 0) or 0)
+        return text, tokens_in, tokens_out
 
     # ── Public: complexity-aware model selection ──────────────────────────
 
@@ -1002,6 +1172,11 @@ Be encouraging but honest. Return ONLY the JSON."""
             for idx, f in enumerate(raw_findings):
                 try:
                     valid_skills = [s for s in f.get("skills_affected", []) if s in VALID_SKILLS]
+                    # Parse decision_quality (default to "appropriate" if missing)
+                    dq = f.get("decision_quality", "appropriate")
+                    if dq not in ("appropriate", "suboptimal", "poor"):
+                        dq = "appropriate"
+
                     finding = FindingSchema(
                         title=f.get("title", "Unknown Issue"),
                         description=f.get("description", ""),
@@ -1012,7 +1187,8 @@ Be encouraging but honest. Return ONLY the JSON."""
                         original_code=f.get("original_code", ""),
                         suggested_code=f.get("suggested_code", ""),
                         explanation=f.get("explanation", ""),
-                        skills_affected=valid_skills
+                        skills_affected=valid_skills,
+                        decision_quality=dq,
                     )
 
                     # Validate that original_code exists in the diff
@@ -1045,9 +1221,32 @@ Be encouraging but honest. Return ONLY the JSON."""
                     except (TypeError, ValueError):
                         pass
 
+            # Parse decision observations
+            from app.models.schemas import DecisionObservation
+            decision_obs = []
+            for obs in data.get("decision_observations", []):
+                try:
+                    dq = obs.get("quality", "appropriate")
+                    if dq not in ("appropriate", "suboptimal", "poor"):
+                        dq = "appropriate"
+                    valid_obs_skills = [
+                        s for s in obs.get("skills_affected", [])
+                        if s in VALID_SKILLS
+                    ]
+                    decision_obs.append(DecisionObservation(
+                        observation=obs.get("observation", ""),
+                        quality=dq,
+                        better_approach=obs.get("better_approach", ""),
+                        category=obs.get("category", ""),
+                        skills_affected=valid_obs_skills,
+                    ))
+                except Exception:
+                    pass
+
             return EvaluationResult(
                 overall_score=float(data.get("overall_score", 50)),
                 findings=findings,
+                decision_observations=decision_obs,
                 skill_scores=skill_scores,
                 summary=data.get("summary", ""),
                 tokens_used=tokens

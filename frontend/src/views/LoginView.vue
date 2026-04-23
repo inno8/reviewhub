@@ -108,10 +108,14 @@ async function handleSubmit() {
           </form>
 
           <!-- Footer Links -->
-          <div class="mt-8 pt-6 border-t border-outline-variant/10 text-center">
+          <div class="mt-8 pt-6 border-t border-outline-variant/10 text-center space-y-2">
             <p class="text-sm text-on-surface-variant">
               First time here?
               <router-link to="/onboard" class="text-primary-container font-semibold hover:underline ml-1">Set up your account</router-link>
+            </p>
+            <p class="text-sm text-on-surface-variant">
+              Running a school or bootcamp?
+              <router-link to="/org-signup" class="text-primary-container font-semibold hover:underline ml-1">Register your organization</router-link>
             </p>
           </div>
         </div>

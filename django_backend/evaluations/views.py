@@ -10,6 +10,7 @@ from django.shortcuts import get_object_or_404
 from rest_framework import generics, permissions, serializers, status
 from rest_framework.response import Response
 from rest_framework.views import APIView
+from django.db import IntegrityError
 from django.db.models import Avg, Count, Q
 from django.utils import timezone
 
@@ -50,9 +51,11 @@ class EvaluationListView(generics.ListAPIView):
     def get_queryset(self):
         user = self.request.user
 
-        # Admins see every evaluation (for the commit timeline and file review)
-        if getattr(user, 'role', None) == 'admin' or getattr(user, 'is_staff', False):
+        # Admins see evaluations belonging to their org's projects
+        if getattr(user, 'role', None) in ('admin', 'teacher') or getattr(user, 'is_staff', False):
             qs = Evaluation.objects.select_related('author', 'project')
+            if user.organization_id:
+                qs = qs.filter(project__created_by__organization=user.organization)
         else:
             # Developers see evaluations they authored (by FK or email identity) +
             # evaluations belonging to projects they have access to
@@ -91,10 +94,12 @@ class EvaluationChartView(APIView):
 
     def get(self, request):
         user = request.user
-        is_admin = getattr(user, 'role', None) == 'admin' or getattr(user, 'is_staff', False)
+        is_admin = getattr(user, 'role', None) in ('admin', 'teacher') or getattr(user, 'is_staff', False)
 
         if is_admin:
             qs = Evaluation.objects.select_related('author', 'project')
+            if user.organization_id:
+                qs = qs.filter(project__created_by__organization=user.organization)
         else:
             by_identity = Evaluation.objects.for_user(user).values_list('pk', flat=True)
             by_project = Evaluation.objects.filter(
@@ -349,6 +354,13 @@ class InternalEvaluationCreateView(APIView):
                 except Skill.DoesNotExist:
                     pass
 
+        # ── Learning Algorithm v2: SkillObservations + Bayesian scoring ──
+        if author:
+            self._create_skill_observations(
+                author, project, evaluation, data,
+            )
+            self._check_learning_proofs(author, evaluation, data)
+
         # P1-4 / P1-9: Update DeveloperProfile — auto-create if missing
         if author:
             try:
@@ -411,6 +423,190 @@ class InternalEvaluationCreateView(APIView):
             status=status.HTTP_201_CREATED
         )
     
+    @staticmethod
+    def _create_skill_observations(author, project, evaluation, data):
+        """
+        Create SkillObservation records and update Bayesian scores.
+
+        One SkillObservation per skill touched in this evaluation.
+        Each observation captures the complexity-weighted quality score.
+        """
+        try:
+            from skills.models import (
+                SkillMetric, SkillObservation, Skill,
+                COMPLEXITY_WEIGHTS, SEVERITY_WEIGHTS,
+            )
+
+            complexity_tier = (evaluation.commit_complexity or '').lower()
+            complexity_weight = COMPLEXITY_WEIGHTS.get(complexity_tier, 0.7)
+
+            # Aggregate findings per skill for this evaluation
+            skill_findings = {}
+            for fd in data['findings']:
+                severity = fd.get('severity', 'warning')
+                dq = fd.get('decision_quality', 'appropriate')
+                for slug in fd.get('skills_affected', []):
+                    if slug not in skill_findings:
+                        skill_findings[slug] = {
+                            'critical': 0, 'warning': 0,
+                            'info': 0, 'suggestion': 0,
+                            'total': 0,
+                            'dq_appropriate': 0,
+                            'dq_suboptimal': 0,
+                            'dq_poor': 0,
+                        }
+                    skill_findings[slug][severity] = (
+                        skill_findings[slug].get(severity, 0) + 1
+                    )
+                    skill_findings[slug]['total'] += 1
+                    if dq == 'appropriate':
+                        skill_findings[slug]['dq_appropriate'] += 1
+                    elif dq == 'poor':
+                        skill_findings[slug]['dq_poor'] += 1
+                    else:
+                        skill_findings[slug]['dq_suboptimal'] += 1
+
+            # Also aggregate decision_observations
+            for obs in data.get('decision_observations', []):
+                dq = obs.get('quality', 'appropriate')
+                for slug in obs.get('skills_affected', []):
+                    if slug not in skill_findings:
+                        skill_findings[slug] = {
+                            'critical': 0, 'warning': 0,
+                            'info': 0, 'suggestion': 0,
+                            'total': 0,
+                            'dq_appropriate': 0,
+                            'dq_suboptimal': 0,
+                            'dq_poor': 0,
+                        }
+                    if dq == 'appropriate':
+                        skill_findings[slug]['dq_appropriate'] += 1
+                    elif dq == 'poor':
+                        skill_findings[slug]['dq_poor'] += 1
+                    else:
+                        skill_findings[slug]['dq_suboptimal'] += 1
+
+            lines_changed = (
+                (evaluation.lines_added or 0)
+                + (evaluation.lines_removed or 0)
+            )
+            quality_score = evaluation.overall_score or 50.0
+
+            # Prefetch all skills in one query to avoid N+1
+            skill_lookup = {
+                s.slug: s
+                for s in Skill.objects.filter(slug__in=list(skill_findings.keys()))
+            }
+
+            for slug, counts in skill_findings.items():
+                skill = skill_lookup.get(slug)
+                if skill is None:
+                    import logging
+                    logging.getLogger(__name__).error(
+                        'Skill not found for slug %s (user=%s)', slug, author.email,
+                    )
+                    continue
+
+                obs = SkillObservation.objects.create(
+                    user=author,
+                    project=project,
+                    evaluation=evaluation,
+                    skill=skill,
+                    commit_sha=evaluation.commit_sha,
+                    quality_score=quality_score,
+                    complexity_weight=complexity_weight,
+                    weighted_score=round(
+                        quality_score * complexity_weight, 2
+                    ),
+                    lines_changed=lines_changed,
+                    issue_count=counts['total'],
+                    critical_count=counts.get('critical', 0),
+                    warning_count=counts.get('warning', 0),
+                    info_count=counts.get('info', 0),
+                    suggestion_count=counts.get('suggestion', 0),
+                    decision_appropriate=counts.get('dq_appropriate', 0),
+                    decision_suboptimal=counts.get('dq_suboptimal', 0),
+                    decision_poor=counts.get('dq_poor', 0),
+                )
+
+                # Update Bayesian score on the SkillMetric
+                metric, _ = SkillMetric.objects.get_or_create(
+                    user=author, project=project, skill=skill,
+                )
+                metric.update_bayesian(
+                    weighted_score=obs.weighted_score,
+                    complexity_weight=complexity_weight,
+                )
+
+        except (Skill.DoesNotExist, IntegrityError, ValueError) as e:
+            import logging
+            logging.getLogger(__name__).error(
+                'SkillObservation creation failed for %s: %s',
+                author.email, e, exc_info=True,
+            )
+
+    @staticmethod
+    def _check_learning_proofs(author, evaluation, data):
+        """
+        Check pending LearningProofs against this evaluation.
+
+        For each PENDING proof:
+        - If the same issue_type appears in this commit → RELAPSED
+        - If the skill was touched but the issue didn't appear → evidence++
+        - If evidence >= threshold → PROVEN
+        """
+        try:
+            from skills.models import LearningProof
+
+            pending_proofs = LearningProof.objects.filter(
+                user=author,
+                status__in=['pending', 'taught'],
+            ).select_related('skill')
+
+            if not pending_proofs.exists():
+                return
+
+            # Build set of issue types in this evaluation
+            current_issue_types = set()
+            current_skills = set()
+            for fd in data['findings']:
+                severity = fd.get('severity', 'warning')
+                for slug in fd.get('skills_affected', []):
+                    current_issue_types.add(f"{slug}:{severity}")
+                    current_skills.add(slug)
+
+            for proof in pending_proofs:
+                skill_slug = proof.skill.slug
+
+                # Check if this commit touches the same skill
+                if skill_slug not in current_skills:
+                    continue  # Skill not relevant to this commit
+
+                # Check if the same issue type recurred
+                if proof.issue_type in current_issue_types:
+                    proof.mark_relapsed(evaluation.commit_sha)
+                else:
+                    # Skill touched, issue didn't appear = potential proof
+                    proof.proof_evidence_count += 1
+                    if proof.proof_evidence_count >= 2:
+                        if proof.status in ('proven', 'reinforced'):
+                            # Already proven — reinforce
+                            proof.mark_reinforced(evaluation.commit_sha)
+                        else:
+                            proof.mark_proven(evaluation.commit_sha)
+                    else:
+                        proof.status = 'pending'
+                        proof.save(update_fields=[
+                            'proof_evidence_count', 'status', 'updated_at',
+                        ])
+
+        except (Skill.DoesNotExist, IntegrityError, ValueError) as e:
+            import logging
+            logging.getLogger(__name__).error(
+                'LearningProof check failed for %s: %s',
+                author.email, e, exc_info=True,
+            )
+
     @staticmethod
     def _check_admin_alerts(user, evaluation):
         """Notify admins if developer's score drops significantly."""
@@ -612,12 +808,18 @@ class FindingListView(generics.ListAPIView):
     
     def get_queryset(self):
         user = self.request.user
+        is_admin = getattr(user, 'role', None) in ('admin', 'teacher') or getattr(user, 'is_staff', False)
         queryset = Finding.objects.select_related('evaluation__project')
 
-        queryset = queryset.filter(
-            _user_can_access_project_q(user, "evaluation__project")
-            | Q(evaluation__author=user)
-        ).distinct()
+        if is_admin and user.organization_id:
+            queryset = queryset.filter(
+                evaluation__project__created_by__organization=user.organization
+            )
+        else:
+            queryset = queryset.filter(
+                _user_can_access_project_q(user, "evaluation__project")
+                | Q(evaluation__author=user)
+            ).distinct()
 
         project_id = self.request.query_params.get('project')
         if project_id:
@@ -671,21 +873,31 @@ class ResolvedFindingsView(generics.ListAPIView):
 
     def get_queryset(self):
         user = self.request.user
+        is_admin = getattr(user, 'role', None) in ('admin', 'teacher') or getattr(user, 'is_staff', False)
         queryset = Finding.objects.filter(
             is_fixed=True
         ).select_related(
             'evaluation__project'
-        ).filter(
-            _user_can_access_project_q(user, "evaluation__project")
-            | Q(evaluation__author=user)
-        ).distinct().order_by('-fixed_at')
+        )
+
+        if is_admin and user.organization_id:
+            queryset = queryset.filter(
+                evaluation__project__created_by__organization=user.organization
+            )
+        else:
+            queryset = queryset.filter(
+                _user_can_access_project_q(user, "evaluation__project")
+                | Q(evaluation__author=user)
+            ).distinct()
+
+        queryset = queryset.order_by('-fixed_at')
 
         project_id = self.request.query_params.get('project')
         if project_id:
             queryset = queryset.filter(evaluation__project_id=project_id)
 
         user_id = self.request.query_params.get('user')
-        if user_id and (user.role == 'admin' or user.is_staff):
+        if user_id and is_admin:
             queryset = queryset.filter(evaluation__author_id=user_id)
 
         return queryset
@@ -963,6 +1175,10 @@ class CheckUnderstandingView(APIView):
             if finding.understanding_level in ('got_it', 'partial') and not finding.is_fixed:
                 finding.mark_fixed()
 
+            # ── Learning Algorithm v2: create LearningProof ──
+            if finding.understanding_level in ('got_it', 'partial'):
+                self._create_learning_proof(finding)
+
             results.append({
                 'finding_id': finding_id,
                 'level': finding.understanding_level,
@@ -983,6 +1199,69 @@ class CheckUnderstandingView(APIView):
                 pass
 
         return Response({'results': results})
+
+    @staticmethod
+    def _create_learning_proof(finding):
+        """
+        Create a LearningProof after successful Fix & Learn.
+
+        The proof starts as PENDING — future commits will mark it
+        PROVEN or RELAPSED based on whether the issue recurs.
+        """
+        try:
+            from skills.models import LearningProof
+
+            author = finding.evaluation.author
+            if not author:
+                return
+
+            for fs in finding.finding_skills.select_related('skill').all():
+                skill = fs.skill
+                severity = finding.severity or 'warning'
+                issue_type = f"{skill.slug}:{severity}"
+
+                # Don't create duplicate proofs for the same issue_type
+                existing = LearningProof.objects.filter(
+                    user=author,
+                    skill=skill,
+                    issue_type=issue_type,
+                    status__in=['pending', 'taught'],
+                ).first()
+                if existing:
+                    continue
+
+                LearningProof.objects.create(
+                    user=author,
+                    skill=skill,
+                    finding=finding,
+                    issue_type=issue_type,
+                    taught_at=timezone.now(),
+                    understanding_level=finding.understanding_level,
+                    concept_summary=(
+                        finding.explanation or finding.description or ''
+                    )[:500],
+                    status=LearningProof.Status.PENDING,
+                )
+
+                # Small immediate bonus for demonstrating understanding
+                from skills.models import SkillMetric, FIX_LEARN_GOT_IT_BONUS, FIX_LEARN_PARTIAL_BONUS
+                project = finding.evaluation.project if finding.evaluation else None
+                metric = SkillMetric.objects.filter(
+                    user=author, skill=skill, project=project,
+                ).first()
+                if metric:
+                    bonus = (
+                        FIX_LEARN_GOT_IT_BONUS
+                        if finding.understanding_level == 'got_it'
+                        else FIX_LEARN_PARTIAL_BONUS
+                    )
+                    metric.apply_bonus(bonus)
+
+        except (Skill.DoesNotExist, IntegrityError, ValueError) as e:
+            import logging
+            logging.getLogger(__name__).error(
+                'LearningProof creation failed: %s', e, exc_info=True,
+            )
 
 
 class CalendarView(APIView):
@@ -1029,12 +1308,18 @@ class DashboardView(APIView):
     def get(self, request):
         user = request.user
         project_id = request.query_params.get('project')
-        
-        # Base querysets
-        evaluations = Evaluation.objects.filter(
-            _user_can_access_project_q(user, "project") | Q(author=user)
-        ).distinct()
-        
+        is_admin = getattr(user, 'role', None) in ('admin', 'teacher') or getattr(user, 'is_staff', False)
+
+        # Base querysets — org-scoped for admins
+        if is_admin and user.organization_id:
+            evaluations = Evaluation.objects.filter(
+                project__created_by__organization=user.organization
+            )
+        else:
+            evaluations = Evaluation.objects.filter(
+                _user_can_access_project_q(user, "project") | Q(author=user)
+            ).distinct()
+
         if project_id:
             evaluations = evaluations.filter(project_id=project_id)
         
@@ -1091,10 +1376,16 @@ class PatternListView(generics.ListAPIView):
 
     def get_queryset(self):
         user = self.request.user
-        is_admin = getattr(user, 'role', None) == 'admin' or getattr(user, 'is_staff', False)
+        is_admin = getattr(user, 'role', None) in ('admin', 'teacher') or getattr(user, 'is_staff', False)
         target_user_id = self.request.query_params.get('user')
         if is_admin and target_user_id:
             qs = Pattern.objects.filter(user_id=target_user_id)
+            # Org isolation: only show patterns for users in the same org
+            if user.organization_id:
+                qs = qs.filter(user__organization=user.organization)
+        elif is_admin and user.organization_id:
+            # Admin with no target user: show all patterns in their org
+            qs = Pattern.objects.filter(user__organization=user.organization)
         else:
             qs = Pattern.objects.filter(user=user)
 

@@ -1,0 +1,33 @@
+Weekly Grading Report
+Period: {{ period.start }} to {{ period.end }}
+
+Grand totals
+  Sessions started : {{ grand_totals.sessions_started }}
+  Sessions sent    : {{ grand_totals.sessions_sent }}
+  LLM cost (EUR)   : {{ grand_totals.llm_cost_eur }}
+  Active orgs      : {{ grand_totals.orgs_active }}
+  Active cohorts   : {{ grand_totals.cohorts_active }}
+
+{% if org %}
+Org: {{ org.org_name }}
+  Sessions started : {{ org.totals.sessions_started }}
+  Sessions sent    : {{ org.totals.sessions_sent }}
+  LLM cost (EUR)   : {{ org.totals.llm_cost_eur }}
+  Active teachers  : {{ org.totals.teachers_active }}
+
+{% if org.cohorts %}Cohorts:
+{% for c in org.cohorts %}
+  - {{ c.cohort_name }}
+      teachers active : {{ c.teachers_active }}
+      started / sent  : {{ c.sessions_started }} / {{ c.sessions_sent }}  (rate {{ c.send_rate }})
+      avg review min  : {{ c.avg_review_time_minutes|default:"-" }}
+      median rev min  : {{ c.median_review_time_minutes|default:"-" }}
+      cost EUR        : {{ c.llm_cost_eur }}  (per session {{ c.llm_cost_per_session_eur }})
+      template hit    : {{ c.template_hit_rate }}
+      findings total  : {{ c.findings_total }}  (per session avg {{ c.findings_per_session_avg }})
+{% endfor %}{% else %}  (no cohort activity)
+{% endif %}{% else %}No org activity in this period.
+{% endif %}
+
+--
+Automated weekly digest - ReviewHub Nakijken Copilot

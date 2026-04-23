@@ -34,12 +34,12 @@ from .serializers import (
 
 
 class IsAdminRole(permissions.BasePermission):
-    """Allow access to users with role='admin' OR is_staff."""
+    """Allow access to users with role='admin' or 'teacher' OR is_staff."""
     def has_permission(self, request, view):
         return (
             request.user and
             request.user.is_authenticated and
-            (request.user.role == 'admin' or request.user.is_staff)
+            (request.user.role in ('admin', 'teacher') or request.user.is_staff)
         )
 
 
@@ -49,20 +49,31 @@ class UserListView(generics.ListCreateAPIView):
     queryset = User.objects.all()
     permission_classes = [IsAdminRole]
 
+    def get_queryset(self):
+        user = self.request.user
+        if user.organization_id:
+            return User.objects.filter(organization=user.organization)
+        return User.objects.filter(id=user.id)
+
     def get_serializer_class(self):
         if self.request.method == 'POST':
             return UserCreateSerializer
         return UserSerializer
 
     def perform_create(self, serializer):
-        """After creating a user, link them to the admin's org.
+        """After creating a user, link them to the creator's org.
 
-        Adds the new user to the admin's first team (if any) and to
-        any UserCategory owned by the admin so that the org LLM config
-        resolves correctly for the new developer.
+        Adds the new user to the creator's first team (if any) and to
+        any UserCategory owned by the creator so that the org LLM config
+        resolves correctly for the new member.
         """
-        user = serializer.save()
         admin = self.request.user
+        # Teachers cannot create admin users
+        requested_role = serializer.validated_data.get('role', 'developer')
+        if admin.role == 'teacher' and requested_role == 'admin':
+            serializer.validated_data['role'] = 'teacher'
+        user = serializer.save(organization=admin.organization)
+
 
         # Add to admin's team(s)
         from users.models import Team, TeamMember
@@ -84,15 +95,18 @@ class UserListView(generics.ListCreateAPIView):
 
 class UserDetailView(generics.RetrieveUpdateAPIView):
     """Get/update a specific user."""
-    
+
     queryset = User.objects.all()
     serializer_class = UserSerializer
     permission_classes = [permissions.IsAuthenticated]
-    
+
     def get_queryset(self):
-        if self.request.user.role == 'admin' or self.request.user.is_staff:
+        user = self.request.user
+        if user.role in ('admin', 'teacher') or user.is_staff:
+            if user.organization_id:
+                return User.objects.filter(organization=user.organization)
             return User.objects.all()
-        return User.objects.filter(id=self.request.user.id)
+        return User.objects.filter(id=user.id)
 
 
 class CurrentUserView(APIView):
@@ -383,8 +397,10 @@ class AdminUserListView(APIView):
         category_id = request.query_params.get('category')
         project_id = request.query_params.get('project')
         
-        qs = User.objects.exclude(role='admin').exclude(is_staff=True)
-        
+        qs = User.objects.exclude(role__in=['admin', 'teacher']).exclude(is_staff=True)
+        if request.user.organization_id:
+            qs = qs.filter(organization=request.user.organization)
+
         if search:
             qs = qs.filter(
                 Q(username__icontains=search) |
@@ -1069,7 +1085,7 @@ class DevCalibrationSummaryView(APIView):
         # Admin can view any user's profile via ?user=<id>
         target_user = request.user
         user_id_param = request.query_params.get('user')
-        if user_id_param and (request.user.role == 'admin' or request.user.is_staff):
+        if user_id_param and (request.user.role in ('admin', 'teacher') or request.user.is_staff):
             try:
                 target_user = User.objects.get(pk=user_id_param)
             except User.DoesNotExist:
@@ -1240,7 +1256,13 @@ class OrgSignupView(APIView):
 
 class InviteStudentView(APIView):
     """
-    P2-3: Invite a student/developer to join the organization.
+    Invite someone to join the organization. Role support (v1.0+):
+      - admin invites: can invite teacher, developer, or viewer
+      - teacher invites: can only invite developer or viewer (no peer
+        teachers, no admins — prevents privilege escalation)
+      - admin/viewer cannot be invited at all (admin is the signup-owner
+        role; create via org signup or /team direct-create)
+
     Sends an invitation email with a unique token.
     """
     permission_classes = [permissions.IsAuthenticated]
@@ -1249,11 +1271,30 @@ class InviteStudentView(APIView):
         if not request.user.organization:
             return Response({'error': 'You must belong to an organization.'}, status=400)
 
-        if request.user.role not in ('admin',):
-            return Response({'error': 'Only admins can invite students.'}, status=403)
+        if request.user.role not in ('admin', 'teacher'):
+            return Response({'error': 'Only admins and teachers can invite users.'}, status=403)
 
         email = (request.data.get('email') or '').strip().lower()
         role = request.data.get('role', 'developer')
+
+        # Role allowlist — who can be INVITED.
+        # We deliberately exclude 'admin': admins become admins via org
+        # signup or direct /team create, not via invite.
+        INVITABLE_ROLES = {'teacher', 'developer', 'viewer'}
+        if role not in INVITABLE_ROLES:
+            return Response(
+                {'role': f"Invalid role. Allowed: {sorted(INVITABLE_ROLES)}."},
+                status=400,
+            )
+
+        # Permission ladder — who can invite WHOM.
+        # Only admins can invite teachers (prevents teacher-to-teacher
+        # escalation in a collaborative school).
+        if role == 'teacher' and request.user.role != 'admin':
+            return Response(
+                {'role': 'Only organization admins can invite teachers.'},
+                status=403,
+            )
 
         if not email:
             return Response({'email': 'Email is required.'}, status=400)
@@ -1334,9 +1375,14 @@ class AcceptInviteView(APIView):
         # Check if user already exists (could have registered separately)
         existing_user = User.objects.filter(email__iexact=invitation.email).first()
         if existing_user:
-            # Assign to org if not already
+            # Assign to org AND promote to the invited role.
+            # Guardrail: never DEMOTE an admin (rare edge case — an admin
+            # of org A accepted an invite from org B as a teacher). If they
+            # were already admin, keep admin.
             existing_user.organization = invitation.organization
-            existing_user.save(update_fields=['organization'])
+            if existing_user.role != 'admin':
+                existing_user.role = invitation.role
+            existing_user.save(update_fields=['organization', 'role'])
             user = existing_user
         else:
             # Create new user

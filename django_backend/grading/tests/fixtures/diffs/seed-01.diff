@@ -1,0 +1,26 @@
+diff --git a/app/api_client.py b/app/api_client.py
+index 1111111..2222222 100644
+--- a/app/api_client.py
++++ b/app/api_client.py
+@@ -1,10 +1,18 @@
+ import requests
++import json
+
+ def fetch_user(user_id):
+-    resp = requests.get(f"https://api.example.com/users/{user_id}")
+-    return resp.json()
++    try:
++        resp = requests.get(f"https://api.example.com/users/{user_id}")
++        return resp.json()
++    except:
++        # catch everything
++        return None
+
+ def fetch_orders(user_id):
+-    resp = requests.get(f"https://api.example.com/users/{user_id}/orders")
+-    return resp.json()
++    try:
++        resp = requests.get(f"https://api.example.com/users/{user_id}/orders")
++        return resp.json()
++    except:
++        return None

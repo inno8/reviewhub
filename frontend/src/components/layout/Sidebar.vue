@@ -27,27 +27,98 @@ const newProjectCategoryId = ref<number | null>(null);
 const newProjectMemberIds = ref<number[]>([]);
 const projectCategories = ref<{ id: number; name: string }[]>([]);
 const projectUsersList = ref<{ id: number; username: string; email: string }[]>([]);
-const memberMode = ref<'individual' | 'category'>('category');
+const memberMode = ref<'individual' | 'category' | 'cohort'>('category');
 const modalError = ref('');
 const modalSuccess = ref('');
+
+// Teacher cohort mode — for Add Project
+const projectCohorts = ref<{ id: number; name: string; year: string | null; student_count: number }[]>([]);
+const newProjectCohortId = ref<number | null>(null);
+const cohortMembersForProject = ref<{ id: number; student: number; student_name: string; student_email: string }[]>([]);
+const cohortMembersLoading = ref(false);
 
 onMounted(async () => {
   await projectsStore.fetchProjects();
   fetchActivityDates();
 });
 
+/**
+ * Role-scoped navigation (v1 focus: grading-first).
+ *
+ * Visibility flags are non-exclusive — any one match shows the item:
+ *   studentOnly    — role=developer (default student experience)
+ *   teacherOnly    — role=teacher
+ *   schoolAdminOnly — role=admin (school owner / staff)
+ *   opsOnly        — is_superuser=true (platform ops, us)
+ *
+ * Items with no role flag are visible to everyone.
+ *
+ * Previous `devOnly` / `adminOnly` kept for backward compat on a few lines
+ * but we migrate toward the explicit flags above.
+ */
 const navItems = [
-  { name: 'Dashboard', icon: 'dashboard', path: '/' },
-  { name: 'Projects', icon: 'folder_open', path: '/projects' },
-  { name: 'Skills', icon: 'school', path: '/skills' },
-  { name: 'Recommendations', icon: 'route', path: '/recommendations', devOnly: true },
-  { name: 'Insights', icon: 'analytics', path: '/insights' },
-  { name: 'Dev Profile', icon: 'psychology', path: '/dev-profile/results', adminOnly: true },
-  { name: 'Batch Analysis', icon: 'history', path: '/batch', devOnly: true },
-  { name: 'Commit Timeline', icon: 'timeline', path: '/timeline' },
-  { name: 'Resolved Issues', icon: 'task_alt', path: '/resolved' },
-  { name: 'Team Management', icon: 'group', path: '/team', adminOnly: true },
+  // Student experience (the learning loop)
+  { name: 'Dashboard', icon: 'dashboard', path: '/', studentOnly: true },
+  { name: 'My Cohort', icon: 'groups', path: '/my-cohort', studentOnly: true },
+  { name: 'Skills', icon: 'school', path: '/skills', studentOnly: true },
+  { name: 'Recommendations', icon: 'route', path: '/recommendations', studentOnly: true },
+  { name: 'Journey', icon: 'explore', path: '/journey', studentOnly: true },
+  { name: 'Commit Timeline', icon: 'timeline', path: '/timeline', studentOnly: true },
+  { name: 'Resolved Issues', icon: 'task_alt', path: '/resolved', studentOnly: true },
+  { name: 'My Profile', icon: 'psychology', path: '/dev-profile/results', studentOnly: true },
+
+  // Teacher experience (the grading loop).
+  // School admins can land here to oversee teacher work.
+  // Super admin / platform ops do NOT grade PRs — that's per-org teacher work.
+  { name: 'Grading Inbox', icon: 'rate_review', path: '/grading',
+    teacherOnly: true, schoolAdminOnly: true },
+  // Teachers see their own cohorts view (same CohortListView, scoped by queryset)
+  { name: 'My Cohorts', icon: 'groups_2', path: '/org/cohorts',
+    teacherOnly: true },
+
+  // School admin experience (org governance).
+  // Single unified members view replaces the old /team + /org-dashboard split.
+  // Platform ops get these too — they manage schools on behalf of customers.
+  { name: 'Members', icon: 'group', path: '/org/members',
+    schoolAdminOnly: true, opsOnly: true },
+  { name: 'Cohorts', icon: 'groups_2', path: '/org/cohorts',
+    schoolAdminOnly: true, opsOnly: true },
+
+  // Platform ops (us — superuser only)
+  { name: 'Ops Dashboard', icon: 'admin_panel_settings', path: '/ops', opsOnly: true },
+
+  // DEPRECATED for v1 grading-first scope — hidden behind role flags or
+  // cut entirely. Kept here as comments so we remember why:
+  //   Projects       — developer-era concept; grading uses Courses now
+  //   Insights       — trends redundant with Skills + grading session data
+  //   Batch Analysis — power-user tool, not v1 focus
 ];
+
+function isItemVisible(item: any): boolean {
+  // Item with no role gate is visible to everyone.
+  const hasGate = item.studentOnly || item.teacherOnly
+    || item.schoolAdminOnly || item.opsOnly
+    || item.adminOnly || item.devOnly;
+  if (!hasGate) return true;
+
+  // Staff roles (teacher / school admin / platform ops) should never see
+  // student-only items even if their `role` field hasn't been migrated off
+  // the legacy `developer` default. Before this guard, a super admin with
+  // role='developer' saw the full student nav — the exact bug we hit pre-demo.
+  const isStaff = auth.isTeacher || auth.isSchoolAdmin || auth.isSuperuser;
+  if ((item.studentOnly || item.devOnly) && isStaff) return false;
+
+  // OR-match: any flag that matches the user's role wins.
+  if (item.studentOnly && auth.isStudent) return true;
+  if (item.teacherOnly && auth.isTeacher) return true;
+  if (item.schoolAdminOnly && auth.isSchoolAdmin) return true;
+  if (item.opsOnly && auth.isSuperuser) return true;
+  // Legacy flags
+  if (item.adminOnly && auth.isSchoolAdmin) return true;
+  if (item.devOnly && auth.isStudent) return true;
+
+  return false;
+}
 
 function isActive(path: string) {
   if (path === '/dev-profile/results') {
@@ -171,6 +242,10 @@ watch(() => projectsStore.selectedProjectId, () => {
 });
 
 watch(monthString, fetchActivityDates);
+
+watch(newProjectCohortId, (id) => {
+  loadCohortMembersForProject(id);
+});
 
 /** All accessible projects — developers can verify webhook/commits on linked repos too. */
 const newReviewProjectOptions = computed(() => projectsStore.projects);
@@ -365,17 +440,49 @@ async function openAddProjectModal() {
   newProjectDesc.value = '';
   newProjectCategoryId.value = null;
   newProjectMemberIds.value = [];
-  memberMode.value = 'category';
+  newProjectCohortId.value = null;
+  cohortMembersForProject.value = [];
 
+  if (auth.isTeacher) {
+    memberMode.value = 'cohort';
+    // Load teacher's cohorts
+    try {
+      const { data } = await api.grading.cohorts.list();
+      projectCohorts.value = Array.isArray(data) ? data : (data.results || []);
+    } catch { projectCohorts.value = []; }
+  } else {
+    memberMode.value = 'category';
+    try {
+      const [catsRes, usersRes] = await Promise.all([
+        api.categories.list(),
+        api.users.list(),
+      ]);
+      projectCategories.value = (catsRes.data.results || catsRes.data || []);
+      const allUsers = usersRes.data.results || usersRes.data || [];
+      projectUsersList.value = allUsers.filter((u: any) => u.role !== 'admin');
+    } catch { /* ignore */ }
+  }
+}
+
+async function loadCohortMembersForProject(cohortId: number | null) {
+  if (!cohortId) {
+    cohortMembersForProject.value = [];
+    newProjectMemberIds.value = [];
+    return;
+  }
+  cohortMembersLoading.value = true;
   try {
-    const [catsRes, usersRes] = await Promise.all([
-      api.categories.list(),
-      api.users.list(),
-    ]);
-    projectCategories.value = (catsRes.data.results || catsRes.data || []);
-    const allUsers = usersRes.data.results || usersRes.data || [];
-    projectUsersList.value = allUsers.filter((u: any) => u.role !== 'admin');
-  } catch { /* ignore */ }
+    const { data } = await api.grading.cohorts.members(cohortId);
+    const members = Array.isArray(data) ? data : (data.results || []);
+    cohortMembersForProject.value = members;
+    // Pre-select all cohort students as project members
+    newProjectMemberIds.value = members.map((m: any) => m.student);
+  } catch {
+    cohortMembersForProject.value = [];
+    newProjectMemberIds.value = [];
+  } finally {
+    cohortMembersLoading.value = false;
+  }
 }
 
 function toggleMember(userId: number) {
@@ -401,6 +508,9 @@ async function createProject() {
     };
     if (memberMode.value === 'category' && newProjectCategoryId.value) {
       payload.category_id = newProjectCategoryId.value;
+    } else if (memberMode.value === 'cohort' && newProjectMemberIds.value.length) {
+      // Cohort members are pre-resolved into user IDs by loadCohortMembersForProject
+      payload.member_ids = newProjectMemberIds.value;
     } else if (memberMode.value === 'individual' && newProjectMemberIds.value.length) {
       payload.member_ids = newProjectMemberIds.value;
     }
@@ -475,7 +585,7 @@ function toggleAllBranches(selected: boolean) {
         v-for="item in navItems"
         :key="item.path"
         :to="item.path"
-        v-show="(!item.adminOnly || auth.isAdmin) && (!item.devOnly || !auth.isAdmin)"
+        v-show="isItemVisible(item)"
         :class="[
           'rounded-lg mx-2 my-1 px-4 py-3 flex items-center gap-3 transition-transform active:translate-x-1 text-sm font-medium',
           isActive(item.path)
@@ -814,16 +924,61 @@ function toggleAllBranches(selected: boolean) {
         <!-- Member Assignment -->
         <div class="space-y-2">
           <label class="text-xs font-bold uppercase tracking-widest text-outline">Add Members</label>
+
+          <!-- Tab switcher — teachers see Cohort instead of Category -->
           <div class="flex bg-surface-container-lowest p-1 rounded-lg w-fit">
-            <button type="button"
+            <button
+              v-if="auth.isTeacher"
+              type="button"
+              :class="['px-4 py-1.5 text-xs font-bold rounded-md transition-all', memberMode === 'cohort' ? 'bg-surface-container text-primary shadow-sm' : 'text-outline hover:text-on-surface']"
+              @click="memberMode = 'cohort'"
+            >By Cohort</button>
+            <button
+              v-else
+              type="button"
               :class="['px-4 py-1.5 text-xs font-bold rounded-md transition-all', memberMode === 'category' ? 'bg-surface-container text-primary shadow-sm' : 'text-outline hover:text-on-surface']"
-              @click="memberMode = 'category'">By Category</button>
+              @click="memberMode = 'category'"
+            >By Category</button>
             <button type="button"
               :class="['px-4 py-1.5 text-xs font-bold rounded-md transition-all', memberMode === 'individual' ? 'bg-surface-container text-primary shadow-sm' : 'text-outline hover:text-on-surface']"
               @click="memberMode = 'individual'">Individual</button>
           </div>
 
-          <div v-if="memberMode === 'category'" class="space-y-1.5">
+          <!-- Cohort picker (teachers) -->
+          <div v-if="memberMode === 'cohort'" class="space-y-2">
+            <select
+              v-model="newProjectCohortId"
+              class="w-full bg-surface-container-lowest border border-outline-variant/30 rounded-lg text-on-surface text-sm focus:ring-1 focus:ring-primary/50 py-3 px-4"
+            >
+              <option :value="null" disabled>Select a cohort…</option>
+              <option v-for="c in projectCohorts" :key="c.id" :value="c.id">
+                {{ c.name }}{{ c.year ? ' · ' + c.year : '' }} ({{ c.student_count }} students)
+              </option>
+            </select>
+            <p v-if="!projectCohorts.length" class="text-xs text-outline">
+              You are not assigned to any cohorts yet.
+            </p>
+            <!-- Preview cohort students -->
+            <div v-if="newProjectCohortId" class="bg-surface-container-lowest rounded-lg border border-outline-variant/30 p-3">
+              <div v-if="cohortMembersLoading" class="flex items-center gap-2 text-xs text-outline">
+                <span class="material-symbols-outlined text-sm animate-spin">progress_activity</span>
+                Loading students…
+              </div>
+              <div v-else-if="cohortMembersForProject.length" class="space-y-1 max-h-32 overflow-y-auto">
+                <p class="text-[10px] uppercase tracking-widest text-outline font-bold mb-2">
+                  {{ cohortMembersForProject.length }} students will be added
+                </p>
+                <div v-for="m in cohortMembersForProject" :key="m.id" class="flex items-center gap-2 text-xs text-on-surface-variant">
+                  <span class="material-symbols-outlined text-[12px] text-primary">person</span>
+                  {{ m.student_name || m.student_email }}
+                </div>
+              </div>
+              <p v-else class="text-xs text-outline">No students in this cohort yet.</p>
+            </div>
+          </div>
+
+          <!-- Category picker (admins) -->
+          <div v-else-if="memberMode === 'category'" class="space-y-1.5">
             <select v-model="newProjectCategoryId"
               class="w-full bg-surface-container-lowest border border-outline-variant/30 rounded-lg text-on-surface text-sm focus:ring-1 focus:ring-primary/50 py-3 px-4">
               <option :value="null">Select a category...</option>
@@ -831,6 +986,7 @@ function toggleAllBranches(selected: boolean) {
             </select>
           </div>
 
+          <!-- Individual picker -->
           <div v-else class="max-h-40 overflow-y-auto bg-surface-container-lowest rounded-lg p-3 space-y-2 border border-outline-variant/30">
             <label v-for="u in projectUsersList" :key="u.id" class="flex items-center gap-2 cursor-pointer group">
               <input type="checkbox" :checked="newProjectMemberIds.includes(u.id)" @change="toggleMember(u.id)"

@@ -3,9 +3,13 @@ Webhook handlers for Git providers.
 """
 from fastapi import APIRouter, Request, HTTPException, Header, BackgroundTasks
 from typing import Optional
-import hmac
+import asyncio
 import hashlib
+import hmac
 import json
+import logging
+import time
+import traceback
 
 from app.models.schemas import GitHubPushEvent, WebhookResponse
 from app.services.diff_extractor import DiffExtractor
@@ -18,7 +22,13 @@ from app.services.adaptive_profile import (
     enrich_context_files,
 )
 from app.services.classifier import CommitClassifier
+from app.services.deterministic_pipeline import (
+    run_layer1_runners,
+    post_deterministic_findings,
+)
 from app.core.config import settings
+
+logger = logging.getLogger(__name__)
 
 _commit_classifier = CommitClassifier()
 
@@ -126,13 +136,13 @@ async def process_commit(
     1. Resolve commit author → user
     2. Phase 5 – fetch adaptive profile for personalised prompt
     3. Phase 3 – extract diff + build import-aware context files
+    3b. Deterministic layer (ruff / eslint / phpcs / phpstan) fired in parallel
     4. Phase 4 – semantic search against project FAISS index for similar patterns
     5. LLM evaluation (prompt enriched with profile + context + similar code)
     6. Phase 4 – index changed files into FAISS after evaluation
     7. Store results in Django
+    8. Post deterministic findings against the new evaluation ID
     """
-    import time
-
     start_time = time.time()
 
     try:
@@ -156,15 +166,19 @@ async def process_commit(
             llm_cfg = await django_client.get_org_llm_config(email=author_email)
 
         if llm_cfg:
-            print(f"[WEBHOOK] Using org LLM: provider={llm_cfg['provider']} model={llm_cfg['model']}", flush=True)
+            logger.info(
+                "[WEBHOOK] Using org LLM: provider=%s model=%s",
+                llm_cfg["provider"], llm_cfg["model"],
+            )
             llm_adapter = LLMAdapter(
                 api_key=llm_cfg["api_key"],
                 provider_override=llm_cfg["provider"],
                 model_override=llm_cfg["model"],
+                tier="fast",  # push events → fast tier (LLM_MODEL_FAST / cheap per-complexity)
             )
         else:
-            print("[WEBHOOK] No org LLM config found — using env/fallback", flush=True)
-            llm_adapter = LLMAdapter()
+            logger.info("[WEBHOOK] No org LLM config found — using env/fallback")
+            llm_adapter = LLMAdapter(tier="fast")  # push events always use fast tier
 
         # ── 2. Phase 5 – adaptive profile (G3: graceful degradation) ────────
         profile: dict = {}
@@ -179,8 +193,7 @@ async def process_commit(
                         eval_count = raw.get("evaluation_count", 0)
                         profile = build_profile_from_skill_data(raw["categories"], eval_count)
             except Exception as exc:
-                import logging
-                logging.getLogger(__name__).warning(
+                logger.warning(
                     "G3: Profile fetch failed for user %s, continuing without personalization: %s",
                     user.get("id"), exc,
                 )
@@ -193,7 +206,7 @@ async def process_commit(
         )
 
         if not diff_data or not diff_data.get("files"):
-            print(f"No diff data for commit {commit['id'][:7]}")
+            logger.info("No diff data for commit %s", commit['id'][:7])
             return
 
         # ── 3b. Classify commit complexity (heuristic, no I/O) ────────────
@@ -202,20 +215,20 @@ async def process_commit(
             commit_meta={"message": commit.get("message", ""), "id": commit.get("id", "")},
             profile=profile or {},
         )
-        print(
-            f"[CLASSIFIER] commit={commit['id'][:7]} level={complexity.level} "
-            f"score={complexity.score} reasons={complexity.reasons}"
+        logger.info(
+            "[CLASSIFIER] commit=%s level=%s score=%s reasons=%s",
+            commit['id'][:7], complexity.level, complexity.score, complexity.reasons,
         )
 
         # G3: Import context with graceful degradation
         repo_path = diff_extractor._get_repo_path(repo_url)
+        repo_root = str(repo_path)
         import_context = []
         try:
             context_builder = ContextBuilder(repo_path)
             import_context = await context_builder.build(diff_data["files"])
         except Exception as exc:
-            import logging
-            logging.getLogger(__name__).warning("G3: Import context failed: %s", exc)
+            logger.warning("G3: Import context failed: %s", exc)
             context_partial = True
 
         # ── 4. Phase 4 – FAISS semantic context (G3 + G8: dedup) ──────────
@@ -236,8 +249,7 @@ async def process_commit(
                         "content": chunk["text"],
                     })
         except Exception as exc:
-            import logging
-            logging.getLogger(__name__).warning("G3: Semantic search failed: %s", exc)
+            logger.warning("G3: Semantic search failed: %s", exc)
             context_partial = True
 
         # Merge context: profile + imports + semantic (deduplicate by path)
@@ -246,6 +258,7 @@ async def process_commit(
 
         # ── 5. Analyze each changed file ──────────────────────────────────
         all_findings = []
+        all_decision_observations = []
         total_score = 0.0
         file_count = 0
         total_tokens = 0
@@ -260,6 +273,9 @@ async def process_commit(
             )
             if result:
                 all_findings.extend(result.findings)
+                all_decision_observations.extend(
+                    getattr(result, 'decision_observations', [])
+                )
                 total_score += result.overall_score
                 total_tokens += result.tokens_used
                 file_count += 1
@@ -268,19 +284,30 @@ async def process_commit(
         processing_ms = int((time.time() - start_time) * 1000)
 
         # ── 6. Phase 4 – index changed files into FAISS ───────────────────
+        # Also collect content for deterministic analysis (reuses same reads).
         files_to_index = []
+        det_sources: list[tuple[str, str]] = []
         for file_diff in diff_data["files"]:
             content = await context_builder._read_file(file_diff["path"])
             if content:
                 files_to_index.append({"path": file_diff["path"], "content": content})
+                det_sources.append((file_diff["path"], content))
         if files_to_index:
             await embedding_store.index_files(files_to_index)
+
+        # ── 6b. Launch deterministic layer (ruff / eslint / phpcs / phpstan) ─
+        # We run it AFTER the file reads above so we reuse the same content
+        # (no duplicate I/O) and avoid a speculative pre-launch that would
+        # need to be cancelled.
+        det_task = asyncio.ensure_future(
+            asyncio.to_thread(run_layer1_runners, det_sources, project_root=repo_root)
+        )
 
         # Active model may differ from org default when complexity < complex
         active_model = llm_adapter.model_for_complexity(complexity.level)
 
         # ── 7. Store in Django ─────────────────────────────────────────────
-        await django_client.create_evaluation({
+        evaluation_record = await django_client.create_evaluation({
             "project_id": project_id,
             "commit_sha": commit["id"],
             "commit_message": commit["message"],
@@ -296,25 +323,46 @@ async def process_commit(
             "llm_tokens_used": total_tokens,
             "processing_ms": processing_ms,
             "findings": [f.model_dump() for f in all_findings],
+            "decision_observations": [
+                o.model_dump() for o in all_decision_observations
+            ],
             "sender_login": sender_login,
             "commit_complexity": complexity.level,
             "complexity_score": complexity.score,
         })
 
-        print(
-            f"[OK] Processed commit {commit['id'][:7]}: "
-            f"{len(all_findings)} findings, score {overall_score:.1f}, "
-            f"complexity={complexity.level}({complexity.score}), "
-            f"model={active_model}, "
-            f"context={len(import_context)} import files, "
-            f"semantic={len(semantic_chunks)} chunks, "
-            f"profile_level={profile.get('level', 'n/a')}"
+        logger.info(
+            "[OK] Processed commit %s: %d findings, score %.1f, "
+            "complexity=%s(%s), model=%s, context=%d import files, "
+            "semantic=%d chunks, profile_level=%s",
+            commit['id'][:7], len(all_findings), overall_score,
+            complexity.level, complexity.score, active_model,
+            len(import_context), len(semantic_chunks),
+            profile.get('level', 'n/a'),
         )
 
+        # ── 8. Post deterministic findings (ruff / eslint / phpcs / phpstan) ─
+        # The linters ran concurrently with the LLM in det_task. Await the
+        # result now that we have the evaluation ID to attach findings to.
+        eval_id = (evaluation_record or {}).get("id") if evaluation_record else None
+        if eval_id:
+            try:
+                det_findings = await det_task
+                if det_findings:
+                    await post_deterministic_findings(eval_id, det_findings)
+                    logger.info(
+                        "[DET] %d deterministic findings posted (eval %s)",
+                        len(det_findings), eval_id,
+                    )
+                else:
+                    logger.info("[DET] No deterministic findings for eval %s", eval_id)
+            except Exception as det_exc:
+                logger.warning(
+                    "Deterministic pipeline failed for eval %s: %s", eval_id, det_exc
+                )
+
     except Exception as e:
-        import logging
-        import traceback
-        logging.getLogger(__name__).error(
+        logger.error(
             "Error processing commit %s: %s\n%s",
             commit['id'][:7], str(e), traceback.format_exc()
         )
