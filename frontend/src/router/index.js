@@ -21,6 +21,7 @@ import OrgStudentDetailView from '@/views/OrgStudentDetailView.vue';
 import DeveloperJourneyView from '@/views/DeveloperJourneyView.vue';
 import GradingInboxView from '@/views/GradingInboxView.vue';
 import GradingSessionDetailView from '@/views/GradingSessionDetailView.vue';
+import StudentPRListView from '@/views/StudentPRListView.vue';
 import OpsDashboardView from '@/views/OpsDashboardView.vue';
 import OrgMembersView from '@/views/OrgMembersView.vue';
 import CohortListView from '@/views/CohortListView.vue';
@@ -62,6 +63,8 @@ const router = createRouter({
         // Nakijken Copilot — teacher grading copilot
         { path: '/grading', name: 'grading-inbox', component: GradingInboxView },
         { path: '/grading/sessions/:id', name: 'grading-session-detail', component: GradingSessionDetailView, props: true },
+        // Piece 2 — per-student PR list, intermediate view between inbox and session detail
+        { path: '/grading/students/:id/prs', name: 'grading-student-prs', component: StudentPRListView, meta: { admin: true }, props: true },
         // Workstream E3 — teacher-facing full student profile
         { path: '/grading/students/:id', name: 'grading-student-profile', component: TeacherStudentProfileView, meta: { admin: true }, props: true },
         // Workstream E1 — cohort + course management.
