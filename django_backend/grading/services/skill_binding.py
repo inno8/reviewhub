@@ -88,7 +88,7 @@ def bind_rubric_to_observations(grading_session) -> int:
       * no Skill matches a criterion slug (per-criterion skip, warning)
       * no Evaluation linked to the session (entire binding skipped)
     """
-    from skills.models import Skill, SkillObservation
+    from skills.models import Skill, SkillMetric, SkillObservation
 
     scores = grading_session.ai_draft_scores or {}
     if not scores:
@@ -157,6 +157,35 @@ def bind_rubric_to_observations(grading_session) -> int:
                 SkillObservation.objects.filter(pk=obs.pk).update(
                     created_at=generated_at
                 )
+
+            # Fold this observation into the Bayesian rollup so the student
+            # snapshot, per-criterion bars, and trajectory chart pick it up.
+            # Only on NEWLY-created observations: if a draft regenerates and
+            # update_or_create returns existing, skipping prevents
+            # double-counting against observation_count.
+            #
+            # Caveat: the legacy bind_existing_rubric_observations management
+            # command + the seed_dogfood_cohort flow do their own metric
+            # rollup explicitly. This in-line update covers the live webhook
+            # → grading → binding path that previously left
+            # SkillMetric.observation_count at 0 (visible bug: tester's
+            # /grading/students/5 profile rendered as empty radar even after
+            # multiple POSTED sessions).
+            if created:
+                try:
+                    metric, _ = SkillMetric.objects.get_or_create(
+                        user=student,
+                        project=project,
+                        skill=skill,
+                        defaults={"score": 50.0},
+                    )
+                    metric.update_bayesian(quality, 1.0)
+                except Exception as e:
+                    # Never break the grading flow on a metric-rollup hiccup.
+                    log.warning(
+                        "skill_binding: SkillMetric rollup failed user=%s skill=%s: %s",
+                        student.id, skill.slug, e,
+                    )
             count += 1
 
     log.info(
