@@ -109,7 +109,17 @@
             :key="s.session_id"
             @click="openSession(s.session_id)"
             :data-testid="`pr-card-${s.session_id}`"
+            :class="s.is_superseded ? 'opacity-60' : ''"
           >
+            <div v-if="s.iteration_number > 1 || s.is_superseded" class="flex items-center gap-2 mb-1">
+              <span class="text-[11px] uppercase tracking-widest text-on-surface-variant">
+                Iteratie {{ s.iteration_number }}
+              </span>
+              <span
+                v-if="s.is_superseded"
+                class="text-[10px] uppercase tracking-widest text-outline bg-surface-container rounded px-1.5 py-0.5"
+              >vervangen</span>
+            </div>
             <PRCard
               :pr-number="s.pr_number"
               :pr-title="s.pr_title"
@@ -160,6 +170,8 @@ interface SessionEntry {
   rubric_score_avg: number | null;
   findings_count: number;
   course_name: string | null;
+  iteration_number: number;
+  is_superseded: boolean;
 }
 
 const route = useRoute();
@@ -208,6 +220,8 @@ async function load() {
       rubric_score_avg: r.rubric_score_avg ?? null,
       findings_count: r.findings_count ?? 0,
       course_name: r.course_name ?? null,
+      iteration_number: r.iteration_number ?? 1,
+      is_superseded: Boolean(r.is_superseded),
     }));
   } catch (err: any) {
     const status = err?.response?.status;

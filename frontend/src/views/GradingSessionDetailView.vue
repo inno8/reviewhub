@@ -31,6 +31,14 @@
             </p>
           </div>
           <span
+            v-if="store.activeSession && (store.activeSession as any).total_iterations > 1"
+            class="px-2.5 py-1 rounded-md text-[11px] uppercase tracking-widest font-semibold bg-tertiary/15 text-tertiary"
+            data-testid="iteration-pill"
+          >
+            Iteratie {{ (store.activeSession as any).iteration_number }} van
+            {{ (store.activeSession as any).total_iterations }}
+          </span>
+          <span
             v-if="store.activeSession"
             class="px-2.5 py-1 rounded-md text-[11px] uppercase tracking-widest font-semibold"
             :class="stateBadgeClass(store.activeSession.state)"
@@ -265,6 +273,46 @@
                   </button>
                 </div>
               </footer>
+            </section>
+
+            <!-- Vorige iteraties van deze PR -->
+            <section
+              v-if="previousIterations.length > 0"
+              class="rounded-xl border border-outline-variant/10 bg-surface-container-low p-4 flex flex-col gap-3"
+              data-testid="previous-iterations"
+            >
+              <h2
+                class="text-[11px] font-bold uppercase tracking-widest text-on-surface-variant"
+              >Vorige iteraties van deze PR</h2>
+              <ul class="flex flex-col gap-2">
+                <li
+                  v-for="prev in previousIterations"
+                  :key="prev.id"
+                  class="flex items-center gap-3 bg-surface-container-lowest border border-outline-variant/10 rounded-lg px-3 py-2 text-sm"
+                  :data-testid="`prev-iter-${prev.id}`"
+                >
+                  <span class="font-semibold text-on-surface">
+                    Iteratie {{ prev.iteration_number }}
+                  </span>
+                  <span
+                    class="px-2 py-0.5 rounded-md text-[10px] uppercase tracking-widest font-semibold"
+                    :class="stateBadgeClass(prev.state)"
+                  >{{ stateLabel(prev.state) }}</span>
+                  <span
+                    v-if="prev.eindbeoordeling !== null && prev.eindbeoordeling !== undefined"
+                    class="text-xs text-on-surface-variant"
+                  >
+                    Eindbeoordeling {{ prev.eindbeoordeling }}
+                  </span>
+                  <span v-if="prev.posted_at" class="text-xs text-on-surface-variant">
+                    · {{ formatDutchDate(prev.posted_at) }}
+                  </span>
+                  <button
+                    @click="router.push({ name: 'grading-session-detail', params: { id: prev.id } })"
+                    class="ml-auto text-xs text-primary hover:underline"
+                  >Bekijk →</button>
+                </li>
+              </ul>
             </section>
 
             <!-- Send-result banner -->
@@ -622,6 +670,34 @@ async function onResume() {
 
 function goBack() {
   router.push({ name: 'grading-inbox' });
+}
+
+interface PreviousIteration {
+  id: number;
+  iteration_number: number;
+  state: SessionState;
+  eindbeoordeling: number | null;
+  posted_at: string | null;
+  created_at: string | null;
+}
+
+const previousIterations = computed<PreviousIteration[]>(() => {
+  const s: any = store.activeSession;
+  if (!s) return [];
+  return (s.previous_iterations || []) as PreviousIteration[];
+});
+
+function formatDutchDate(iso: string): string {
+  try {
+    const d = new Date(iso);
+    return d.toLocaleDateString('nl-NL', {
+      day: 'numeric',
+      month: 'short',
+      year: 'numeric',
+    });
+  } catch {
+    return iso;
+  }
 }
 
 function stateLabel(state: SessionState): string {

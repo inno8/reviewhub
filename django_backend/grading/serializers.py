@@ -297,7 +297,7 @@ class SubmissionSerializer(serializers.ModelSerializer):
         ]
 
     def get_has_grading_session(self, obj) -> bool:
-        return hasattr(obj, "grading_session")
+        return obj.grading_sessions.exists()
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -373,6 +373,8 @@ class GradingSessionDetailSerializer(serializers.ModelSerializer):
     rubric_snapshot = serializers.SerializerMethodField()
     posted_comments = PostedCommentSerializer(many=True, read_only=True)
     contributors = serializers.SerializerMethodField()
+    previous_iterations = serializers.SerializerMethodField()
+    total_iterations = serializers.SerializerMethodField()
 
     class Meta:
         model = GradingSession
@@ -403,6 +405,10 @@ class GradingSessionDetailSerializer(serializers.ModelSerializer):
             "partial_post_error",
             "posted_comments",
             "contributors",
+            "iteration_number",
+            "superseded_by",
+            "previous_iterations",
+            "total_iterations",
             "created_at",
             "updated_at",
         ]
@@ -427,6 +433,10 @@ class GradingSessionDetailSerializer(serializers.ModelSerializer):
             "partial_post_error",
             "posted_comments",
             "contributors",
+            "iteration_number",
+            "superseded_by",
+            "previous_iterations",
+            "total_iterations",
             "created_at",
             "updated_at",
         ]
@@ -435,6 +445,50 @@ class GradingSessionDetailSerializer(serializers.ModelSerializer):
         """All SubmissionContributor rows for the PR — the full group roster."""
         links = obj.submission.contributor_links.select_related("user").all()
         return SubmissionContributorSerializer(links, many=True).data
+
+    def _iteration_eindbeoordeling(self, session) -> float | None:
+        """Mean of numeric scores from final_scores or ai_draft_scores."""
+        source = session.final_scores or session.ai_draft_scores or {}
+        numeric: list[float] = []
+        if isinstance(source, dict):
+            for v in source.values():
+                if isinstance(v, dict) and isinstance(v.get("score"), (int, float)):
+                    numeric.append(float(v["score"]))
+                elif isinstance(v, (int, float)):
+                    numeric.append(float(v))
+        return round(sum(numeric) / len(numeric), 2) if numeric else None
+
+    def get_previous_iterations(self, obj) -> list[dict]:
+        """
+        Lightweight breadcrumb list of earlier iterations on the same submission.
+        Ordered oldest→newest. Excludes the current session. Only minimal fields
+        — no full comment payloads.
+        """
+        if obj.submission_id is None:
+            return []
+        prior = (
+            GradingSession.objects
+            .filter(submission_id=obj.submission_id)
+            .exclude(pk=obj.pk)
+            .order_by("iteration_number", "created_at")
+        )
+        return [
+            {
+                "id": s.id,
+                "iteration_number": s.iteration_number,
+                "state": s.state,
+                "eindbeoordeling": self._iteration_eindbeoordeling(s),
+                "posted_at": s.posted_at.isoformat() if s.posted_at else None,
+                "created_at": s.created_at.isoformat() if s.created_at else None,
+            }
+            for s in prior
+        ]
+
+    def get_total_iterations(self, obj) -> int:
+        """Total iteration count for this PR (including the current session)."""
+        if obj.submission_id is None:
+            return 1
+        return GradingSession.objects.filter(submission_id=obj.submission_id).count()
 
     def get_rubric_snapshot(self, obj) -> dict:
         """Denormalized rubric data so the frontend doesn't need a second round-trip."""

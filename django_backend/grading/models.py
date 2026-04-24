@@ -419,6 +419,22 @@ class Submission(models.Model):
     def __str__(self) -> str:
         return f"{self.student.email} → {self.repo_full_name}#{self.pr_number}"
 
+    @property
+    def current_grading_session(self):
+        """
+        The latest (non-superseded) GradingSession for this submission.
+
+        After the iteration work, a single Submission can have many
+        GradingSessions — one per push-after-POSTED iteration. This returns
+        the most-recent one; superseded sessions have `superseded_by` set.
+        """
+        return (
+            self.grading_sessions
+            .filter(superseded_by__isnull=True)
+            .order_by("-iteration_number", "-created_at")
+            .first()
+        )
+
 
 class GradingSession(models.Model):
     """
@@ -455,10 +471,25 @@ class GradingSession(models.Model):
         on_delete=models.CASCADE,
         related_name="grading_sessions",
     )
-    submission = models.OneToOneField(
+    submission = models.ForeignKey(
         Submission,
         on_delete=models.CASCADE,
-        related_name="grading_session",
+        related_name="grading_sessions",
+    )
+    superseded_by = models.ForeignKey(
+        "self",
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="supersedes",
+        help_text=(
+            "If set, this session was replaced by a newer iteration when the "
+            "student pushed new commits after the teacher sent feedback."
+        ),
+    )
+    iteration_number = models.PositiveIntegerField(
+        default=1,
+        help_text="1-based iteration counter for this PR. Increments on each new post-POSTED synchronize.",
     )
     rubric = models.ForeignKey(
         Rubric,

@@ -756,6 +756,8 @@ class StudentPRHistoryView(APIView):
                 "rubric_score_avg": avg_score,
                 "findings_count": len(s.ai_draft_comments or []),
                 "course_name": sub.course.name if sub.course else None,
+                "iteration_number": s.iteration_number,
+                "is_superseded": s.superseded_by_id is not None,
             })
 
         return Response({

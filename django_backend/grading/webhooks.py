@@ -301,14 +301,65 @@ def _upsert_submission_and_session(
             )
             return submission, None, False  # type: ignore[return-value]
 
-        session, created = GradingSession.objects.select_for_update().get_or_create(
-            submission=submission,
-            defaults={
-                "org": course.org,
-                "rubric": course_rubric,
-                "state": GradingSession.State.PENDING,
-            },
+        # Iteration-aware session resolution (Leera's "what happens after
+        # Send?" loop). A Submission may now have many GradingSessions.
+        # Pick the latest non-superseded session; if there is none, create
+        # iteration 1. If there IS one and this webhook is a `synchronize`
+        # (new commits) AND the latest session is in a terminal state, then
+        # the teacher already sent feedback — create a NEW session for the
+        # next iteration and mark the old one superseded.
+        TERMINAL_STATES = {
+            GradingSession.State.POSTED,
+            GradingSession.State.PARTIAL,
+            GradingSession.State.FAILED,
+            GradingSession.State.DISCARDED,
+        }
+
+        action = (pr_payload.get("_action") or "").strip()
+        # pr_payload is the inner pull_request block; we can't read the
+        # top-level `action` from it directly. Pass-through via caller would
+        # be cleaner, but for minimal surface area we infer: any push that
+        # changes head_branch/head_sha reaches the synchronize path upstream.
+        # The caller of _upsert_submission_and_session will tag pr_payload
+        # with _action before invoking us.
+
+        latest = (
+            GradingSession.objects
+            .select_for_update()
+            .filter(submission=submission, superseded_by__isnull=True)
+            .order_by("-iteration_number", "-created_at")
+            .first()
         )
+
+        if latest is None:
+            session = GradingSession.objects.create(
+                org=course.org,
+                submission=submission,
+                rubric=course_rubric,
+                state=GradingSession.State.PENDING,
+                iteration_number=1,
+            )
+            created = True
+        elif action == "synchronize" and latest.state in TERMINAL_STATES:
+            # New iteration — student pushed after teacher sent feedback.
+            session = GradingSession.objects.create(
+                org=course.org,
+                submission=submission,
+                rubric=course_rubric,
+                state=GradingSession.State.PENDING,
+                iteration_number=latest.iteration_number + 1,
+                ai_draft_scores={},
+                ai_draft_comments=[],
+                final_scores={},
+                final_comments=[],
+                final_summary="",
+            )
+            latest.superseded_by = session
+            latest.save(update_fields=["superseded_by", "updated_at"])
+            created = True
+        else:
+            session = latest
+            created = False
 
         # Ensure an Evaluation + SessionEvaluation link exists so that
         # skill_binding (runs after the teacher triggers generate_draft)
@@ -487,6 +538,10 @@ def github_webhook(request):
         )
 
     # 6. Upsert Submission + GradingSession + Contributors.
+    # Tag the inner pr_payload with the webhook action so the iteration-aware
+    # session-upsert path can distinguish `synchronize` (new commits) from
+    # `opened` / `reopened` without us having to thread another argument.
+    pr["_action"] = action
     try:
         submission, session, created = _upsert_submission_and_session(
             memberships=memberships,
