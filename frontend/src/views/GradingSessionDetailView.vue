@@ -64,6 +64,36 @@
         >{{ store.activeSessionError }}</div>
 
         <template v-else-if="store.activeSession">
+          <!-- PR closed/merged cascade-discard banner -->
+          <div
+            v-if="prClosedDiscardKind === 'pr_closed_by_student'"
+            class="rounded-xl border border-outline-variant/20 bg-surface-container-low text-on-surface-variant px-4 py-3 text-sm flex items-start gap-3"
+            data-testid="pr-closed-discard-banner"
+          >
+            <span class="material-symbols-rounded text-on-surface-variant mt-0.5" aria-hidden="true">warning</span>
+            <div class="flex flex-col gap-1">
+              <strong class="text-on-surface">Iteratie afgebroken</strong>
+              <span>
+                De PR is gesloten door de student voordat je deze iteratie kon afronden.
+                Het concept blijft bewaard ter referentie maar kan niet meer verzonden worden.
+              </span>
+            </div>
+          </div>
+          <div
+            v-else-if="prClosedDiscardKind === 'pr_merged'"
+            class="rounded-xl border border-outline-variant/20 bg-surface-container-low text-on-surface-variant px-4 py-3 text-sm flex items-start gap-3"
+            data-testid="pr-merged-discard-banner"
+          >
+            <span class="material-symbols-rounded text-on-surface-variant mt-0.5" aria-hidden="true">check_circle</span>
+            <div class="flex flex-col gap-1">
+              <strong class="text-on-surface">PR is gemerged</strong>
+              <span>
+                De student heeft deze PR gemerged voordat deze iteratie afgerond was.
+                Het concept blijft bewaard ter referentie maar kan niet meer verzonden worden.
+              </span>
+            </div>
+          </div>
+
           <!-- Truncated banner -->
           <div
             v-if="store.activeSession.ai_draft_truncated"
@@ -254,7 +284,7 @@
                     data-testid="save-btn"
                   >Opslaan</button>
                   <button
-                    v-if="store.activeSession.state === 'partial'"
+                    v-if="store.activeSession.state === 'partial' && !prClosedDiscardKind"
                     @click="onResume"
                     :disabled="sendInFlight"
                     class="primary-gradient text-on-primary px-5 py-2.5 rounded-lg font-bold shadow-lg shadow-primary/10 hover:shadow-primary/20 transition-all active:scale-95 disabled:opacity-50 disabled:cursor-not-allowed"
@@ -263,7 +293,7 @@
                     {{ sendInFlight ? 'Hervatten…' : 'Hervat verzenden' }}
                   </button>
                   <button
-                    v-else
+                    v-else-if="!prClosedDiscardKind"
                     @click="onSend"
                     :disabled="!canSend || sendInFlight"
                     class="primary-gradient text-on-primary px-5 py-2.5 rounded-lg font-bold shadow-lg shadow-primary/10 hover:shadow-primary/20 transition-all active:scale-95 disabled:opacity-50 disabled:cursor-not-allowed"
@@ -428,13 +458,23 @@ const studentId = ref<number | null>(null);
 const headBranch = ref<string | null>(null);
 const cohortName = ref<string | null>(null);
 
+const prClosedDiscardKind = computed<'pr_closed_by_student' | 'pr_merged' | null>(() => {
+  const s: any = store.activeSession;
+  if (!s || s.state !== 'discarded') return null;
+  const reason = s.partial_post_error?.reason;
+  if (reason === 'pr_closed_by_student' || reason === 'pr_merged') return reason;
+  return null;
+});
+
 const EDITABLE_STATES = new Set<SessionState>(['drafted', 'reviewing', 'partial']);
 const canEdit = computed(() => {
+  if (prClosedDiscardKind.value) return false;
   const st = store.activeSession?.state;
   return st ? EDITABLE_STATES.has(st) : false;
 });
 
 const canSend = computed(() => {
+  if (prClosedDiscardKind.value) return false;
   const st = store.activeSession?.state;
   if (!st) return false;
   return ['drafted', 'reviewing'].includes(st);
@@ -707,6 +747,9 @@ const showNewIterationStrip = computed(() => {
   if (!s) return false;
   if (!TERMINAL_STATES.has(s.state as SessionState)) return false;
   if (s.superseded_by) return false;
+  // PR is closed/merged — there is nothing to iterate on. The cascade-discard
+  // banner already explains this; don't double up with the strip.
+  if (prClosedDiscardKind.value) return false;
   return true;
 });
 

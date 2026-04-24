@@ -381,3 +381,101 @@ class TestManualStartNewIterationAction:
         self._login_teacher(client, membership)
         resp = client.post(f"/api/grading/sessions/{iter1.id}/start_new_iteration/", {})
         assert resp.status_code == 400
+
+
+# ─────────────────────────────────────────────────────────────────────
+# Cascade-discard on PR closed/merged.
+# When a student closes or merges the PR before the teacher finishes the
+# iteration, any in-flight GradingSession should auto-DISCARD with a
+# structured marker so the UI can render an "iteratie afgebroken" banner.
+# ─────────────────────────────────────────────────────────────────────
+
+
+@pytest.mark.django_db
+class TestPRClosedCascadeDiscard:
+    def _setup_two_sessions(self, membership):
+        """Set up: 1 POSTED (terminal) iter1 + 1 DRAFTED (mid-flight) iter2."""
+        client = APIClient()
+        post_webhook(client, make_pr_payload(action="opened"), delivery_id="d1")
+        sub = Submission.objects.get(pr_number=1)
+        iter1 = GradingSession.objects.get(submission=sub)
+        iter1.state = GradingSession.State.POSTED
+        iter1.save(update_fields=["state"])
+        iter2 = _spawn_iter2_via_helper(iter1)
+        iter2.state = GradingSession.State.DRAFTED
+        iter2.save(update_fields=["state"])
+        return client, sub, iter1, iter2
+
+    def test_pr_closed_cascade_discards_in_flight_sessions(self, membership):
+        client, sub, iter1, iter2 = self._setup_two_sessions(membership)
+
+        close = make_pr_payload(action="closed", state="closed", merged=False)
+        resp = post_webhook(client, close, delivery_id="d-close")
+        assert resp.status_code == 200
+
+        iter1.refresh_from_db()
+        iter2.refresh_from_db()
+        # POSTED (terminal) is untouched.
+        assert iter1.state == GradingSession.State.POSTED
+        # DRAFTED (mid-flight) is now DISCARDED with the cascade marker.
+        assert iter2.state == GradingSession.State.DISCARDED
+        assert iter2.partial_post_error is not None
+        assert iter2.partial_post_error["reason"] == "pr_closed_by_student"
+        assert iter2.partial_post_error["previous_state"] == GradingSession.State.DRAFTED
+        assert "abandoned_at" in iter2.partial_post_error
+
+    def test_pr_merged_cascade_uses_pr_merged_reason(self, membership):
+        client, sub, iter1, iter2 = self._setup_two_sessions(membership)
+
+        merged = make_pr_payload(action="closed", state="closed", merged=True)
+        resp = post_webhook(client, merged, delivery_id="d-merge")
+        assert resp.status_code == 200
+
+        iter2.refresh_from_db()
+        assert iter2.state == GradingSession.State.DISCARDED
+        assert iter2.partial_post_error["reason"] == "pr_merged"
+
+    def test_pr_closed_does_not_touch_already_discarded(self, membership):
+        """If a session is already DISCARDED for a different reason (e.g. a
+        real Send-time error or a manual discard), the cascade must not
+        overwrite its partial_post_error."""
+        client = APIClient()
+        post_webhook(client, make_pr_payload(action="opened"), delivery_id="d1")
+        sub = Submission.objects.get(pr_number=1)
+        session = GradingSession.objects.get(submission=sub)
+        session.state = GradingSession.State.DISCARDED
+        session.partial_post_error = {
+            "error_class": "GitHubError",
+            "message": "preexisting failure marker",
+        }
+        session.save(update_fields=["state", "partial_post_error"])
+
+        close = make_pr_payload(action="closed", state="closed", merged=False)
+        resp = post_webhook(client, close, delivery_id="d-close")
+        assert resp.status_code == 200
+
+        session.refresh_from_db()
+        assert session.state == GradingSession.State.DISCARDED
+        # Untouched: real error marker preserved, no cascade reason injected.
+        assert session.partial_post_error == {
+            "error_class": "GitHubError",
+            "message": "preexisting failure marker",
+        }
+
+    def test_pr_closed_with_no_inflight_sessions_no_op(self, membership):
+        """Submission with only POSTED (terminal) sessions: webhook close is
+        a no-op as far as session state is concerned."""
+        client = APIClient()
+        post_webhook(client, make_pr_payload(action="opened"), delivery_id="d1")
+        sub = Submission.objects.get(pr_number=1)
+        session = GradingSession.objects.get(submission=sub)
+        session.state = GradingSession.State.POSTED
+        session.save(update_fields=["state"])
+
+        close = make_pr_payload(action="closed", state="closed", merged=False)
+        resp = post_webhook(client, close, delivery_id="d-close")
+        assert resp.status_code == 200
+
+        session.refresh_from_db()
+        assert session.state == GradingSession.State.POSTED
+        assert session.partial_post_error is None

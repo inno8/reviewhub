@@ -385,6 +385,55 @@ TERMINAL_SESSION_STATES = {
 }
 
 
+def _cascade_discard_inflight_sessions(submission: Submission, *, merged: bool) -> int:
+    """
+    Orphan-iteration guard: when a PR is closed (merged or not), discard any
+    GradingSessions on this submission that are still mid-flight (PENDING,
+    DRAFTING, DRAFTED, REVIEWING, SENDING). They can never be sent now because
+    GitHub will reject comments with PRClosedError, so leaving them in limbo
+    just confuses the teacher.
+
+    For each discarded session we set partial_post_error to a structured marker
+    the frontend uses to render the "iteratie afgebroken / PR is gemerged"
+    banner — distinct from a real Send-time error so we don't overwrite genuine
+    failure data on already-terminal sessions.
+
+    Returns the number of sessions transitioned. Idempotent: re-running on the
+    same submission is a no-op because all matching sessions are now terminal.
+    """
+    reason = "pr_merged" if merged else "pr_closed_by_student"
+    count = 0
+    inflight_ids = list(
+        GradingSession.objects
+        .filter(submission=submission)
+        .exclude(state__in=TERMINAL_SESSION_STATES)
+        .values_list("id", flat=True)
+    )
+    for sid in inflight_ids:
+        with transaction.atomic():
+            s = (
+                GradingSession.objects
+                .select_for_update()
+                .filter(pk=sid)
+                .first()
+            )
+            if s is None:
+                continue
+            if s.state in TERMINAL_SESSION_STATES:
+                # Raced with another writer (e.g. concurrent Send completed).
+                continue
+            previous_state = s.state
+            s.state = GradingSession.State.DISCARDED
+            s.partial_post_error = {
+                "reason": reason,
+                "abandoned_at": _tz.now().isoformat(),
+                "previous_state": previous_state,
+            }
+            s.save(update_fields=["state", "partial_post_error", "updated_at"])
+            count += 1
+    return count
+
+
 def _pr_is_terminal(submission: Submission, pr_payload: dict) -> bool:
     """
     Return True if the PR behind this submission is in a terminal state.
@@ -795,6 +844,19 @@ def github_webhook(request):
                 pr_payload=pr,
                 repo_full_name=repo_full_name,
             )
+            # On pull_request closed: cascade-discard any GradingSession that
+            # was mid-flight on this submission. The teacher's draft can no
+            # longer be sent (GitHub will reject with PRClosedError), so move
+            # the session to a terminal state with a structured marker so the
+            # UI can render the "iteratie afgebroken" banner.
+            if (
+                event_type == "pull_request"
+                and action == "closed"
+                and submission is not None
+            ):
+                _cascade_discard_inflight_sessions(
+                    submission, merged=bool(pr.get("merged", False)),
+                )
     except Exception as e:
         log.exception("webhook: upsert failed")
         return JsonResponse({"ok": False, "error": str(e)}, status=500)

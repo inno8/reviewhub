@@ -566,7 +566,7 @@ class GradingSession(models.Model):
         State.DRAFTING: {State.DRAFTED, State.FAILED, State.DISCARDED},
         State.DRAFTED: {State.REVIEWING, State.DRAFTING, State.DISCARDED},
         State.REVIEWING: {State.SENDING, State.DRAFTING, State.DISCARDED},
-        State.SENDING: {State.POSTED, State.PARTIAL},
+        State.SENDING: {State.POSTED, State.PARTIAL, State.DISCARDED},
         State.PARTIAL: {State.SENDING, State.POSTED, State.DISCARDED},
         State.FAILED: {State.DRAFTING, State.DISCARDED},
         State.POSTED: set(),  # terminal
