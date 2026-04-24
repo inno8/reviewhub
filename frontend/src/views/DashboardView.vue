@@ -241,14 +241,43 @@ function scoreColor(score: number) {
     <!-- ═══ ADMIN DASHBOARD ═══ -->
     <template v-if="authStore.isAdmin">
       <div class="p-8 flex-1">
+        <!-- Teacher-first hero banner (shown for role=teacher before the admin KPIs). -->
+        <section
+          v-if="authStore.isTeacher"
+          class="mb-8 p-6 rounded-xl bg-primary/10 border border-primary/30 flex flex-wrap items-center justify-between gap-4"
+          data-testid="teacher-hero-banner"
+        >
+          <div class="min-w-0">
+            <p class="text-[11px] uppercase tracking-[0.2em] text-primary font-bold">Nakijken Copilot</p>
+            <h1 class="text-2xl md:text-3xl font-black text-on-surface tracking-tight mt-1">
+              Welkom terug{{ authStore.user?.first_name ? `, ${authStore.user.first_name}` : '' }}.
+            </h1>
+            <p class="text-sm text-on-surface-variant mt-1">
+              Ga naar je inbox om de PRs van je studenten na te kijken.
+            </p>
+          </div>
+          <button
+            @click="router.push('/grading')"
+            class="primary-gradient text-on-primary font-bold px-5 py-2.5 rounded-lg text-sm shadow-lg shadow-primary/10 hover:shadow-primary/20 active:scale-95 inline-flex items-center gap-1.5"
+            data-testid="teacher-start-grading-btn"
+          >
+            <span class="material-symbols-outlined text-base">rate_review</span>
+            <span>Nakijken beginnen</span>
+          </button>
+        </section>
+
         <header class="mb-8">
-          <span class="text-primary font-bold uppercase tracking-[0.2em] text-xs">Admin Dashboard</span>
-          <h1 class="text-4xl font-black text-on-surface tracking-tight mb-2">Team Overview</h1>
+          <span class="text-primary font-bold uppercase tracking-[0.2em] text-xs">
+            {{ authStore.isTeacher ? 'Klas-overzicht' : 'Admin Dashboard' }}
+          </span>
+          <h1 class="text-4xl font-black text-on-surface tracking-tight mb-2">
+            {{ authStore.isTeacher ? 'Jouw klassen' : 'Team Overview' }}
+          </h1>
         </header>
 
         <!-- ── Team Health Row ── -->
         <section v-if="adminTeam" class="grid grid-cols-2 md:grid-cols-5 gap-4 mb-8">
-          <div class="bg-surface-container-low p-5 rounded-xl border border-outline-variant/10 text-center">
+          <div v-if="!authStore.isTeacher" class="bg-surface-container-low p-5 rounded-xl border border-outline-variant/10 text-center">
             <p class="text-3xl font-black" :class="adminTeam.teamAvgScore >= 60 ? 'text-green-400' : adminTeam.teamAvgScore >= 40 ? 'text-yellow-400' : 'text-red-400'">
               {{ adminTeam.teamAvgScore }}
             </p>
@@ -256,13 +285,13 @@ function scoreColor(score: number) {
           </div>
           <div class="bg-surface-container-low p-5 rounded-xl border border-outline-variant/10 text-center">
             <p class="text-3xl font-black text-primary">{{ adminTeam.totalDevelopers }}</p>
-            <p class="text-[10px] text-outline uppercase mt-1">Developers</p>
+            <p class="text-[10px] text-outline uppercase mt-1">{{ authStore.isTeacher ? 'Studenten' : 'Developers' }}</p>
           </div>
           <div class="bg-surface-container-low p-5 rounded-xl border border-outline-variant/10 text-center">
             <p class="text-3xl font-black text-tertiary">{{ adminTeam.totalFindings }}</p>
-            <p class="text-[10px] text-outline uppercase mt-1">Total Findings</p>
+            <p class="text-[10px] text-outline uppercase mt-1">{{ authStore.isTeacher ? 'Feedbackpunten' : 'Total Findings' }}</p>
           </div>
-          <div class="bg-surface-container-low p-5 rounded-xl border border-outline-variant/10 text-center">
+          <div v-if="!authStore.isTeacher" class="bg-surface-container-low p-5 rounded-xl border border-outline-variant/10 text-center">
             <p class="text-3xl font-black" :class="adminTeam.teamFixRate > 30 ? 'text-green-400' : 'text-red-400'">{{ adminTeam.teamFixRate }}%</p>
             <p class="text-[10px] text-outline uppercase mt-1">Fix Rate</p>
           </div>

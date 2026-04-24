@@ -65,6 +65,18 @@
               </option>
             </select>
           </label>
+
+          <label class="flex flex-col text-xs text-on-surface-variant">
+            <span class="mb-1 uppercase tracking-widest font-semibold">Sorteer</span>
+            <select
+              v-model="sortMode"
+              class="bg-surface-container border border-outline-variant/20 text-on-surface rounded-md py-1.5 px-2 min-w-[180px] focus:ring-1 focus:ring-primary/50 focus:outline-none"
+              data-testid="sort-mode"
+            >
+              <option value="urgent">Meest urgent eerst</option>
+              <option value="alpha">Op naam (A-Z)</option>
+            </select>
+          </label>
         </div>
 
         <div
@@ -193,6 +205,7 @@ const error = ref<string | null>(null);
 const search = ref('');
 const selectedCohort = ref<number | null>(null);
 const selectedCourse = ref<number | null>(null);
+const sortMode = ref<'urgent' | 'alpha'>('urgent');
 
 function unwrap<T>(data: any): T[] {
   if (!data) return [];
@@ -283,11 +296,7 @@ async function load() {
       }
     }
 
-    students.value = Array.from(byId.values()).sort((a, b) => {
-      // PRs-waiting first, then alphabetical.
-      if (a.pendingCount !== b.pendingCount) return b.pendingCount - a.pendingCount;
-      return a.name.localeCompare(b.name);
-    });
+    students.value = Array.from(byId.values());
   } catch (err: any) {
     error.value = err?.response?.data?.detail || err?.message || 'Kon studenten niet laden';
     students.value = [];
@@ -308,7 +317,7 @@ function openStudent(id: number) {
 
 const filteredStudents = computed<StudentRow[]>(() => {
   const q = search.value.trim().toLowerCase();
-  return students.value.filter(s => {
+  const filtered = students.value.filter(s => {
     if (q && !s.name.toLowerCase().includes(q) && !s.email.toLowerCase().includes(q)) {
       return false;
     }
@@ -316,6 +325,17 @@ const filteredStudents = computed<StudentRow[]>(() => {
     if (selectedCourse.value && !s.courseIds.includes(selectedCourse.value)) return false;
     return true;
   });
+  const sorted = filtered.slice();
+  if (sortMode.value === 'alpha') {
+    sorted.sort((a, b) => a.name.localeCompare(b.name));
+  } else {
+    // "Meest urgent eerst" — most pending PRs first, tie-break on name.
+    sorted.sort((a, b) => {
+      if (a.pendingCount !== b.pendingCount) return b.pendingCount - a.pendingCount;
+      return a.name.localeCompare(b.name);
+    });
+  }
+  return sorted;
 });
 
 const totalPendingCount = computed(() =>
