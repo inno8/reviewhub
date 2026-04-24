@@ -1,7 +1,7 @@
 <template>
   <AppShell>
     <div class="p-6 flex-1">
-      <div class="max-w-[1400px] mx-auto flex flex-col gap-5">
+      <div class="max-w-[1400px] mx-auto flex flex-col gap-5 xl:mr-[400px]">
         <!-- Header -->
         <header
           class="flex flex-wrap items-center gap-4 pb-4 border-b border-outline-variant/10"
@@ -65,12 +65,53 @@
             De diff is afgekapt voor de AI-beoordeling. Controleer zorgvuldig.
           </div>
 
-          <!-- Generate-draft prompt -->
+          <!-- Auto-draft loading state (PENDING auto-fires, DRAFTING is in-progress) -->
           <div
             v-if="
               store.activeSession.state === 'pending'
-                || !store.activeSession.ai_draft_generated_at
+                || store.activeSession.state === 'drafting'
             "
+            class="glass-panel p-10 rounded-xl flex flex-col items-center justify-center gap-4 text-center"
+            data-testid="draft-loading"
+          >
+            <span
+              class="material-symbols-rounded text-5xl text-primary animate-spin"
+              aria-hidden="true"
+            >progress_activity</span>
+            <div class="flex flex-col gap-1.5 max-w-md">
+              <p class="text-on-surface font-semibold">
+                Leera analyseert deze PR… dit duurt ongeveer 30 seconden.
+              </p>
+              <p class="text-xs text-on-surface-variant">
+                Je kunt dit scherm openhouden of later terugkomen.
+              </p>
+            </div>
+          </div>
+
+          <!-- Failed state: manual retry -->
+          <div
+            v-else-if="store.activeSession.state === 'failed'"
+            class="rounded-xl border border-error/20 bg-error/10 p-6 flex flex-col gap-3 items-start"
+            data-testid="draft-failed"
+          >
+            <div class="flex items-center gap-2 text-error">
+              <span class="material-symbols-rounded" aria-hidden="true">error</span>
+              <p class="font-semibold">
+                Er ging iets mis bij het analyseren. Klik om opnieuw te proberen.
+              </p>
+            </div>
+            <button
+              @click="onGenerateDraft"
+              :disabled="draftInFlight"
+              class="primary-gradient text-on-primary px-5 py-2.5 rounded-lg font-bold shadow-lg shadow-primary/10 hover:shadow-primary/20 transition-all active:scale-95 disabled:opacity-50 disabled:cursor-not-allowed"
+            >
+              {{ draftInFlight ? 'Opnieuw proberen…' : 'Opnieuw proberen' }}
+            </button>
+          </div>
+
+          <!-- No draft yet (rare: state is past pending but draft never generated) -->
+          <div
+            v-else-if="!store.activeSession.ai_draft_generated_at"
             class="glass-panel p-6 text-center rounded-xl"
           >
             <p class="text-on-surface-variant mb-3">No AI draft yet.</p>
@@ -93,18 +134,12 @@
               :contributors="store.activeSession.contributors"
             />
 
-            <StudentSnapshotPanel
-              v-if="studentId"
+            <StudentHeaderChip
+              :name="store.activeSession.student_name || store.activeSession.student_email"
+              :email="store.activeSession.student_email"
+              :branch="headBranch"
               :student-id="studentId"
-              :profile-link="true"
-            />
-
-            <!-- Rubric panel (horizontal strip — docent-first) -->
-            <RubricPanel
-              :criteria="store.activeSession.rubric_snapshot.criteria"
-              :scores="editedScores"
-              :editable="canEdit"
-              @update-score="setScore"
+              :cohort-name="cohortName"
             />
 
             <!-- File + diff viewer: one viewer per file, comments inlined at target line -->
@@ -146,11 +181,24 @@
                   :file-path="group.file"
                   :comments="group.comments"
                   :editable="canEdit"
+                  :repo-full-name="store.activeSession.repo_full_name"
                   @update-comment="onCommentUpdate"
                   @remove-comment="removeComment"
                 />
               </template>
             </section>
+
+            <!-- Rubric fallback for below-xl viewports (sidebar is hidden there) -->
+            <div class="xl:hidden">
+              <RubricPanel
+                :criteria="store.activeSession.rubric_snapshot.criteria"
+                :scores="editedScores"
+                :editable="canEdit"
+                :course-name="store.activeSession.course_name"
+                :cohort-name="cohortName"
+                @update-score="setScore"
+              />
+            </div>
 
             <!-- Summary notes + bottom action row -->
             <section
@@ -249,7 +297,22 @@
           </template>
         </template>
       </div>
+      <RightSidebar
+        v-if="
+          store.activeSession
+            && store.activeSession.ai_draft_generated_at
+            && fileList.length > 0
+        "
+        :files="fileList"
+        :criteria="store.activeSession.rubric_snapshot.criteria"
+        :scores="editedScores"
+        :editable="canEdit"
+        :course-name="store.activeSession.course_name"
+        :cohort-name="cohortName"
+        @update-score="setScore"
+      />
     </div>
+
   </AppShell>
 </template>
 
@@ -258,10 +321,11 @@ import { ref, computed, onMounted, onBeforeUnmount, watch } from 'vue';
 import { useRoute, useRouter, onBeforeRouteLeave } from 'vue-router';
 import { useGradingStore, type GradingComment, type SessionState } from '@/stores/grading';
 import { api } from '@/composables/useApi';
-import StudentSnapshotPanel from '@/components/grading/StudentSnapshotPanel.vue';
+import StudentHeaderChip from '@/components/grading/StudentHeaderChip.vue';
 import ContributorsList from '@/components/grading/ContributorsList.vue';
 import RubricPanel from '@/components/grading/RubricPanel.vue';
 import DiffInlineViewer from '@/components/grading/DiffInlineViewer.vue';
+import RightSidebar from '@/components/grading/RightSidebar.vue';
 import AppShell from '@/components/layout/AppShell.vue';
 
 const route = useRoute();
@@ -278,9 +342,12 @@ const draftInFlight = ref(false);
 const sendInFlight = ref(false);
 const sendResult = ref<any>(null);
 const autosaveTimer = ref<number | null>(null);
+const draftPollTimer = ref<number | null>(null);
 
 const id = computed(() => Number(route.params.id));
 const studentId = ref<number | null>(null);
+const headBranch = ref<string | null>(null);
+const cohortName = ref<string | null>(null);
 
 const EDITABLE_STATES = new Set<SessionState>(['drafted', 'reviewing', 'partial']);
 const canEdit = computed(() => {
@@ -318,6 +385,21 @@ interface AnchoredComment extends GradingComment {
   teacher_explanation?: string;
 }
 
+const fileList = computed<{ path: string; isAdded: boolean }[]>(() => {
+  const seen = new Set<string>();
+  const out: { path: string; isAdded: boolean }[] = [];
+  for (const c of editedComments.value) {
+    const f = c.file || '(unknown)';
+    if (seen.has(f)) continue;
+    seen.add(f);
+    // Heuristic: we don't have PR diff metadata here, so mark as "modified"
+    // (the pencil icon). If future backend work adds an `added` hint we can
+    // surface it via a plus icon — for now keep it calm and uniform.
+    out.push({ path: f, isAdded: false });
+  }
+  return out;
+});
+
 const fileGroups = computed<{ file: string; comments: AnchoredComment[] }[]>(() => {
   const byFile = new Map<string, AnchoredComment[]>();
   editedComments.value.forEach((c, i) => {
@@ -334,12 +416,22 @@ const fileGroups = computed<{ file: string; comments: AnchoredComment[] }[]>(() 
 
 async function loadStudentIdFromSubmission() {
   const subId = store.activeSession?.submission;
-  if (!subId) { studentId.value = null; return; }
+  if (!subId) { studentId.value = null; headBranch.value = null; return; }
   try {
     const { data } = await api.grading.submissions.get(subId);
     studentId.value = data?.student ?? null;
+    headBranch.value = data?.head_branch ?? null;
+    // Try to pull cohort name for the rubric section header (J2 detection).
+    const courseId = data?.course;
+    if (courseId) {
+      try {
+        const { data: course } = await api.grading.courses.get(courseId);
+        cohortName.value = course?.cohort_name ?? null;
+      } catch { /* non-fatal */ }
+    }
   } catch {
     studentId.value = null;
+    headBranch.value = null;
   }
 }
 
@@ -347,14 +439,71 @@ onMounted(async () => {
   await store.fetchSession(id.value);
   hydrateEdits();
   loadStudentIdFromSubmission();
-  if (store.activeSession?.state === 'drafted') {
+  // Auto-fire draft if session is still PENDING — teacher shouldn't have to
+  // click a button; they opened this PR because they want feedback.
+  if (store.activeSession?.state === 'pending') {
+    autoStartDraft();
+  } else if (store.activeSession?.state === 'drafting') {
+    // Mid-flight from a previous session / other tab — just poll.
+    startDraftPolling();
+  } else if (store.activeSession?.state === 'drafted') {
     try { await store.startReview(id.value); } catch { /* non-fatal */ }
   }
 });
 
 onBeforeUnmount(() => {
   if (autosaveTimer.value) window.clearTimeout(autosaveTimer.value);
+  stopDraftPolling();
 });
+
+function stopDraftPolling() {
+  if (draftPollTimer.value) {
+    window.clearInterval(draftPollTimer.value);
+    draftPollTimer.value = null;
+  }
+}
+
+function startDraftPolling() {
+  stopDraftPolling();
+  draftPollTimer.value = window.setInterval(async () => {
+    try {
+      await store.fetchSession(id.value);
+      const st = store.activeSession?.state;
+      if (st === 'drafted' || st === 'reviewing' || st === 'partial' || st === 'posted') {
+        stopDraftPolling();
+        hydrateEdits();
+        if (st === 'drafted') {
+          try { await store.startReview(id.value); } catch { /* non-fatal */ }
+        }
+      } else if (st === 'failed') {
+        stopDraftPolling();
+      }
+    } catch {
+      /* keep polling on transient error */
+    }
+  }, 4000);
+}
+
+async function autoStartDraft() {
+  if (draftInFlight.value) return;
+  draftInFlight.value = true;
+  startDraftPolling();
+  try {
+    await store.generateDraft(id.value);
+    // generateDraft usually returns with DRAFTED already; hydrate and stop.
+    stopDraftPolling();
+    hydrateEdits();
+    if (store.activeSession?.state === 'drafted') {
+      try { await store.startReview(id.value); } catch { /* non-fatal */ }
+    }
+  } catch {
+    // Let the poller pick up DRAFTED/FAILED; if the call itself threw and
+    // state is still pending, also stop polling so the failed card renders.
+    if (store.activeSession?.state !== 'drafting') stopDraftPolling();
+  } finally {
+    draftInFlight.value = false;
+  }
+}
 
 onBeforeRouteLeave(async (_to, _from, next) => {
   if (dirty.value && !savingEdits.value) {

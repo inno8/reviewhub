@@ -92,7 +92,13 @@ const submittedLabel = computed(() => formatDate(props.submittedAt));
         <span>Ingediend {{ submittedLabel }}</span>
         <template v-if="rubricScoreAvg !== null && rubricScoreAvg !== undefined">
           <span class="opacity-40">·</span>
-          <span class="text-on-surface font-semibold">{{ Math.round(rubricScoreAvg) }}/100</span>
+          <!--
+            Backend rubric_score_avg is the mean of 1-4 criterion scores
+            (see grading/views_student_intelligence.StudentPRHistoryView).
+            Show as "x.x/4" so the denominator matches what the teacher
+            sees in the rubric panel.
+          -->
+          <span class="text-on-surface font-semibold">{{ rubricScoreAvg.toFixed(1) }}/4</span>
         </template>
       </div>
       <span class="text-primary font-medium whitespace-nowrap">Open →</span>

@@ -106,9 +106,9 @@
         <div v-else class="flex flex-col gap-3" data-testid="pr-list">
           <div
             v-for="s in filteredSessions"
-            :key="s.id"
-            @click="openSession(s.id)"
-            :data-testid="`pr-card-${s.id}`"
+            :key="s.session_id"
+            @click="openSession(s.session_id)"
+            :data-testid="`pr-card-${s.session_id}`"
           >
             <PRCard
               :pr-number="s.pr_number"

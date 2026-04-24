@@ -1,7 +1,9 @@
 <template>
   <div
-    class="rounded-xl border border-outline-variant/10 bg-surface-container-lowest overflow-hidden"
+    :id="`file-${encodedFilePath}`"
+    class="rounded-xl border border-outline-variant/10 bg-surface-container-lowest overflow-hidden scroll-mt-24"
     :data-testid="`diff-viewer-${filePath}`"
+    :data-file-path="filePath"
   >
     <header
       class="flex items-center gap-2 border-b border-outline-variant/10 bg-surface-container/60 px-3 py-2"
@@ -40,7 +42,7 @@
         <span class="material-symbols-rounded text-base" aria-hidden="true">info</span>
         <span class="font-semibold">{{ fetchErrorHeading }}</span>
       </div>
-      <p class="leading-relaxed">{{ fetchError.detail || 'Kon bestand niet laden.' }}</p>
+      <p class="leading-relaxed">{{ fetchErrorDetail }}</p>
       <!-- Fallback: render the comments inline without file context -->
       <div v-if="comments.length > 0" class="flex flex-col gap-3 mt-2">
         <InlineCommentEditor
@@ -63,7 +65,7 @@
           :class="[
             'flex gap-3 px-3 py-0.5',
             isCommentedLine(idx + 1)
-              ? 'bg-primary/5 border-l-2 border-primary'
+              ? 'bg-red-500/5 border-l-2 border-red-500/60'
               : 'border-l-2 border-transparent',
           ]"
           :data-testid="isCommentedLine(idx + 1) ? `commented-line-${idx + 1}` : undefined"
@@ -71,11 +73,19 @@
           <span
             class="text-outline/50 tabular-nums select-none text-right w-10 shrink-0"
           >{{ idx + 1 }}</span>
-          <pre class="whitespace-pre m-0 text-on-surface-variant">{{ line || ' ' }}</pre>
+          <pre
+            v-if="highlightedLines[idx]"
+            class="shiki-line whitespace-pre m-0 flex-1 min-w-0 overflow-x-auto text-on-surface-variant"
+            v-html="highlightedLines[idx]"
+          ></pre>
+          <pre
+            v-else
+            class="whitespace-pre m-0 flex-1 min-w-0 overflow-x-auto text-on-surface-variant"
+          >{{ line || ' ' }}</pre>
         </div>
-        <!-- Inline comment editors anchored under this line -->
+        <!-- Inline comment editors anchored under the LAST line of the matched snippet range -->
         <div
-          v-for="c in commentsAt(idx + 1)"
+          v-for="c in commentsAfterLine(idx + 1)"
           :key="`c-${c._index}`"
           class="px-3 py-2 bg-surface-container/40 border-l-2 border-primary"
         >
@@ -117,6 +127,7 @@
 import { computed, onMounted, ref, watch } from 'vue';
 import axios from 'axios';
 import InlineCommentEditor from './InlineCommentEditor.vue';
+import { detectLangFromPath, highlightLines } from '@/utils/shikiHighlight';
 
 interface AnchoredComment {
   _index: number;
@@ -133,9 +144,16 @@ interface Props {
   filePath: string;
   comments: AnchoredComment[];
   editable?: boolean;
+  /**
+   * Optional "{owner}/{name}" of the PR repo. When this is a known demo /
+   * seeded prefix (e.g. mediacollege-webdev-q2/*) and the file fetch fails,
+   * the error banner is softened from "Bestand niet beschikbaar" to a
+   * calmer "demo PR" message. Teachers' dogfood view doesn't need alarm bells.
+   */
+  repoFullName?: string | null;
 }
 
-const props = withDefaults(defineProps<Props>(), { editable: true });
+const props = withDefaults(defineProps<Props>(), { editable: true, repoFullName: null });
 defineEmits<{
   (e: 'update-comment', index: number, patch: Partial<AnchoredComment>): void;
   (e: 'remove-comment', index: number): void;
@@ -145,28 +163,136 @@ const loading = ref(false);
 const fetchError = ref<{ code?: string; detail?: string } | null>(null);
 const fileLines = ref<string[]>([]);
 const truncated = ref(false);
+const highlightedLines = ref<string[]>([]);
+
+const encodedFilePath = computed(() => encodeURIComponent(props.filePath));
 
 const codeFontStyle = {
   fontFamily: '"Fira Code", ui-monospace, SFMono-Regular, Menlo, monospace',
 };
 
+// Demo/seeded repos live under this GitHub org — they don't exist on GitHub
+// so the file endpoint always 404s. Soften the copy in that case so the
+// banner doesn't scream "something is broken" during a pitch demo.
+const isDemoRepo = computed(
+  () => !!props.repoFullName && props.repoFullName.startsWith('mediacollege-webdev-q2/'),
+);
+
 const fetchErrorHeading = computed(() => {
   if (fetchError.value?.code === 'no_pat') return 'Geen GitHub PAT ingesteld';
+  if (isDemoRepo.value) return 'Demo-PR: codefragment hieronder';
   return 'Bestand niet beschikbaar';
 });
 
-function isCommentedLine(n: number): boolean {
-  return props.comments.some((c) => Number(c.line) === n);
+const fetchErrorDetail = computed(() => {
+  if (isDemoRepo.value) {
+    return (
+      'Dit is een demo-PR — het volledige bestand wordt niet opgehaald. '
+      + 'Je ziet hieronder het codefragment waarop de feedback betrekking heeft.'
+    );
+  }
+  return fetchError.value?.detail || 'Kon bestand niet laden.';
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Snippet-based range resolution (preferred over LLM's `line` anchor).
+//
+// The LLM's `line` field is a single-line anchor — it's often aimed at a
+// topic-marker line (e.g. a `# path traversal` comment the student wrote),
+// NOT at the actual problematic code. The real offending code lives in
+// `original_snippet`, which can span multiple lines. We render the red
+// highlight over the lines whose content matches `original_snippet`, and
+// drop the comment row BELOW that range. Falls back to the `line` anchor
+// when the snippet isn't present in the loaded file (e.g. text-only comments
+// or context mismatch).
+//
+// Matching is content-based: strip each candidate+snippet line of leading
+// whitespace and compare. Whitespace-tolerance handles tabs-vs-spaces or
+// minor indent differences without false negatives.
+// ─────────────────────────────────────────────────────────────────────────────
+
+interface AnchorRange {
+  start: number; // 1-indexed
+  end: number;   // 1-indexed inclusive
 }
 
-function commentsAt(n: number): AnchoredComment[] {
-  return props.comments.filter((c) => Number(c.line) === n);
+const commentRanges = computed<Map<number, AnchorRange>>(() => {
+  const result = new Map<number, AnchorRange>();
+  const lines = fileLines.value;
+  for (const c of props.comments) {
+    const anchor = Number(c.line);
+    const snippet = (c.original_snippet || '').trim();
+    if (!snippet) {
+      // No snippet — fall back to the LLM's single-line anchor
+      result.set(c._index, { start: anchor, end: anchor });
+      continue;
+    }
+    const snippetLines = snippet
+      .split(/\r?\n/)
+      .map((s) => s.replace(/^\s+/, '').replace(/\s+$/, ''))
+      .filter((s) => s.length > 0);
+    if (snippetLines.length === 0) {
+      result.set(c._index, { start: anchor, end: anchor });
+      continue;
+    }
+    // Scan fileLines for the snippet's first line, then verify subsequent
+    // lines match in order (whitespace-normalised). Prefer a match near the
+    // LLM's anchor (within ±10 lines) to disambiguate repeats.
+    const normalised = lines.map((l) => l.replace(/^\s+/, '').replace(/\s+$/, ''));
+    const first = snippetLines[0];
+    let best: AnchorRange | null = null;
+    let bestDistance = Number.POSITIVE_INFINITY;
+    for (let i = 0; i < normalised.length; i += 1) {
+      if (normalised[i] !== first) continue;
+      // Check all subsequent snippet lines match in sequence
+      let ok = true;
+      for (let j = 1; j < snippetLines.length; j += 1) {
+        if (normalised[i + j] !== snippetLines[j]) {
+          ok = false;
+          break;
+        }
+      }
+      if (!ok) continue;
+      const start = i + 1;
+      const end = i + snippetLines.length;
+      const distance = Math.abs(start - anchor);
+      if (distance < bestDistance) {
+        best = { start, end };
+        bestDistance = distance;
+      }
+    }
+    if (best) {
+      result.set(c._index, best);
+    } else {
+      // No content match — fall back to anchor
+      result.set(c._index, { start: anchor, end: anchor });
+    }
+  }
+  return result;
+});
+
+function isCommentedLine(n: number): boolean {
+  for (const range of commentRanges.value.values()) {
+    if (n >= range.start && n <= range.end) return true;
+  }
+  return false;
+}
+
+// Comments render AFTER the last line of their matched range (not after the
+// LLM's anchor line). This places the teacher's editor directly under the
+// code it addresses instead of next to a topic-marker comment above it.
+function commentsAfterLine(n: number): AnchoredComment[] {
+  return props.comments.filter((c) => {
+    const r = commentRanges.value.get(c._index);
+    return r ? r.end === n : false;
+  });
 }
 
 const orphanComments = computed(() =>
   props.comments.filter((c) => {
-    const n = Number(c.line);
-    return n < 1 || n > fileLines.value.length;
+    const r = commentRanges.value.get(c._index);
+    if (!r) return true;
+    return r.start < 1 || r.end > fileLines.value.length;
   }),
 );
 
@@ -189,6 +315,19 @@ async function loadFile() {
     truncated.value = !!data.truncated;
     const content: string = data.content || '';
     fileLines.value = content.length ? content.split(/\r?\n/) : [];
+    highlightedLines.value = [];
+    // Fire-and-forget syntax highlighting — context code stays readable even
+    // if Shiki hasn't loaded yet. When it resolves we replace the plain
+    // <pre> render with the colored version.
+    if (content.length) {
+      const lang = detectLangFromPath(props.filePath);
+      const snapshot = content;
+      highlightLines(content, lang).then(lines => {
+        if (snapshot === (fileLines.value.join('\n'))) {
+          highlightedLines.value = lines;
+        }
+      }).catch(() => { /* fallback to plaintext */ });
+    }
   } catch (err: any) {
     const resp = err?.response;
     if (resp?.status === 503 && resp?.data?.code === 'no_pat') {
@@ -206,3 +345,15 @@ async function loadFile() {
 onMounted(loadFile);
 watch(() => [props.sessionId, props.filePath], loadFile);
 </script>
+
+<style scoped>
+.shiki-line {
+  font-family: "Fira Code", ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 13px;
+  line-height: 1.5;
+  background: transparent !important;
+}
+.shiki-line :deep(span) {
+  white-space: pre;
+}
+</style>

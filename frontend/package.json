@@ -20,6 +20,7 @@
     "highlight.js": "^11.11.1",
     "pinia": "^3.0.3",
     "prismjs": "^1.30.0",
+    "shiki": "^4.0.2",
     "vue": "^3.5.22",
     "vue-chartjs": "^5.3.3",
     "vue-router": "^4.5.1"

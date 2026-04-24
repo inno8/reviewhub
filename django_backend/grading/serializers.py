@@ -367,6 +367,9 @@ class GradingSessionDetailSerializer(serializers.ModelSerializer):
     )
     pr_url = serializers.URLField(source="submission.pr_url", read_only=True)
     pr_title = serializers.CharField(source="submission.pr_title", read_only=True)
+    repo_full_name = serializers.CharField(
+        source="submission.repo_full_name", read_only=True
+    )
     rubric_snapshot = serializers.SerializerMethodField()
     posted_comments = PostedCommentSerializer(many=True, read_only=True)
     contributors = serializers.SerializerMethodField()
@@ -382,6 +385,7 @@ class GradingSessionDetailSerializer(serializers.ModelSerializer):
             "course_name",
             "pr_url",
             "pr_title",
+            "repo_full_name",
             "rubric",
             "rubric_snapshot",
             "ai_draft_scores",
