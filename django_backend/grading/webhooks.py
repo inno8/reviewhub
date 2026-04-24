@@ -35,7 +35,7 @@ import hashlib
 import hmac
 import json
 import logging
-from urllib.parse import urlparse
+from urllib.parse import parse_qs, urlparse
 
 from django.conf import settings
 from django.db import transaction
@@ -378,10 +378,40 @@ def github_webhook(request):
         if not _verify_github_signature(body, header, secret):
             return HttpResponseForbidden("invalid signature")
 
-    # 2. Delivery ID dedupe — GitHub retries on timeout; we reject dupes
-    #    at the edge in <5ms (eng-review concurrency bundle #3).
     delivery_id = request.META.get("HTTP_X_GITHUB_DELIVERY", "")
     event_type = request.META.get("HTTP_X_GITHUB_EVENT", "")
+
+    # 2. Early dedupe check — if this delivery_id was already successfully
+    #    stored (parsed + accepted on a previous request), return 200 so
+    #    GitHub stops retrying. We do NOT create the row yet: if parsing
+    #    fails below, we'd burn the guid and block GitHub's redelivery of
+    #    a fixed payload. Persist happens AFTER successful parsing.
+    if delivery_id and WebhookDelivery.objects.filter(
+        provider="github", delivery_id=delivery_id,
+    ).exists():
+        return JsonResponse({"ok": True, "deduped": True}, status=200)
+
+    # 3. Parse payload. GitHub supports both application/json and
+    #    application/x-www-form-urlencoded (payload=<json>) content types.
+    content_type = (request.content_type or "").split(";", 1)[0].strip().lower()
+    try:
+        if content_type == "application/x-www-form-urlencoded":
+            form = parse_qs(body.decode("utf-8"))
+            raw = (form.get("payload") or [""])[0]
+            if not raw:
+                return HttpResponseBadRequest("missing payload form field")
+            payload = json.loads(raw)
+        elif content_type == "application/json" or not content_type:
+            payload = json.loads(body.decode("utf-8"))
+        else:
+            return HttpResponseBadRequest(
+                f"unsupported content type: {content_type}"
+            )
+    except (json.JSONDecodeError, UnicodeDecodeError):
+        return HttpResponseBadRequest("invalid payload")
+
+    # 4. Parsing succeeded — persist the dedupe row now. If a concurrent
+    #    redelivery raced us, the second one returns 200+deduped.
     if delivery_id:
         _, created = WebhookDelivery.objects.get_or_create(
             provider="github",
@@ -390,12 +420,6 @@ def github_webhook(request):
         )
         if not created:
             return JsonResponse({"ok": True, "deduped": True}, status=200)
-
-    # 3. Parse payload.
-    try:
-        payload = json.loads(body.decode("utf-8"))
-    except (json.JSONDecodeError, UnicodeDecodeError):
-        return HttpResponseBadRequest("invalid payload")
 
     # 4. Short-circuit anything that isn't a PR event we care about.
     if event_type != "pull_request":

@@ -299,3 +299,95 @@ class TestWebhookMalformed:
             HTTP_X_GITHUB_EVENT="pull_request",
         )
         assert resp.status_code == 400
+
+
+@pytest.mark.django_db
+class TestWebhookParseFailureDoesNotBurnDeliveryId:
+    """Regression: if payload parsing fails, the delivery guid must NOT be
+    persisted to WebhookDelivery — otherwise GitHub's redelivery of the
+    corrected payload gets dedup-skipped and the teacher never sees the PR."""
+
+    def test_invalid_json_does_not_create_delivery_row(self, db):
+        client = APIClient()
+        resp = client.post(
+            "/api/grading/webhooks/github/",
+            data=b"{not valid json",
+            content_type="application/json",
+            HTTP_X_GITHUB_DELIVERY="burn-me",
+            HTTP_X_GITHUB_EVENT="pull_request",
+        )
+        assert resp.status_code == 400
+        assert not WebhookDelivery.objects.filter(
+            provider="github", delivery_id="burn-me",
+        ).exists()
+
+    def test_redelivery_after_failure_is_processed_normally(self, membership):
+        client = APIClient()
+        # First attempt: garbage body → 400, no WebhookDelivery row.
+        bad = client.post(
+            "/api/grading/webhooks/github/",
+            data=b"\xff\xfe not utf8 json",
+            content_type="application/json",
+            HTTP_X_GITHUB_DELIVERY="retry-guid",
+            HTTP_X_GITHUB_EVENT="pull_request",
+        )
+        assert bad.status_code == 400
+        assert WebhookDelivery.objects.count() == 0
+
+        # GitHub redelivers with a corrected payload, same delivery guid.
+        good = post_webhook(
+            client, make_pr_payload(action="opened"),
+            delivery_id="retry-guid",
+        )
+        assert good.status_code == 200
+        data = good.json()
+        assert data["matched"] is True
+        assert data["session_created"] is True
+        assert WebhookDelivery.objects.filter(delivery_id="retry-guid").count() == 1
+
+
+@pytest.mark.django_db
+class TestWebhookFormEncodedContentType:
+    """Regression: GitHub supports application/x-www-form-urlencoded with a
+    `payload=<url-encoded-json>` field. Must be parsed identically to JSON."""
+
+    def test_form_encoded_webhook_is_processed(self, membership):
+        from urllib.parse import urlencode
+
+        client = APIClient()
+        payload = make_pr_payload(action="opened")
+        body = urlencode({"payload": json.dumps(payload)}).encode()
+        resp = client.post(
+            "/api/grading/webhooks/github/",
+            data=body,
+            content_type="application/x-www-form-urlencoded",
+            HTTP_X_GITHUB_DELIVERY="form-1",
+            HTTP_X_GITHUB_EVENT="pull_request",
+        )
+        assert resp.status_code == 200, resp.content
+        data = resp.json()
+        assert data["matched"] is True
+        assert data["session_created"] is True
+
+    def test_form_encoded_missing_payload_field_returns_400(self, db):
+        client = APIClient()
+        resp = client.post(
+            "/api/grading/webhooks/github/",
+            data=b"not_payload=something",
+            content_type="application/x-www-form-urlencoded",
+            HTTP_X_GITHUB_DELIVERY="form-bad",
+            HTTP_X_GITHUB_EVENT="pull_request",
+        )
+        assert resp.status_code == 400
+        assert not WebhookDelivery.objects.filter(delivery_id="form-bad").exists()
+
+    def test_unsupported_content_type_returns_400(self, db):
+        client = APIClient()
+        resp = client.post(
+            "/api/grading/webhooks/github/",
+            data=b"<xml/>",
+            content_type="application/xml",
+            HTTP_X_GITHUB_DELIVERY="xml-1",
+            HTTP_X_GITHUB_EVENT="pull_request",
+        )
+        assert resp.status_code == 400

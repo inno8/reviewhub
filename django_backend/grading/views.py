@@ -985,6 +985,58 @@ class GradingSessionViewSet(
                 {"error": "github_failed", "message": str(e)},
                 status=status.HTTP_502_BAD_GATEWAY,
             )
+        except Exception as e:
+            # Defensive catch-all: any non-grading exception during post_all_or_nothing
+            # would otherwise leave the session stuck in SENDING forever (no
+            # partial_post_error recorded, no state flip). Check how many
+            # PostedComment rows actually landed on GitHub — if it equals the
+            # count of comments-to-post, treat it as POSTED (the crash happened
+            # in summary rendering or a post-loop step); otherwise PARTIAL so
+            # the teacher can Resume.
+            import logging
+            log = logging.getLogger(__name__)
+            log.exception("send: unexpected exception session=%s", session.id)
+            from .models import PostedComment
+            posted_count = PostedComment.objects.filter(grading_session=session).count()
+            expected = len([c for c in (session.final_comments or session.ai_draft_comments or [])])
+            all_inline_posted = posted_count >= expected and expected > 0
+            with transaction.atomic():
+                s = GradingSession.objects.select_for_update().get(pk=session.id)
+                if all_inline_posted:
+                    s.state = GradingSession.State.POSTED
+                    s.posted_at = timezone.now()
+                    s.partial_post_error = {
+                        "error_class": type(e).__name__,
+                        "message": f"Comments posted successfully; summary step raised: {str(e)[:300]}",
+                        "recovered": True,
+                    }
+                    s.save(update_fields=["state", "posted_at", "partial_post_error", "updated_at"])
+                    return Response(
+                        {
+                            "state": s.state,
+                            "posted_count": posted_count,
+                            "skipped_duplicate_count": 0,
+                            "summary_comment_id": None,
+                            "warning": "Summary comment step failed after all inline comments posted — recovered.",
+                        },
+                        status=status.HTTP_200_OK,
+                    )
+                s.state = GradingSession.State.PARTIAL
+                s.partial_post_error = {
+                    "error_class": type(e).__name__,
+                    "message": str(e)[:500],
+                    "posted_so_far": posted_count,
+                }
+                s.save(update_fields=["state", "partial_post_error", "updated_at"])
+            return Response(
+                {
+                    "error": "partial_post",
+                    "state": s.state,
+                    "posted_so_far": posted_count,
+                    "message": "Some comments posted; click Resume to continue.",
+                },
+                status=status.HTTP_207_MULTI_STATUS,
+            )
 
         # All comments (and summary) posted cleanly.
         with transaction.atomic():
