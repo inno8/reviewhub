@@ -516,6 +516,22 @@ class SkillObservation(models.Model):
         self.issue_density = round(
             severity_total / max(self.lines_changed, 10), 4
         )
+        # If the caller passed update_fields (e.g. via update_or_create),
+        # add the auto-computed columns so the recomputed values actually
+        # hit the DB. Without this, an update_or_create that changes
+        # quality_score leaves a stale weighted_score behind — a silent
+        # bug that masked the SkillMetric regrade fix.
+        update_fields = kwargs.get("update_fields")
+        if update_fields is not None:
+            update_fields = set(update_fields)
+            if "quality_score" in update_fields or "complexity_weight" in update_fields:
+                update_fields.add("weighted_score")
+            if any(f in update_fields for f in (
+                "critical_count", "warning_count", "info_count",
+                "suggestion_count", "lines_changed",
+            )):
+                update_fields.add("issue_density")
+            kwargs["update_fields"] = update_fields
         super().save(**kwargs)
 
 

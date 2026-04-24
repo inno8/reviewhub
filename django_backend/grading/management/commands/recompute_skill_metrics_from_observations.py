@@ -1,5 +1,5 @@
 """
-backfill_skill_metrics — recompute SkillMetric.bayesian_score from existing
+recompute_skill_metrics_from_observations — recompute SkillMetric.bayesian_score from existing
 SkillObservation rows.
 
 Why this exists
@@ -31,9 +31,9 @@ times you've run it before.
 
 Usage
 -----
-    python manage.py backfill_skill_metrics                    # all users
-    python manage.py backfill_skill_metrics --user tester@x.io # one user
-    python manage.py backfill_skill_metrics --dry-run          # preview
+    python manage.py recompute_skill_metrics_from_observations                    # all users
+    python manage.py recompute_skill_metrics_from_observations --user tester@x.io # one user
+    python manage.py recompute_skill_metrics_from_observations --dry-run          # preview
 """
 from __future__ import annotations
 
@@ -63,7 +63,7 @@ class Command(BaseCommand):
 
     def handle(self, *args, **opts):
         from django.contrib.auth import get_user_model
-        from skills.models import SkillMetric, SkillObservation
+        from skills.models import SkillObservation
 
         User = get_user_model()
         dry = opts["dry_run"]
@@ -119,42 +119,24 @@ class Command(BaseCommand):
                     )
                 continue
 
+            from skills.services.metric_recompute import recompute_metric
+            from skills.models import Skill
+
             for (skill_id, project_id), obs_list in grouped.items():
+                # Resolve the FK rows once — recompute_metric accepts
+                # instances, not ids, so it can be called from any caller
+                # (live grading flow, seed scripts, this command).
+                skill = obs_list[0].skill
+                project = obs_list[0].project
                 with transaction.atomic():
-                    metric, _created = SkillMetric.objects.get_or_create(
-                        user=user,
-                        project_id=project_id,
-                        skill_id=skill_id,
-                        defaults={"score": 50.0},
-                    )
-                    # Reset state so replay is deterministic. bayesian_score
-                    # is NOT NULL — use 50.0 as the prior to satisfy the
-                    # constraint while update_bayesian rebuilds it.
-                    metric.score = 50.0
-                    metric.bayesian_score = 50.0
-                    metric.confidence = 0.0
-                    metric.observation_count = 0
-                    # Keep level_label / trend / proven_concepts / relapsed_concepts
-                    # alone — they're computed by other paths and don't
-                    # depend on this rollup.
-                    metric.save(update_fields=[
-                        "score",
-                        "bayesian_score",
-                        "confidence",
-                        "observation_count",
-                    ])
-                    for obs in obs_list:
-                        try:
-                            metric.update_bayesian(
-                                obs.weighted_score or obs.quality_score or 50.0,
-                                obs.complexity_weight or 1.0,
+                    try:
+                        recompute_metric(user, project, skill)
+                    except Exception as e:
+                        self.stdout.write(
+                            self.style.WARNING(
+                                f"  recompute failed user={user.email} skill={skill.slug}: {e}"
                             )
-                        except Exception as e:
-                            self.stdout.write(
-                                self.style.WARNING(
-                                    f"  obs={obs.id} update_bayesian failed: {e}"
-                                )
-                            )
+                        )
                 total_metrics += 1
                 total_observations += len(obs_list)
 

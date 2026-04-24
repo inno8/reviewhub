@@ -403,12 +403,23 @@ def _cascade_discard_inflight_sessions(submission: Submission, *, merged: bool) 
     """
     reason = "pr_merged" if merged else "pr_closed_by_student"
     count = 0
+    # Cap the loop so a misbehaving submission can't blow up a webhook
+    # request budget. 50 in-flight sessions on one PR is already absurd —
+    # if we hit it, log loudly and let a follow-up webhook clean up the
+    # tail.
+    INFLIGHT_CAP = 50
     inflight_ids = list(
         GradingSession.objects
         .filter(submission=submission)
         .exclude(state__in=TERMINAL_SESSION_STATES)
-        .values_list("id", flat=True)
+        .values_list("id", flat=True)[:INFLIGHT_CAP]
     )
+    if len(inflight_ids) >= INFLIGHT_CAP:
+        log.warning(
+            "cascade_discard: hit INFLIGHT_CAP=%d on submission=%s — tail will be "
+            "discarded by the next webhook delivery",
+            INFLIGHT_CAP, submission.id,
+        )
     for sid in inflight_ids:
         with transaction.atomic():
             s = (
@@ -421,6 +432,17 @@ def _cascade_discard_inflight_sessions(submission: Submission, *, merged: bool) 
                 continue
             if s.state in TERMINAL_SESSION_STATES:
                 # Raced with another writer (e.g. concurrent Send completed).
+                continue
+            # Route through the state-machine guard so the ALLOWED_TRANSITIONS
+            # table stays the single source of truth. If the table ever
+            # tightens to forbid `<state>→DISCARDED`, this will start
+            # logging instead of silently bypassing.
+            if not s.can_transition_to(GradingSession.State.DISCARDED):
+                log.warning(
+                    "cascade_discard: state-machine refused %s→discarded on session=%s; "
+                    "skipping",
+                    s.state, sid,
+                )
                 continue
             previous_state = s.state
             s.state = GradingSession.State.DISCARDED

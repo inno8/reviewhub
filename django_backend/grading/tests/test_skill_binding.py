@@ -267,3 +267,71 @@ def test_bind_failure_does_not_break_caller(env):
     assert SkillObservation.objects.filter(
         grading_session=env["session"],
     ).count() == 0
+
+
+@pytest.mark.django_db
+def test_regrade_updates_skill_metric_bayesian_score(env):
+    """
+    Regression test for the B3 blocker found by the pre-pitch review:
+
+    Before the fix, bind_rubric_to_observations only called
+    SkillMetric.update_bayesian when SkillObservation.update_or_create
+    returned `created=True`. On regrade (teacher regenerates a draft and
+    the score changes) the observation row was updated in place but the
+    metric's bayesian_score was never adjusted — so the radar showed
+    the old score forever, even if the regrade went down.
+
+    The fix replaces the create-only increment with a full replay via
+    skills.services.metric_recompute.recompute_metric, which is the only
+    correct strategy because update_bayesian is order-sensitive.
+
+    This test pins the behavior: regrade with a worse score MUST move
+    bayesian_score downward.
+    """
+    from skills.models import SkillMetric
+
+    # First grade: score=4 (quality=100).
+    _set_scores(env["session"], {"readability": 4})
+    bind_rubric_to_observations(env["session"])
+
+    metric = SkillMetric.objects.get(
+        user=env["student"], skill__slug="readability",
+    )
+    high_score = metric.bayesian_score
+    assert high_score > 50.0  # moved toward 100 from the 50 prior
+    assert metric.observation_count == 1
+
+    # Teacher regenerates the draft and rescores criterion to 1 (quality=25).
+    _set_scores(env["session"], {"readability": 1})
+    bind_rubric_to_observations(env["session"])
+
+    metric.refresh_from_db()
+    # The radar must now reflect the regrade — strictly lower than before.
+    assert metric.bayesian_score < high_score, (
+        f"regrade with worse score did not move bayesian_score down "
+        f"(was {high_score}, now {metric.bayesian_score})"
+    )
+    # Replay starts from the prior, so observation_count is the count of
+    # observations replayed, not cumulative across binds.
+    assert metric.observation_count == 1
+
+
+@pytest.mark.django_db
+def test_regrade_no_double_count_on_observation_count(env):
+    """
+    Companion to the regrade test: re-binding the same session twice
+    with the same scores must not inflate observation_count. The replay
+    resets to 0 and counts the (deduped, update_or_create-driven) row
+    set, so observation_count stays at 1 across N rebinds.
+    """
+    from skills.models import SkillMetric
+
+    _set_scores(env["session"], {"readability": 3})
+    bind_rubric_to_observations(env["session"])
+    bind_rubric_to_observations(env["session"])
+    bind_rubric_to_observations(env["session"])
+
+    metric = SkillMetric.objects.get(
+        user=env["student"], skill__slug="readability",
+    )
+    assert metric.observation_count == 1

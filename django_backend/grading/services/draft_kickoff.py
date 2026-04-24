@@ -70,7 +70,7 @@ def _run(session_id: int, delay_seconds: float) -> None:
     """
     try:
         time.sleep(delay_seconds)
-        from django.test import RequestFactory  # lightweight in-process call
+        from rest_framework.test import APIRequestFactory, force_authenticate
         from django.contrib.auth import get_user_model
         from grading.models import GradingSession
         from grading.views import GradingSessionViewSet
@@ -113,15 +113,29 @@ def _run(session_id: int, delay_seconds: float) -> None:
             )
             return
 
-        factory = RequestFactory()
+        # Build a DRF request and wire the auth pipeline explicitly.
+        # `force_authenticate` is the documented way to skip authentication
+        # while keeping request.user / request.auth populated — the old
+        # `request.user = teacher` assignment on a plain Django request
+        # didn't survive DRF's initialize_request() and produced 401s
+        # under the hood (silent kickoff failure).
+        factory = APIRequestFactory()
         request = factory.post(
             f"/api/grading/sessions/{session_id}/generate_draft/",
-            content_type="application/json",
+            data={},
+            format="json",
         )
-        request.user = teacher
+        force_authenticate(request, user=teacher)
 
         viewset = GradingSessionViewSet.as_view({"post": "generate_draft"})
         response = viewset(request, pk=session_id)
+        # Some DRF responses need render() before status_code is stable in
+        # a non-HTTP dispatch context.
+        if hasattr(response, "render") and not getattr(response, "is_rendered", False):
+            try:
+                response.render()
+            except Exception:  # pragma: no cover — defensive
+                pass
         # DRF views return a Response; coerce to a status code for the log.
         status = getattr(response, "status_code", None)
         log.info(

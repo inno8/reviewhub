@@ -813,9 +813,17 @@ class GradingSessionViewSet(
                 input_=input_,
             )
         except EmptyDiffError:
+            # Go to FAILED (retryable), not DISCARDED. Empty diffs happen
+            # for transient reasons too: webhook race before the first
+            # commit lands, GitHub fetch returning empty during a brief
+            # API hiccup, or seed data pointing at a non-existent repo.
+            # DISCARDED is terminal — bricks the session on the very
+            # first click and the only recovery is a brand-new iteration.
+            # FAILED leaves "Concept opnieuw opstellen" available so the
+            # teacher can retry once the underlying cause clears.
             with transaction.atomic():
                 s = GradingSession.objects.select_for_update().get(pk=session.id)
-                s.state = GradingSession.State.DISCARDED
+                s.state = GradingSession.State.FAILED
                 s.save(update_fields=["state", "updated_at"])
             return Response(
                 {"error": "empty_diff", "message": "Submission has no code to grade"},
