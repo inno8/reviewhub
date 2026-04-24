@@ -40,6 +40,12 @@ urlpatterns = router.urls + [
         ops_views.OpsWeeklyMetricsView.as_view(),
         name="ops-weekly-metrics",
     ),
+    # Teacher's roster — all students across their cohorts
+    path(
+        "students/",
+        views_student_intelligence.TeacherStudentListView.as_view(),
+        name="teacher-student-list",
+    ),
     # Workstream D — student-intelligence (teacher-facing)
     path(
         "students/<int:student_id>/snapshot/",

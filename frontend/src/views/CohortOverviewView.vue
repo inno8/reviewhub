@@ -285,6 +285,10 @@ const discussionPoints = computed<string[]>(() => {
               <h2 class="text-xl font-bold text-on-surface m-0">Wat deze klas nu nodig heeft</h2>
               <span class="text-xs uppercase tracking-widest text-outline">Top 3 zwakste criteria</span>
             </header>
+            <p class="text-xs text-on-surface-variant mb-4 m-0">
+              Klas-gemiddelde over {{ data.cohort.student_count }} studenten in deze sprint.
+              Score 1-4 vertaalt naar Bayesian-score &times;25.
+            </p>
 
             <div v-if="!data.weakest_criteria.length" class="text-sm text-outline py-4">
               Nog geen rubric-data beschikbaar.

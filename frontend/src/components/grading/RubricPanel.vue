@@ -1,5 +1,34 @@
 <template>
   <section class="flex flex-col gap-4" data-testid="rubric-panel">
+    <!-- Kerntaak legend — collapsible, only shows when any criterion has a
+         kerntaak code so we don't clutter the panel with context-free copy.
+         Native <details>/<summary> keeps this JS-free. -->
+    <details
+      v-if="showKerntaakLegend"
+      class="rounded-lg border border-outline-variant/15 bg-surface-container-lowest px-3 py-2 text-xs"
+      data-testid="kerntaak-legend"
+    >
+      <summary class="cursor-pointer text-on-surface-variant font-semibold select-none flex items-center gap-1.5">
+        <span class="material-symbols-outlined text-sm" aria-hidden="true">info</span>
+        Wat zijn deze codes?
+      </summary>
+      <div class="mt-2 flex flex-col gap-1 text-on-surface-variant leading-relaxed">
+        <p class="m-0">
+          Deze codes komen uit het Kwalificatiedossier Software Developer
+          (Crebo 25604).
+        </p>
+        <p class="m-0">
+          <span class="font-mono text-on-surface">B1-K1</span> = kerntaak
+          &ldquo;Realiseert software&rdquo;.
+          <span class="font-mono text-on-surface">B1-K2</span> = kerntaak
+          &ldquo;Werkt in een ontwikkelteam&rdquo;.
+        </p>
+        <p class="m-0">
+          De W-codes zijn de werkprocessen binnen elke kerntaak.
+        </p>
+      </div>
+    </details>
+
     <!-- EINDBEOORDELING card -->
     <div
       class="rounded-xl border border-outline-variant/10 bg-surface-container-low p-5 flex flex-col gap-3"
@@ -31,6 +60,11 @@
           :style="{ width: Math.min(100, (weightedAverage / 4) * 100) + '%' }"
         ></div>
       </div>
+      <p
+        v-if="scoreCaption"
+        class="text-xs text-on-surface-variant m-0"
+        data-testid="rubric-score-caption"
+      >{{ scoreCaption }}</p>
     </div>
 
     <!-- Section header -->
@@ -162,12 +196,17 @@ interface Props {
   editable?: boolean;
   courseName?: string | null;
   cohortName?: string | null;
+  /** Optional muted caption under the EINDBEOORDELING card explaining
+   * what the score means in context (per PR / per student / per cohort).
+   * Default phrasing matches the per-PR session-detail use. */
+  scoreCaption?: string | null;
 }
 
 const props = withDefaults(defineProps<Props>(), {
   editable: true,
   courseName: null,
   cohortName: null,
+  scoreCaption: 'Score voor deze PR — gewogen gemiddelde van de 6 criteria.',
 });
 const emit = defineEmits<{
   (e: 'update-score', criterionId: string, score: number): void;
@@ -238,6 +277,10 @@ const weightedAverage = computed(() => {
   if (weightUsed === 0) return 0;
   return weightedSum / weightUsed;
 });
+
+const showKerntaakLegend = computed(() =>
+  props.criteria.some((c: any) => !!c.kerntaak),
+);
 
 const sectionHeader = computed(() => {
   const courseLabel = (props.courseName || 'Rubriek').toUpperCase();

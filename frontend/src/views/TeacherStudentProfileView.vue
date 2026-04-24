@@ -321,6 +321,9 @@ function formatDelta(delta: number): string {
 const totalObservations = computed(() =>
   (snapshot.value?.per_skill || []).reduce((s, r) => s + (r.observation_count || 0), 0),
 );
+const prsLast30d = computed(() =>
+  snapshot.value?.recent_activity?.prs_last_30d ?? 0,
+);
 const hasLearningProofData = computed(() =>
   (snapshot.value?.per_skill || []).some(r => !!r.learning_proof_status),
 );
@@ -597,8 +600,9 @@ const anyLoading = computed(
               ></div>
             </div>
             <p class="text-xs text-on-surface-variant m-0">
-              Gewogen gemiddelde van alle criteria met observaties. Gebaseerd op
-              {{ totalObservations }} observatie{{ totalObservations === 1 ? '' : 's' }}.
+              Bayesian-aggregaat over alle observaties van deze student.
+              Gebaseerd op {{ totalObservations }} observatie{{ totalObservations === 1 ? '' : 's' }}
+              uit {{ prsLast30d }} PR{{ prsLast30d === 1 ? '' : 's' }}.
             </p>
           </section>
 

@@ -263,6 +263,7 @@ export const api = {
             ),
         },
         students: {
+            list: (params = {}) => client.get('/grading/students/', { params }),
             snapshot: (studentId) => client.get(`/grading/students/${studentId}/snapshot/`),
             trajectory: (studentId, weeks) => client.get(`/grading/students/${studentId}/trajectory/`, { params: weeks ? { weeks } : {} }),
             prHistory: (studentId, limit) => client.get(`/grading/students/${studentId}/pr-history/`, { params: limit ? { limit } : {} }),

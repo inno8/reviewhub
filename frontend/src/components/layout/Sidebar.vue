@@ -72,6 +72,13 @@ const navItems = [
   // Super admin / platform ops do NOT grade PRs — that's per-org teacher work.
   { name: 'Grading Inbox', icon: 'rate_review', path: '/grading',
     teacherOnly: true, schoolAdminOnly: true },
+  // Klas-overzicht — redirect-or-pick page for teachers (single cohort → straight
+  // redirect to the cohort overview; multiple → picker).
+  { name: 'Klas-overzicht', icon: 'insights', path: '/grading/klas-overzicht',
+    teacherOnly: true },
+  // Studenten — roster-oriented list across all the teacher's cohorts.
+  { name: 'Studenten', icon: 'person', path: '/grading/students',
+    teacherOnly: true },
   // Teachers see their own cohorts view (same CohortListView, scoped by queryset)
   { name: 'My Cohorts', icon: 'groups_2', path: '/org/cohorts',
     teacherOnly: true },

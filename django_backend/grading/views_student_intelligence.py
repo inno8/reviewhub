@@ -37,7 +37,12 @@ from rest_framework.response import Response
 from rest_framework.views import APIView
 
 from .models import Cohort, CohortMembership, Course, GradingSession
-from .permissions import ADMIN_ROLES, _role, can_view_student  # _role used by _can_view_cohort_intelligence
+from .permissions import (
+    ADMIN_ROLES,
+    IsTeacher,
+    _role,
+    can_view_student,
+)  # _role used by _can_view_cohort_intelligence
 
 User = get_user_model()
 
@@ -811,3 +816,110 @@ class CohortRecurringErrorsView(APIView):
                 "most_affected_category": most_affected_category,
             },
         })
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Endpoint 5: Teacher's students — roster view across all their cohorts
+# ─────────────────────────────────────────────────────────────────────────────
+class TeacherStudentListView(APIView):
+    """
+    GET /api/grading/students/
+
+    Roster-oriented list of every student a teacher (or admin) can see:
+      - admin / superuser in org → every student in every cohort of the org
+      - teacher → students in any cohort where they own/secondary-teach a
+        course OR are assigned via CohortTeacher
+
+    Different from GradingInbox (which is PR-queue-oriented). This is the
+    "all my students" view powering /grading/students in the UI.
+
+    Response:
+      { "results": [
+          { id, email, name, handle, cohort_id, cohort_name,
+            pr_count, prs_waiting_feedback, avg_score },
+          ...
+      ] }
+    """
+
+    permission_classes = [permissions.IsAuthenticated, IsTeacher]
+
+    def get(self, request):
+        from django.db.models import Q
+
+        user = request.user
+
+        # Scope: cohorts this user can see (mirrors CohortViewSet.get_queryset).
+        cohorts = Cohort.objects.for_user(user).filter(archived_at__isnull=True)
+        if not getattr(user, "is_superuser", False) and _role(user) not in ADMIN_ROLES:
+            # Teacher: narrow to cohorts they actually teach in.
+            cohorts = cohorts.filter(
+                Q(teacher_assignments__teacher=user)
+                | Q(courses__owner=user)
+                | Q(courses__secondary_docent=user)
+            ).distinct()
+
+        memberships = (
+            CohortMembership.objects
+            .filter(cohort__in=cohorts, removed_at__isnull=True)
+            .select_related("student", "cohort")
+            .order_by("student__email")
+        )
+
+        # Pre-aggregate PR counts (total + waiting-for-feedback) per student.
+        # `waiting` = sessions in DRAFTED or REVIEWING; this matches the
+        # "wachten op feedback" semantic used elsewhere.
+        WAITING_STATES = {"drafted", "reviewing"}
+        sessions_qs = (
+            GradingSession.objects
+            .for_user(user)
+            .filter(submission__student__in=[m.student_id for m in memberships])
+            .values("submission__student", "state", "final_scores", "ai_draft_scores")
+        )
+        pr_total: dict[int, int] = defaultdict(int)
+        pr_waiting: dict[int, int] = defaultdict(int)
+        score_sum: dict[int, float] = defaultdict(float)
+        score_n: dict[int, int] = defaultdict(int)
+        for s in sessions_qs:
+            sid = s["submission__student"]
+            pr_total[sid] += 1
+            if s["state"] in WAITING_STATES:
+                pr_waiting[sid] += 1
+            # avg_score: mean of numeric "score" values in final or draft scores
+            src = s["final_scores"] or s["ai_draft_scores"] or {}
+            nums = []
+            if isinstance(src, dict):
+                for v in src.values():
+                    if isinstance(v, dict) and isinstance(v.get("score"), (int, float)):
+                        nums.append(float(v["score"]))
+                    elif isinstance(v, (int, float)):
+                        nums.append(float(v))
+            if nums:
+                score_sum[sid] += sum(nums) / len(nums)
+                score_n[sid] += 1
+
+        results = []
+        for m in memberships:
+            stu = m.student
+            sid = stu.id
+            avg = (
+                round(score_sum[sid] / score_n[sid], 2)
+                if score_n[sid] else None
+            )
+            results.append({
+                "id": sid,
+                "email": stu.email,
+                "name": (
+                    getattr(stu, "display_name", "")
+                    or stu.get_full_name()
+                    or stu.username
+                    or stu.email
+                ),
+                "handle": stu.username,
+                "cohort_id": m.cohort_id,
+                "cohort_name": m.cohort.name,
+                "pr_count": pr_total[sid],
+                "prs_waiting_feedback": pr_waiting[sid],
+                "avg_score": avg,
+            })
+
+        return Response({"results": results})
