@@ -272,6 +272,11 @@ export const useGradingStore = defineStore('grading', () => {
     }
   }
 
+  async function startNewIteration(id: number): Promise<{ session_id: number; iteration_number: number }> {
+    const { data } = await (api.grading.sessions as any).startNewIteration(id);
+    return data;
+  }
+
   // ── courses / rubrics (read-only for v1 UI) ───────────────────────────
   async function fetchCourses() {
     const { data } = await api.grading.courses.list();
@@ -314,6 +319,7 @@ export const useGradingStore = defineStore('grading', () => {
     saveEdits,
     send,
     resume,
+    startNewIteration,
     fetchCourses,
     fetchRubrics,
     reset,

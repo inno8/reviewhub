@@ -38,15 +38,19 @@ import logging
 from urllib.parse import parse_qs, urlparse
 
 from django.conf import settings
-from django.db import transaction
+from django.db import models, transaction
 from django.http import HttpResponseBadRequest, HttpResponseForbidden, JsonResponse
 from django.views.decorators.csrf import csrf_exempt
 from django.views.decorators.http import require_POST
 
+from django.utils import timezone as _tz
+
 from grading.models import (
     CohortMembership,
+    CohortTeacher,
     Course,
     GradingSession,
+    PostedComment,
     Submission,
     SubmissionContributor,
     WebhookDelivery,
@@ -301,28 +305,10 @@ def _upsert_submission_and_session(
             )
             return submission, None, False  # type: ignore[return-value]
 
-        # Iteration-aware session resolution (Leera's "what happens after
-        # Send?" loop). A Submission may now have many GradingSessions.
-        # Pick the latest non-superseded session; if there is none, create
-        # iteration 1. If there IS one and this webhook is a `synchronize`
-        # (new commits) AND the latest session is in a terminal state, then
-        # the teacher already sent feedback — create a NEW session for the
-        # next iteration and mark the old one superseded.
-        TERMINAL_STATES = {
-            GradingSession.State.POSTED,
-            GradingSession.State.PARTIAL,
-            GradingSession.State.FAILED,
-            GradingSession.State.DISCARDED,
-        }
-
-        action = (pr_payload.get("_action") or "").strip()
-        # pr_payload is the inner pull_request block; we can't read the
-        # top-level `action` from it directly. Pass-through via caller would
-        # be cleaner, but for minimal surface area we infer: any push that
-        # changes head_branch/head_sha reaches the synchronize path upstream.
-        # The caller of _upsert_submission_and_session will tag pr_payload
-        # with _action before invoking us.
-
+        # Iteration logic simplified post-bugfix: `synchronize` is an in-place
+        # head_sha update only. Iterations are spawned by explicit intent
+        # signals (review_requested, student-submitted review, manual action).
+        # See the layer-2 event handlers below.
         latest = (
             GradingSession.objects
             .select_for_update()
@@ -339,23 +325,6 @@ def _upsert_submission_and_session(
                 state=GradingSession.State.PENDING,
                 iteration_number=1,
             )
-            created = True
-        elif action == "synchronize" and latest.state in TERMINAL_STATES:
-            # New iteration — student pushed after teacher sent feedback.
-            session = GradingSession.objects.create(
-                org=course.org,
-                submission=submission,
-                rubric=course_rubric,
-                state=GradingSession.State.PENDING,
-                iteration_number=latest.iteration_number + 1,
-                ai_draft_scores={},
-                ai_draft_comments=[],
-                final_scores={},
-                final_comments=[],
-                final_summary="",
-            )
-            latest.superseded_by = session
-            latest.save(update_fields=["superseded_by", "updated_at"])
             created = True
         else:
             session = latest
@@ -406,6 +375,229 @@ def _sync_contributors(
                 # filled in by a future commit-attribution fetcher.
             },
         )
+
+
+TERMINAL_SESSION_STATES = {
+    GradingSession.State.POSTED,
+    GradingSession.State.PARTIAL,
+    GradingSession.State.FAILED,
+    GradingSession.State.DISCARDED,
+}
+
+
+def _pr_is_terminal(submission: Submission, pr_payload: dict) -> bool:
+    """
+    Return True if the PR behind this submission is in a terminal state.
+    Hard guard: never create a new iteration on a merged/closed PR.
+
+    Terminal = Submission.status == GRADED (merged) OR the incoming
+    pull_request.state == "closed" (merged or simply closed).
+    """
+    if submission.status == Submission.Status.GRADED:
+        return True
+    if (pr_payload or {}).get("state") == "closed":
+        return True
+    return False
+
+
+def create_next_iteration(session: GradingSession) -> GradingSession | None:
+    """
+    Spawn a new iteration for `session`'s submission and supersede the old
+    one. Safe to call from any trigger path (webhook event or manual action).
+
+    Preconditions (caller must enforce 400s on the manual path):
+      - session.submission is NOT a merged PR (caller checks via _pr_is_terminal)
+      - session is in a terminal state (caller checks)
+
+    Internally uses select_for_update on the submission so concurrent
+    triggers (double webhook + teacher click) collapse to one winner.
+    Returns the new session, or the already-existing next iteration if a
+    racing caller created one first.
+    """
+    submission = session.submission
+    course_rubric = session.rubric
+    with transaction.atomic():
+        latest = (
+            GradingSession.objects
+            .select_for_update()
+            .filter(submission=submission, superseded_by__isnull=True)
+            .order_by("-iteration_number", "-created_at")
+            .first()
+        )
+        if latest is None:
+            # Shouldn't happen — caller saw `session` — but be defensive.
+            return None
+        if latest.state not in TERMINAL_SESSION_STATES:
+            # Someone already spawned an iteration and it's mid-flight; reuse.
+            return latest
+
+        new_session = GradingSession.objects.create(
+            org=session.org,
+            submission=submission,
+            rubric=course_rubric,
+            state=GradingSession.State.PENDING,
+            iteration_number=latest.iteration_number + 1,
+            ai_draft_scores={},
+            ai_draft_comments=[],
+            final_scores={},
+            final_comments=[],
+            final_summary="",
+        )
+        latest.superseded_by = new_session
+        latest.save(update_fields=["superseded_by", "updated_at"])
+    return new_session
+
+
+def _resolve_teacher_from_review_request(payload: dict, cohort) -> "object | None":
+    """
+    On `pull_request review_requested`, GitHub includes a `requested_reviewer`
+    user. Try to match their login to a User who teaches on this cohort
+    (Course owner / secondary / CohortTeacher assignment). Returns the
+    User or None if the request was directed elsewhere (another student,
+    unrelated reviewer).
+    """
+    reviewer = (payload.get("requested_reviewer") or {})
+    login = (reviewer.get("login") or "").strip()
+    if not login:
+        return None
+    from users.models import GitProviderConnection
+    user_id = (
+        GitProviderConnection.objects
+        .filter(provider="github", username__iexact=login)
+        .values_list("user_id", flat=True)
+        .first()
+    )
+    if not user_id:
+        return None
+
+    # Is this user a teacher on this cohort?
+    teaches_via_course = Course.objects.filter(
+        cohort=cohort,
+    ).filter(
+        models.Q(owner_id=user_id) | models.Q(secondary_docent_id=user_id),
+    ).exists()
+    teaches_via_assignment = CohortTeacher.objects.filter(
+        cohort=cohort, teacher_id=user_id,
+    ).exists()
+    if teaches_via_course or teaches_via_assignment:
+        from users.models import User
+        return User.objects.filter(pk=user_id).first()
+    return None
+
+
+def _handle_review_requested(payload: dict, primary: CohortMembership, course: Course,
+                             memberships: list[CohortMembership], repo_full_name: str):
+    """
+    Layer 2a: `pull_request` action=`review_requested`.
+    Create a new iteration iff the requested reviewer is a teacher on this cohort.
+    Returns (submission, session, created_new_iteration, reason_if_skipped).
+    """
+    pr = payload.get("pull_request") or {}
+    # Upsert the submission first — it may not exist yet for a PR that went
+    # straight to review-request without hitting opened in our system.
+    pr["_action"] = "review_requested"
+    submission, session, _ = _upsert_submission_and_session(
+        memberships=memberships, primary=primary, course=course,
+        pr_payload=pr, repo_full_name=repo_full_name,
+    )
+    if session is None:
+        return submission, None, False, "no_session"
+
+    if _pr_is_terminal(submission, pr):
+        log.debug("webhook: review_requested but PR is terminal — skipping iteration")
+        return submission, session, False, "pr_terminal"
+
+    teacher = _resolve_teacher_from_review_request(payload, primary.cohort)
+    if teacher is None:
+        return submission, session, False, "reviewer_not_teacher"
+
+    if session.state not in TERMINAL_SESSION_STATES:
+        # Active session — review_requested is redundant; keep the current one.
+        return submission, session, False, "session_not_terminal"
+
+    new_session = create_next_iteration(session)
+    return submission, new_session, (new_session is not None and new_session.id != session.id), None
+
+
+def _handle_student_submitted_review(payload: dict, primary: CohortMembership, course: Course,
+                                     memberships: list[CohortMembership], repo_full_name: str):
+    """
+    Layer 2b: `pull_request_review` action=`submitted`.
+    If the submitter == the PR author (student) → new iteration.
+    If it's a teacher — skip (normal teacher activity).
+    """
+    pr = payload.get("pull_request") or {}
+    review = payload.get("review") or {}
+    reviewer_login = ((review.get("user") or {}).get("login") or "").strip().lower()
+    pr_author_login = ((pr.get("user") or {}).get("login") or "").strip().lower()
+
+    if not reviewer_login:
+        return None, None, False, "no_reviewer"
+
+    if reviewer_login != pr_author_login:
+        return None, None, False, "reviewer_is_not_student"
+
+    # Upsert to ensure we have a submission + session row to iterate on.
+    pr["_action"] = "pr_review_submitted"
+    submission, session, _ = _upsert_submission_and_session(
+        memberships=memberships, primary=primary, course=course,
+        pr_payload=pr, repo_full_name=repo_full_name,
+    )
+    if session is None:
+        return submission, None, False, "no_session"
+
+    if _pr_is_terminal(submission, pr):
+        return submission, session, False, "pr_terminal"
+
+    if session.state not in TERMINAL_SESSION_STATES:
+        return submission, session, False, "session_not_terminal"
+
+    # Accept any review state (approved / changes_requested / commented-with-body)
+    # as an intent-to-re-review signal.
+    body = (review.get("body") or "").strip()
+    state = (review.get("state") or "").strip().lower()
+    if not body and state not in ("approved", "changes_requested"):
+        return submission, session, False, "review_without_signal"
+
+    new_session = create_next_iteration(session)
+    return submission, new_session, (new_session is not None and new_session.id != session.id), None
+
+
+def _handle_review_thread_resolution(payload: dict) -> dict:
+    """
+    Layer 2c: `pull_request_review_thread` action=`resolved|unresolved`.
+    Update PostedComment.resolved_at / resolved_by_student. No iteration.
+    Returns a small dict summary for the response body.
+    """
+    action = payload.get("action")
+    thread = payload.get("thread") or {}
+    pr = payload.get("pull_request") or {}
+    pr_author_login = ((pr.get("user") or {}).get("login") or "").strip().lower()
+    resolver_login = ((payload.get("sender") or {}).get("login") or "").strip().lower()
+
+    comment_ids = []
+    for c in (thread.get("comments") or []):
+        cid = c.get("id")
+        if cid:
+            comment_ids.append(cid)
+
+    if not comment_ids:
+        return {"updated": 0, "action": action}
+
+    qs = PostedComment.objects.filter(github_comment_id__in=comment_ids)
+    updated = 0
+    if action == "resolved":
+        resolved_by_student = bool(
+            pr_author_login and resolver_login and pr_author_login == resolver_login
+        )
+        updated = qs.update(
+            resolved_at=_tz.now(),
+            resolved_by_student=resolved_by_student,
+        )
+    elif action == "unresolved":
+        updated = qs.update(resolved_at=None, resolved_by_student=False)
+
+    return {"updated": updated, "action": action}
 
 
 # ── the view ─────────────────────────────────────────────────────────
@@ -472,17 +664,42 @@ def github_webhook(request):
         if not created:
             return JsonResponse({"ok": True, "deduped": True}, status=200)
 
-    # 4. Short-circuit anything that isn't a PR event we care about.
-    if event_type != "pull_request":
+    # 4. Short-circuit anything that isn't an event we care about.
+    ACCEPTED_EVENT_TYPES = (
+        "pull_request",
+        "pull_request_review",
+        "pull_request_review_thread",
+    )
+    if event_type not in ACCEPTED_EVENT_TYPES:
         return JsonResponse(
             {"ok": True, "message": f"ignored event: {event_type}"}, status=200
         )
 
     action = payload.get("action", "")
-    if action not in ("opened", "reopened", "synchronize", "closed"):
-        return JsonResponse(
-            {"ok": True, "message": f"ignored action: {action}"}, status=200
-        )
+    if event_type == "pull_request":
+        if action not in (
+            "opened", "reopened", "synchronize", "closed",
+            "review_requested", "ready_for_review",
+        ):
+            return JsonResponse(
+                {"ok": True, "message": f"ignored action: {action}"}, status=200
+            )
+    elif event_type == "pull_request_review":
+        if action != "submitted":
+            return JsonResponse(
+                {"ok": True, "message": f"ignored action: {action}"}, status=200
+            )
+    elif event_type == "pull_request_review_thread":
+        if action not in ("resolved", "unresolved"):
+            return JsonResponse(
+                {"ok": True, "message": f"ignored action: {action}"}, status=200
+            )
+
+    # Early branch: review_thread events need different matching — they key
+    # off github_comment_id, not a repo URL.
+    if event_type == "pull_request_review_thread":
+        summary = _handle_review_thread_resolution(payload)
+        return JsonResponse({"ok": True, "matched": True, **summary}, status=200)
 
     pr = payload.get("pull_request") or {}
     if not pr:
@@ -537,22 +754,46 @@ def github_webhook(request):
             status=200,
         )
 
-    # 6. Upsert Submission + GradingSession + Contributors.
-    # Tag the inner pr_payload with the webhook action so the iteration-aware
-    # session-upsert path can distinguish `synchronize` (new commits) from
-    # `opened` / `reopened` without us having to thread another argument.
+    # 6. Dispatch by (event_type, action).
+    # pull_request review_requested → teacher-triggered iteration
+    # pull_request_review submitted (by student) → intent-to-re-review → iteration
+    # pull_request opened / reopened / synchronize / closed / ready_for_review
+    #   → standard upsert path (no iteration trigger for synchronize anymore)
     pr["_action"] = action
+    iteration_reason: str | None = None
     try:
-        submission, session, created = _upsert_submission_and_session(
-            memberships=memberships,
-            primary=primary,
-            course=course,
-            pr_payload=pr,
-            repo_full_name=repo_full_name,
-        )
+        if event_type == "pull_request" and action == "review_requested":
+            submission, session, created, iteration_reason = _handle_review_requested(
+                payload, primary, course, memberships, repo_full_name,
+            )
+        elif event_type == "pull_request_review" and action == "submitted":
+            submission, session, created, iteration_reason = _handle_student_submitted_review(
+                payload, primary, course, memberships, repo_full_name,
+            )
+        else:
+            submission, session, created = _upsert_submission_and_session(
+                memberships=memberships,
+                primary=primary,
+                course=course,
+                pr_payload=pr,
+                repo_full_name=repo_full_name,
+            )
     except Exception as e:
         log.exception("webhook: upsert failed")
         return JsonResponse({"ok": False, "error": str(e)}, status=500)
+
+    if submission is None:
+        # Nothing to report (e.g. review submitted by non-student on a non-existent submission).
+        return JsonResponse(
+            {
+                "ok": True,
+                "matched": True,
+                "action": action,
+                "session_created": False,
+                "iteration_skipped_reason": iteration_reason,
+            },
+            status=200,
+        )
 
     return JsonResponse(
         {
@@ -567,6 +808,7 @@ def github_webhook(request):
             "student": primary.student.email,
             "contributors": [m.student.email for m in memberships],
             "contributor_count": len(memberships),
+            "iteration_skipped_reason": iteration_reason,
         },
         status=200,
     )

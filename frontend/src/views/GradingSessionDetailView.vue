@@ -315,6 +315,31 @@
               </ul>
             </section>
 
+            <!-- Start nieuwe iteratie — manual teacher override -->
+            <div
+              v-if="showNewIterationStrip"
+              class="rounded-xl border border-outline-variant/10 bg-surface-container-low px-4 py-3 flex flex-wrap items-center gap-3"
+              data-testid="new-iteration-strip"
+            >
+              <div class="text-xs text-on-surface-variant flex-1 min-w-0">
+                <span v-if="canStartNewIteration">
+                  Student is terug aan het werk. Start een nieuwe iteratie om opnieuw te beoordelen.
+                </span>
+                <span v-else>
+                  Wacht op student-activiteit voordat je een nieuwe iteratie start.
+                </span>
+              </div>
+              <button
+                @click="onStartNewIteration"
+                :disabled="!canStartNewIteration || newIterationInFlight"
+                :title="newIterationTooltip"
+                class="bg-surface-container hover:bg-surface-container-high text-on-surface px-4 py-2 rounded-lg text-sm font-semibold border border-outline-variant/20 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+                data-testid="new-iteration-btn"
+              >
+                {{ newIterationInFlight ? 'Nieuwe iteratie starten…' : 'Start nieuwe iteratie' }}
+              </button>
+            </div>
+
             <!-- Send-result banner -->
             <div
               v-if="sendResult"
@@ -655,6 +680,51 @@ async function onSend() {
     sendResult.value = await store.send(id.value);
   } finally {
     sendInFlight.value = false;
+  }
+}
+
+const newIterationInFlight = ref(false);
+
+const TERMINAL_STATES = new Set<SessionState>(['posted', 'partial', 'failed', 'discarded']);
+
+const prIsMerged = computed(() => {
+  // Backend marks Submission.status = 'graded' when PR is merged.
+  // The detail serializer doesn't include submission.status directly; we
+  // infer via activity_since_posted being absent + a refresh will fetch
+  // fresh data. Conservative: if backend says we can't start, we can't.
+  const s: any = store.activeSession;
+  return !!(s && s._submission_graded);
+});
+
+const showNewIterationStrip = computed(() => {
+  const s: any = store.activeSession;
+  if (!s) return false;
+  if (!TERMINAL_STATES.has(s.state as SessionState)) return false;
+  if (s.superseded_by) return false;
+  return true;
+});
+
+const canStartNewIteration = computed(() => {
+  const s: any = store.activeSession;
+  return !!(s && s.can_start_new_iteration);
+});
+
+const newIterationTooltip = computed(() => {
+  return canStartNewIteration.value ? '' : 'Wacht op student-activiteit';
+});
+
+async function onStartNewIteration() {
+  if (!canStartNewIteration.value || newIterationInFlight.value) return;
+  newIterationInFlight.value = true;
+  try {
+    const result: any = await (store as any).startNewIteration(id.value);
+    if (result?.session_id) {
+      router.push({ name: 'grading-session-detail', params: { id: result.session_id } });
+    }
+  } catch (err) {
+    console.error('start_new_iteration failed', err);
+  } finally {
+    newIterationInFlight.value = false;
   }
 }
 

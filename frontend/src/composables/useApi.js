@@ -286,6 +286,7 @@ export const api = {
             generateDraft: (id) => client.post(`/grading/sessions/${id}/generate_draft/`, {}),
             send: (id) => client.post(`/grading/sessions/${id}/send/`, {}),
             resume: (id) => client.post(`/grading/sessions/${id}/resume/`, {}),
+            startNewIteration: (id) => client.post(`/grading/sessions/${id}/start_new_iteration/`, {}),
         },
         costLogs: {
             list: (params = {}) => client.get('/grading/cost-logs/', { params }),

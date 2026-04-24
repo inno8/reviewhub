@@ -314,6 +314,8 @@ class PostedCommentSerializer(serializers.ModelSerializer):
             "line_number",
             "body_preview",
             "posted_at",
+            "resolved_at",
+            "resolved_by_student",
         ]
         read_only_fields = fields
 
@@ -375,6 +377,9 @@ class GradingSessionDetailSerializer(serializers.ModelSerializer):
     contributors = serializers.SerializerMethodField()
     previous_iterations = serializers.SerializerMethodField()
     total_iterations = serializers.SerializerMethodField()
+    final_comments = serializers.SerializerMethodField()
+    can_start_new_iteration = serializers.SerializerMethodField()
+    activity_since_posted = serializers.SerializerMethodField()
 
     class Meta:
         model = GradingSession
@@ -409,6 +414,8 @@ class GradingSessionDetailSerializer(serializers.ModelSerializer):
             "superseded_by",
             "previous_iterations",
             "total_iterations",
+            "can_start_new_iteration",
+            "activity_since_posted",
             "created_at",
             "updated_at",
         ]
@@ -437,9 +444,92 @@ class GradingSessionDetailSerializer(serializers.ModelSerializer):
             "superseded_by",
             "previous_iterations",
             "total_iterations",
+            "can_start_new_iteration",
+            "activity_since_posted",
             "created_at",
             "updated_at",
         ]
+
+    def get_final_comments(self, obj) -> list:
+        """
+        Return final_comments (or fall back to ai_draft_comments), enriched
+        with per-comment resolution state from PostedComment when the
+        client_mutation_id matches. Additive to the existing shape — old
+        clients that ignore resolved_at/resolved_by_student keep working.
+        """
+        comments = list(obj.final_comments or [])
+        if not comments:
+            return comments
+        # Build a lookup from client_mutation_id → PostedComment.
+        posted_by_mid = {
+            p.client_mutation_id: p
+            for p in obj.posted_comments.all()
+        }
+        out = []
+        for c in comments:
+            if not isinstance(c, dict):
+                out.append(c)
+                continue
+            enriched = dict(c)
+            mid = c.get("client_mutation_id")
+            p = posted_by_mid.get(mid) if mid else None
+            if p is not None:
+                enriched["resolved_at"] = p.resolved_at.isoformat() if p.resolved_at else None
+                enriched["resolved_by_student"] = bool(p.resolved_by_student)
+            else:
+                enriched.setdefault("resolved_at", None)
+                enriched.setdefault("resolved_by_student", False)
+            out.append(enriched)
+        return out
+
+    def _is_terminal_state(self, state) -> bool:
+        from .models import GradingSession as _GS
+        return state in {
+            _GS.State.POSTED,
+            _GS.State.PARTIAL,
+            _GS.State.FAILED,
+            _GS.State.DISCARDED,
+        }
+
+    def get_activity_since_posted(self, obj) -> dict:
+        """
+        Signal that something happened on the PR since the teacher sent
+        feedback. v1 approximation: count PostedComments resolved after
+        `posted_at`; push_count is 0 (we don't track push events as rows).
+        """
+        resolved_count = 0
+        if obj.posted_at:
+            resolved_count = obj.posted_comments.filter(
+                resolved_at__isnull=False,
+                resolved_at__gt=obj.posted_at,
+            ).count()
+        else:
+            resolved_count = obj.posted_comments.filter(
+                resolved_at__isnull=False,
+            ).count()
+        return {
+            "push_count": 0,
+            "resolved_thread_count": resolved_count,
+            "last_push_at": None,
+        }
+
+    def get_can_start_new_iteration(self, obj) -> bool:
+        """
+        True when the manual "Start nieuwe iteratie" button should be enabled.
+        Requires: current session is terminal, PR is not merged, AND there's
+        at least one activity signal since the session was POSTED.
+        """
+        if not self._is_terminal_state(obj.state):
+            return False
+        if obj.submission and obj.submission.status == Submission.Status.GRADED:
+            return False
+        if obj.superseded_by_id is not None:
+            return False
+        activity = self.get_activity_since_posted(obj)
+        return bool(
+            activity["push_count"] > 0
+            or activity["resolved_thread_count"] > 0
+        )
 
     def get_contributors(self, obj) -> list[dict]:
         """All SubmissionContributor rows for the PR — the full group roster."""

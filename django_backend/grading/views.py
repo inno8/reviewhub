@@ -1074,6 +1074,64 @@ class GradingSessionViewSet(
             status=status.HTTP_200_OK,
         )
 
+    @action(detail=True, methods=["post"], url_path="start_new_iteration")
+    def start_new_iteration(self, request, pk=None):
+        """
+        Manual teacher override: spawn a new iteration when the event-driven
+        triggers didn't fire (student pushed but didn't re-request review,
+        didn't submit a review, etc.). Guards:
+          - PR must not be merged (Submission.status != GRADED)
+          - Current session must be in a terminal state
+          - Caller must be a teacher on this cohort (IsTeacher + queryset)
+        """
+        from .webhooks import create_next_iteration
+        from .models import Submission
+
+        TERMINAL = {
+            GradingSession.State.POSTED,
+            GradingSession.State.PARTIAL,
+            GradingSession.State.FAILED,
+            GradingSession.State.DISCARDED,
+        }
+        try:
+            session = (
+                GradingSession.objects.for_user(request.user)
+                .select_related("submission", "rubric")
+                .get(pk=pk)
+            )
+        except GradingSession.DoesNotExist:
+            raise Http404
+
+        if session.submission.status == Submission.Status.GRADED:
+            raise ValidationError(
+                {"pr": "Deze PR is al gemerged; nieuwe iteraties niet mogelijk."}
+            )
+        if session.state not in TERMINAL:
+            raise ValidationError(
+                {"state": f"huidige iteratie is nog actief (state={session.state})"}
+            )
+        if session.superseded_by_id is not None:
+            # There's a newer iteration already — return that instead.
+            newer = GradingSession.objects.filter(
+                submission=session.submission, superseded_by__isnull=True,
+            ).order_by("-iteration_number").first()
+            if newer:
+                return Response(
+                    {"session_id": newer.id, "iteration_number": newer.iteration_number},
+                    status=status.HTTP_200_OK,
+                )
+
+        new_session = create_next_iteration(session)
+        if new_session is None:
+            raise ValidationError({"state": "kon geen nieuwe iteratie aanmaken"})
+        return Response(
+            {
+                "session_id": new_session.id,
+                "iteration_number": new_session.iteration_number,
+            },
+            status=status.HTTP_201_CREATED,
+        )
+
     @action(detail=True, methods=["post"], url_path="resume")
     def resume(self, request, pk=None):
         """

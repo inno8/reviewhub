@@ -658,6 +658,12 @@ class PostedComment(models.Model):
     body_preview = models.CharField(max_length=200, blank=True)  # first N chars for debugging
     posted_at = models.DateTimeField(auto_now_add=True)
 
+    # Per-comment resolution state, populated by the
+    # pull_request_review_thread webhook handler. Seeds the teacher-facing
+    # "N/M resolved by student" indicator AND the LearningProof verifier.
+    resolved_at = models.DateTimeField(null=True, blank=True)
+    resolved_by_student = models.BooleanField(default=False)
+
     class Meta:
         db_table = "grading_posted_comments"
         unique_together = [("grading_session", "client_mutation_id")]
