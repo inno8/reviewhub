@@ -34,6 +34,19 @@ interface SkillRadarItem {
   level_label: string | null;
   trend: 'up' | 'down' | 'stable';
 }
+type LearningProofStatus = 'taught' | 'pending' | 'proven' | 'reinforced' | 'relapsed';
+interface PerSkillItem {
+  skill_slug: string;
+  display_name: string;
+  kerntaak: string | null;
+  bayesian_score: number | null;
+  confidence: number;
+  observation_count: number;
+  trend: 'up' | 'down' | 'stable';
+  trend_delta: number;
+  level_label: string | null;
+  learning_proof_status?: LearningProofStatus;
+}
 interface RecurringPattern {
   pattern_key: string;
   pattern_type: string;
@@ -48,6 +61,7 @@ interface RecentActivity {
 interface Snapshot {
   student: { id: number; name: string; email: string; cohort: { id: number; name: string } | null };
   skill_radar: SkillRadarItem[];
+  per_skill?: PerSkillItem[];
   recurring_patterns: RecurringPattern[];
   trending_up: string[];
   trending_down: string[];
@@ -166,6 +180,55 @@ function severityClass(sev: string): string {
 function formatPatternKey(key: string): string {
   return key.replace(/_/g, ' ');
 }
+
+// ── Per-criterion bar chart helpers ───────────────────────────────────
+function scoreBandClass(score: number | null): string {
+  if (score === null) return 'bg-surface-container';
+  if (score >= 80) return 'bg-emerald-400';
+  if (score >= 60) return 'bg-sky-400';
+  if (score >= 40) return 'bg-amber-400';
+  return 'bg-red-400';
+}
+
+function confidenceOpacity(confidence: number): number {
+  if (confidence < 0.15) return 0.4;
+  if (confidence < 0.4) return 0.7;
+  return 1.0;
+}
+
+function formatDelta(delta: number): string {
+  if (delta > 0) return `+${delta.toFixed(0)}`;
+  if (delta < 0) return delta.toFixed(0);
+  return '0';
+}
+
+const totalObservations = computed(() =>
+  (data.value?.per_skill || []).reduce((s, r) => s + (r.observation_count || 0), 0),
+);
+
+const hasLearningProofData = computed(() =>
+  (data.value?.per_skill || []).some(r => !!r.learning_proof_status),
+);
+
+interface ProofDot { emoji: string; tooltip: string; }
+function learningProofDot(item: PerSkillItem): ProofDot {
+  const s = item.learning_proof_status;
+  if (!s) return { emoji: '⚪', tooltip: 'Nog geen les-status' };
+  switch (s) {
+    case 'taught':
+      return { emoji: '⚪', tooltip: 'Uitgelegd, bewijs in afwachting' };
+    case 'pending':
+      return { emoji: '🟡', tooltip: 'Gedeeltelijk bewezen' };
+    case 'proven':
+      return { emoji: '🟢', tooltip: 'Bewezen' };
+    case 'reinforced':
+      return { emoji: '🔵', tooltip: 'Volledig geïnternaliseerd' };
+    case 'relapsed':
+      return { emoji: '🔴', tooltip: 'Terugval gedetecteerd' };
+    default:
+      return { emoji: '⚪', tooltip: 'Nog geen les-status' };
+  }
+}
 </script>
 
 <template>
@@ -226,6 +289,86 @@ function formatPatternKey(key: string): string {
       </section>
       <section v-else class="py-4 text-center">
         <p class="text-on-surface-variant text-sm m-0">No skill data yet.</p>
+      </section>
+
+      <!-- Per criterium breakdown (6 Crebo criteria) -->
+      <section v-if="data.per_skill && data.per_skill.length" data-testid="per-criterium">
+        <div class="flex flex-col gap-1 mb-2">
+          <h4 class="text-[11px] font-bold uppercase tracking-widest text-outline m-0">
+            Per criterium
+          </h4>
+          <p class="text-[11px] text-on-surface-variant m-0">
+            Bayesian-score 0-100, gebaseerd op {{ totalObservations }} observatie{{ totalObservations === 1 ? '' : 's' }}.
+          </p>
+        </div>
+        <ul class="list-none p-0 m-0 flex flex-col gap-1.5">
+          <li
+            v-for="row in data.per_skill"
+            :key="row.skill_slug"
+            class="flex items-center gap-2 text-xs"
+            :data-testid="`per-skill-${row.skill_slug}`"
+          >
+            <!-- Name + kerntaak pill -->
+            <div class="flex items-center gap-1.5 min-w-[9rem] max-w-[9rem]">
+              <span class="text-on-surface truncate" :title="row.display_name">
+                {{ row.display_name }}
+              </span>
+              <span
+                v-if="row.kerntaak"
+                class="rounded-full bg-surface-container-high px-1.5 py-0.5 font-mono text-[9px] leading-none text-on-surface-variant shrink-0"
+                :title="row.kerntaak"
+              >{{ row.kerntaak }}</span>
+            </div>
+
+            <!-- Bar -->
+            <div class="flex-1 h-2 rounded-full overflow-hidden bg-surface-container">
+              <div
+                v-if="row.bayesian_score !== null"
+                :class="scoreBandClass(row.bayesian_score)"
+                class="h-full rounded-full transition-all"
+                :style="{
+                  width: row.bayesian_score + '%',
+                  opacity: confidenceOpacity(row.confidence),
+                }"
+              ></div>
+            </div>
+
+            <!-- Score -->
+            <span
+              class="text-on-surface tabular-nums font-semibold min-w-[2rem] text-right"
+              :class="row.bayesian_score === null ? 'text-outline font-normal' : ''"
+            >
+              {{ row.bayesian_score !== null ? Math.round(row.bayesian_score) : '—' }}
+            </span>
+
+            <!-- Learning-proof dot (hidden if no skill has one) -->
+            <span
+              v-if="hasLearningProofData"
+              :title="learningProofDot(row).tooltip"
+              class="text-[10px] leading-none w-3 text-center select-none"
+            >{{ learningProofDot(row).emoji }}</span>
+
+            <!-- Trend / delta -->
+            <span
+              v-if="row.observation_count < 3 && row.bayesian_score === null"
+              class="text-outline text-[10px] min-w-[3rem] text-right"
+            >— geen data</span>
+            <span
+              v-else-if="row.observation_count < 3"
+              class="text-outline text-[10px] min-w-[3rem] text-right"
+            >—</span>
+            <span
+              v-else
+              class="min-w-[3rem] text-right text-[10px] tabular-nums flex items-center justify-end gap-1"
+              :class="row.trend === 'up'
+                ? 'text-[rgb(134,239,172)]'
+                : row.trend === 'down' ? 'text-error' : 'text-on-surface-variant'"
+            >
+              <span class="font-bold">{{ trendIcon(row.trend) }}</span>
+              <span>{{ formatDelta(row.trend_delta) }}</span>
+            </span>
+          </li>
+        </ul>
       </section>
 
       <!-- Recent activity -->

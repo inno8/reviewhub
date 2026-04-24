@@ -36,10 +36,24 @@ from rest_framework import permissions, status
 from rest_framework.response import Response
 from rest_framework.views import APIView
 
-from .models import Cohort, CohortMembership, GradingSession
+from .models import Cohort, CohortMembership, Course, GradingSession
 from .permissions import ADMIN_ROLES, _role, can_view_student  # _role used by _can_view_cohort_intelligence
 
 User = get_user_model()
+
+
+# The 6 Crebo criterion slugs that the Nakijken Copilot v1 rubric ships with.
+# Hardcoded (rather than imported from rubric_defaults) so the frontend can
+# rely on a stable ordered list regardless of what any individual rubric
+# happens to contain — this is the teacher-facing intelligence surface.
+CREBO_SKILL_SLUGS = [
+    "code_ontwerp",
+    "code_kwaliteit",
+    "veiligheid",
+    "testen",
+    "verbetering",
+    "samenwerking",
+]
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -65,6 +79,50 @@ def _student_cohort(student):
         student=student, removed_at__isnull=True
     ).select_related("cohort").first()
     return m.cohort if m else None
+
+
+def _build_criterion_meta_for_student(student) -> dict[str, dict]:
+    """
+    Map criterion slug → {"name": ..., "kerntaak": ...} by unioning the
+    `criteria` JSON across every Rubric attached to a Course in the
+    student's active cohort. Falls back to the shipped defaults for slugs
+    not found (so new orgs with custom rubrics still get a display name).
+    """
+    from .rubric_defaults import CREBO_RUBRIC_CRITERIA
+
+    meta: dict[str, dict] = {}
+
+    # Seed from shipped defaults.
+    for crit in CREBO_RUBRIC_CRITERIA:
+        meta[crit["id"]] = {
+            "name": crit.get("name"),
+            "kerntaak": crit.get("kerntaak"),
+        }
+
+    cohort = _student_cohort(student)
+    if cohort is None:
+        return meta
+
+    courses = (
+        Course.objects
+        .filter(cohort=cohort, rubric__isnull=False)
+        .select_related("rubric")
+    )
+    for course in courses:
+        rubric = course.rubric
+        criteria = getattr(rubric, "criteria", None) or []
+        for crit in criteria:
+            if not isinstance(crit, dict):
+                continue
+            cid = crit.get("id")
+            if not cid:
+                continue
+            # Org-level rubric takes precedence over defaults.
+            meta[cid] = {
+                "name": crit.get("name") or meta.get(cid, {}).get("name"),
+                "kerntaak": crit.get("kerntaak") or meta.get(cid, {}).get("kerntaak"),
+            }
+    return meta
 
 
 def _student_ref(student, with_cohort: bool = False):
@@ -97,9 +155,15 @@ class StudentSnapshotView(APIView):
 
     def get(self, request, student_id: int):
         from evaluations.models import Pattern  # local import to avoid cycles
-        from skills.models import SkillMetric, SkillObservation
+        from skills.models import LearningProof, SkillMetric, SkillObservation
 
         student = _get_student_or_404(request.user, student_id)
+
+        # ── Rubric criterion metadata map (slug → {name, kerntaak}) ──────
+        # Built from every Rubric attached to any Course in the student's
+        # active cohort — gives us the display_name and kerntaak for each
+        # Crebo slug. Falls back to rubric_defaults if nothing is wired yet.
+        criterion_meta = _build_criterion_meta_for_student(student)
 
         # ── Skill radar ──────────────────────────────────────────────────
         # Aggregate SkillMetric per category. Prefer bayesian_score when the
@@ -195,6 +259,112 @@ class StudentSnapshotView(APIView):
 
         radar.sort(key=lambda r: r["category"])
 
+        # ── Per-skill breakdown (6 Crebo criteria) ───────────────────────
+        # Mirrors the radar trend calc but per Skill slug instead of per
+        # SkillCategory. Keeps a stable, ordered list of the 6 Crebo skills
+        # regardless of which ones the student has metrics for yet.
+        per_skill_metrics = {
+            m.skill.slug: m
+            for m in metrics
+            if m.skill.slug in CREBO_SKILL_SLUGS
+        }
+        recent_by_skill: dict[str, list[float]] = defaultdict(list)
+        prior_by_skill: dict[str, list[float]] = defaultdict(list)
+        for o in recent_obs:
+            if o.skill.slug in CREBO_SKILL_SLUGS:
+                recent_by_skill[o.skill.slug].append(float(o.weighted_score))
+        for o in prior_obs:
+            if o.skill.slug in CREBO_SKILL_SLUGS:
+                prior_by_skill[o.skill.slug].append(float(o.weighted_score))
+
+        # Any LearningProof rows for this student, keyed by skill slug
+        # (latest wins). Today this is almost always empty — the surface
+        # is wired, but the flow that writes PENDING/PROVEN/… rows from
+        # a Fix & Learn interaction lands post-pitch.
+        proofs_by_slug: dict[str, str] = {}
+        for lp in (
+            LearningProof.objects
+            .filter(user=student, skill__slug__in=CREBO_SKILL_SLUGS)
+            .select_related("skill")
+            .order_by("-updated_at")
+        ):
+            proofs_by_slug.setdefault(lp.skill.slug, lp.status)
+
+        # Aggregate per-slug (multiple SkillMetric rows per slug — one per
+        # project). Weighted by observation_count so a noisy low-observation
+        # row doesn't drown out an established one.
+        per_skill_rows: dict[str, dict] = {}
+        for m in metrics:
+            slug = m.skill.slug
+            if slug not in CREBO_SKILL_SLUGS:
+                continue
+            row = per_skill_rows.setdefault(slug, {
+                "score_sum": 0.0, "weight_sum": 0.0,
+                "conf_sum": 0.0, "conf_weight": 0,
+                "observation_count": 0, "level_label": None,
+                "skill_name": m.skill.name,
+            })
+            w = max(m.observation_count, 1)
+            score = m.bayesian_score if m.observation_count > 0 else m.score
+            if score is not None:
+                row["score_sum"] += float(score) * w
+                row["weight_sum"] += w
+            row["conf_sum"] += float(m.confidence or 0.0)
+            row["conf_weight"] += 1
+            row["observation_count"] += m.observation_count
+            if m.level_label and not row["level_label"]:
+                row["level_label"] = m.level_label
+
+        per_skill = []
+        for slug in CREBO_SKILL_SLUGS:
+            meta = criterion_meta.get(slug, {})
+            row = per_skill_rows.get(slug)
+            if row and row["weight_sum"] > 0:
+                bayes = round(row["score_sum"] / row["weight_sum"], 1)
+                confidence = round(
+                    row["conf_sum"] / row["conf_weight"], 3
+                ) if row["conf_weight"] else 0.0
+                obs_count = row["observation_count"]
+                level_label = row["level_label"]
+                display_name = meta.get("name") or row["skill_name"]
+            else:
+                # No SkillMetric for this slug yet.
+                bayes = None
+                confidence = 0.0
+                obs_count = 0
+                level_label = None
+                display_name = meta.get("name") or slug.replace("_", " ").title()
+
+            # Trend: 4-week delta of weighted_score.
+            r_avg = _avg(recent_by_skill.get(slug, []))
+            p_avg = _avg(prior_by_skill.get(slug, []))
+            if r_avg is not None and p_avg is not None:
+                delta = round(r_avg - p_avg, 1)
+                if delta > 2:
+                    trend = "up"
+                elif delta < -2:
+                    trend = "down"
+                else:
+                    trend = "stable"
+            else:
+                delta = 0.0
+                trend = "stable"
+
+            item = {
+                "skill_slug": slug,
+                "display_name": display_name,
+                "kerntaak": meta.get("kerntaak"),
+                "bayesian_score": bayes,
+                "confidence": confidence,
+                "observation_count": obs_count,
+                "trend": trend,
+                "trend_delta": delta,
+                "level_label": level_label,
+            }
+            if slug in proofs_by_slug:
+                item["learning_proof_status"] = proofs_by_slug[slug]
+            per_skill.append(item)
+
         # ── Recurring patterns (top-5 unresolved) ────────────────────────
         patterns_qs = (
             Pattern.objects
@@ -236,6 +406,7 @@ class StudentSnapshotView(APIView):
         return Response({
             "student": _student_ref(student, with_cohort=True),
             "skill_radar": radar,
+            "per_skill": per_skill,
             "recurring_patterns": recurring,
             "trending_up": trending_up,
             "trending_down": trending_down,
