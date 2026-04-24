@@ -71,6 +71,8 @@ const router = createRouter({
         // Teachers can view their own cohorts; the backend queryset scopes results.
         { path: '/org/cohorts', name: 'org-cohorts', component: CohortListView, meta: { admin: true } },
         { path: '/org/cohorts/:id', name: 'cohort-detail', component: CohortDetailView, meta: { admin: true }, props: true },
+        // Workstream E5 — cohort overview ("klas-overzicht") for teachers.
+        { path: '/grading/cohorts/:id/overview', name: 'grading-cohort-overview', component: () => import('@/views/CohortOverviewView.vue'), meta: { admin: true }, props: true },
         { path: '/org/courses/:id', name: 'course-detail', component: CourseDetailView, meta: { admin: true }, props: true },
         // Workstream E4 — student "My cohort" page (mount point for MyCohortWidget)
         { path: '/my-cohort', name: 'my-cohort', component: StudentHomeView },

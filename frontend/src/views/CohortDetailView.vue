@@ -351,7 +351,7 @@ watch(id, load);
           >
             ← Cohorts
           </button>
-          <div v-if="cohort">
+          <div v-if="cohort" class="flex-1">
             <h1 class="text-4xl font-extrabold text-on-surface tracking-tight">
               {{ cohort.name }}
             </h1>
@@ -361,6 +361,14 @@ watch(id, load);
               <span v-if="cohort.archived_at"> · Archived</span>
             </p>
           </div>
+          <router-link
+            v-if="cohort"
+            :to="{ name: 'grading-cohort-overview', params: { id: cohort.id } }"
+            class="bg-surface-container hover:bg-surface-container-high text-on-surface px-4 py-2 rounded-lg text-sm font-bold flex items-center gap-2 transition-colors shrink-0"
+          >
+            Klas-overzicht
+            <span class="material-symbols-outlined text-sm">arrow_forward</span>
+          </router-link>
         </header>
 
         <div v-if="loading" class="p-12 text-center text-outline">

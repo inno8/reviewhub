@@ -242,6 +242,7 @@ export const api = {
                 `/grading/cohorts/${id}/teachers/${assignmentId}/`,
             ),
             recurringErrors: (id) => client.get(`/grading/cohorts/${id}/recurring-errors/`),
+            overview: (id) => client.get(`/grading/cohorts/${id}/overview/`),
         },
         courses: {
             list: (params = {}) => client.get('/grading/courses/', { params }),

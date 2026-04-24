@@ -8,7 +8,14 @@ real PR events. See views.py + webhooks.py for docs.
 from django.urls import path
 from rest_framework.routers import DefaultRouter
 
-from . import ops_views, views, views_file_fetch, views_student_intelligence, webhooks
+from . import (
+    ops_views,
+    views,
+    views_cohort_intelligence,
+    views_file_fetch,
+    views_student_intelligence,
+    webhooks,
+)
 
 router = DefaultRouter()
 router.register(r"rubrics", views.RubricViewSet, basename="rubric")
@@ -53,6 +60,11 @@ urlpatterns = router.urls + [
         "cohorts/<int:cohort_id>/recurring-errors/",
         views_student_intelligence.CohortRecurringErrorsView.as_view(),
         name="cohort-recurring-errors",
+    ),
+    path(
+        "cohorts/<int:cohort_id>/overview/",
+        views_cohort_intelligence.CohortOverviewView.as_view(),
+        name="cohort-overview",
     ),
     # View-in-code modal: fetch file content from GitHub for a session
     path(

@@ -739,9 +739,15 @@ class Command(BaseCommand):
             "weak_testing": [
                 ("testing",        "no-error-path-tests",    3),
                 ("testing",        "happy-path-only",        2),
+                # Shared with `struggling` → cohort-wide recurring error
+                # visible in the cohort overview (affects ≥2 students).
+                ("error_handling", "swallow-catch",          2),
             ],
             "mid": [
                 ("code_quality",   "console-log-in-prod",    2),
+                # Shared with `struggling` so the cohort overview shows
+                # at least 2 distinct cross-student patterns.
+                ("validation",     "no-input-validation",    1),
             ],
             "solid": [],
             "strong": [],
