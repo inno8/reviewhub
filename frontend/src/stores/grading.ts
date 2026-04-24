@@ -52,6 +52,10 @@ export interface RubricCriterion {
   name: string;
   weight?: number;
   levels: Array<{ score: number; description?: string }>;
+  // Crebo 25604 alignment — present on rubrics seeded from rubric_defaults.
+  kerntaak?: string;
+  kerntaak_label?: string;
+  kerntaak_sub?: string;
 }
 
 export interface SubmissionContributor {

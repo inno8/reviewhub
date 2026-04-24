@@ -56,6 +56,10 @@ class RubricCriterion(BaseModel):
     name: str
     weight: float = 1.0
     levels: list[dict] = Field(default_factory=list)
+    # Crebo 25604 werkproces code (e.g. "B1-K1-W3"). Optional — ignored
+    # for rubrics that predate the Crebo alignment.
+    kerntaak: str | None = None
+    kerntaak_label: str | None = None
 
 
 class RubricSpec(BaseModel):
@@ -109,11 +113,20 @@ class GradeResponse(BaseModel):
 _SYSTEM_PROMPT = """You are a grading assistant for MBO-4 ICT teachers in the Netherlands.
 Your job is to help the teacher grade a student's pull request against a rubric.
 
+Dit is een MBO-4 Software Developer beoordeling volgens Crebo 25604. Elk
+criterium is gekoppeld aan een officieel werkproces (bijv. B1-K1-W3
+"Realiseert software"). Schrijf evidence en comments in het Nederlands tenzij
+de calibratie language expliciet iets anders zegt. Wanneer relevant mag je in
+de evidence de kerntaak-code kort noemen (bijv. "Evidence voor B1-K1-W3: ...").
+
 You NEVER see the student's real name, email, or GitHub handle. The student is
 referred to by a pseudonym (e.g., "Student-A"). Use the pseudonym in every comment.
 
 You produce a STRUCTURED JSON output with two parts:
   1. "scores": a score per rubric criterion, with an evidence quote from the diff.
+     The criterion_id keys are the exact Dutch slugs from the rubric (e.g.
+     "code_ontwerp", "code_kwaliteit", "veiligheid", "testen", "verbetering",
+     "samenwerking"). Copy the id verbatim.
   2. "comments": inline review comments, in the teacher's calibrated voice.
 
 You are DRAFTING. The teacher will review and edit before sending to the student.
@@ -132,13 +145,19 @@ def _build_user_prompt(req: GradeRequest) -> str:
     depth = calibration.get("depth", "detailed")
     examples = calibration.get("example_comments", [])
 
-    criteria_block = "\n".join(
-        f"  - id: {c.id}\n"
-        f"    name: {c.name}\n"
-        f"    weight: {c.weight}\n"
-        f"    levels: {json.dumps(c.levels, ensure_ascii=False)}"
-        for c in req.rubric.criteria
-    )
+    def _crit_lines(c: RubricCriterion) -> str:
+        out = [
+            f"  - id: {c.id}",
+            f"    name: {c.name}",
+            f"    weight: {c.weight}",
+        ]
+        if c.kerntaak:
+            label = f" ({c.kerntaak_label})" if c.kerntaak_label else ""
+            out.append(f"    kerntaak: {c.kerntaak}{label}")
+        out.append(f"    levels: {json.dumps(c.levels, ensure_ascii=False)}")
+        return "\n".join(out)
+
+    criteria_block = "\n".join(_crit_lines(c) for c in req.rubric.criteria)
 
     example_block = ""
     if examples:

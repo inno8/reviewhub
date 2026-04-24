@@ -20,6 +20,7 @@ from django.core.management.base import BaseCommand, CommandError
 from django.db import transaction
 
 from grading.models import Cohort, CohortMembership, Course, Rubric
+from grading.rubric_defaults import CREBO_RUBRIC_CRITERIA
 
 
 DEFAULT_ORG_SLUG = "itec"
@@ -28,55 +29,11 @@ DEFAULT_STUDENT_EMAIL = "tester@reviewhub.com"
 DEFAULT_REPO_URL = "https://github.com/inno8/codelens-test"
 DEFAULT_COHORT_NAME = "E2E Dogfood"
 DEFAULT_COURSE_NAME = "E2E Test Course"
-DEFAULT_RUBRIC_NAME = "E2E MBO-4 ICT Rubric"
+DEFAULT_RUBRIC_NAME = "MBO-4 Software Developer Rubric (Crebo 25604)"
 
 
-RUBRIC_CRITERIA = [
-    {
-        "id": "readability",
-        "name": "Readability",
-        "weight": 1.0,
-        "levels": [
-            {"score": 1, "description": "Cannot understand without author."},
-            {"score": 2, "description": "Variable names are cryptic or inconsistent."},
-            {"score": 3, "description": "Clear with minor issues."},
-            {"score": 4, "description": "Clear, idiomatic, professional."},
-        ],
-    },
-    {
-        "id": "error_handling",
-        "name": "Error Handling",
-        "weight": 1.0,
-        "levels": [
-            {"score": 1, "description": "No error handling; crashes on bad input."},
-            {"score": 2, "description": "Catches errors but swallows them silently."},
-            {"score": 3, "description": "Handles errors with meaningful messages."},
-            {"score": 4, "description": "Comprehensive, typed, user-friendly error handling."},
-        ],
-    },
-    {
-        "id": "security",
-        "name": "Security",
-        "weight": 1.0,
-        "levels": [
-            {"score": 1, "description": "Obvious vulnerabilities (SQLi, XSS, secrets in code)."},
-            {"score": 2, "description": "Some defensive code but gaps remain."},
-            {"score": 3, "description": "Follows common security practices."},
-            {"score": 4, "description": "Threat-modeled, least-privilege, defense in depth."},
-        ],
-    },
-    {
-        "id": "testing",
-        "name": "Testing",
-        "weight": 1.0,
-        "levels": [
-            {"score": 1, "description": "No tests."},
-            {"score": 2, "description": "Happy-path tests only."},
-            {"score": 3, "description": "Happy + error paths; reasonable coverage."},
-            {"score": 4, "description": "Thorough coverage including edge cases and regressions."},
-        ],
-    },
-]
+# Backwards-compat alias: seed_dogfood_cohort imports RUBRIC_CRITERIA from here.
+RUBRIC_CRITERIA = CREBO_RUBRIC_CRITERIA
 
 
 class Command(BaseCommand):

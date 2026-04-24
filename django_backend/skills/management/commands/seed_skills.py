@@ -15,6 +15,13 @@ SKILL_DATA = {
             {"slug": "code_structure", "name": "Code Structure", "description": "Organization, modularity"},
             {"slug": "dry_principle", "name": "DRY Principle", "description": "Avoiding repetition"},
             {"slug": "comments_docs", "name": "Comments & Docs", "description": "Inline docs, docstrings"},
+            # ── Crebo 25604 (MBO-4 Software Developer) aligned skills ──
+            # These slugs mirror the criterion IDs in
+            # grading.rubric_defaults.CREBO_RUBRIC_CRITERIA so
+            # grading.services.skill_binding can look them up 1:1.
+            {"slug": "code_ontwerp", "name": "Code-ontwerp", "description": "Crebo B1-K1-W2 — Ontwerpt software"},
+            {"slug": "code_kwaliteit", "name": "Code-kwaliteit", "description": "Crebo B1-K1-W3 — Realiseert software"},
+            {"slug": "verbetering", "name": "Verbetering", "description": "Crebo B1-K1-W5 — Doet verbetervoorstellen"},
         ]
     },
     "design_patterns": {
@@ -48,6 +55,8 @@ SKILL_DATA = {
             {"slug": "auth_practices", "name": "Auth Practices", "description": "Authentication, authorization"},
             {"slug": "secrets_management", "name": "Secrets Management", "description": "API keys, credentials"},
             {"slug": "xss_csrf_prevention", "name": "XSS/CSRF Prevention", "description": "Web security"},
+            # Crebo alias — grading.rubric_defaults criterion id "veiligheid"
+            {"slug": "veiligheid", "name": "Veiligheid", "description": "Crebo B1-K1-W3 (sub) — Veiligheid"},
         ]
     },
     "testing": {
@@ -59,6 +68,17 @@ SKILL_DATA = {
             {"slug": "test_coverage", "name": "Test Coverage", "description": "Code coverage"},
             {"slug": "test_quality", "name": "Test Quality", "description": "Meaningful assertions"},
             {"slug": "tdd", "name": "TDD", "description": "Test-first approach"},
+            # Crebo alias — grading.rubric_defaults criterion id "testen"
+            {"slug": "testen", "name": "Testen", "description": "Crebo B1-K1-W4 — Test software"},
+        ]
+    },
+    "collaboration": {
+        "name": "Collaboration",
+        "icon": "🤝",
+        "color": "#14b8a6",
+        "skills": [
+            # Crebo criterion id "samenwerking" — B1-K2-W1+W3
+            {"slug": "samenwerking", "name": "Samenwerking", "description": "Crebo B1-K2-W1+W3 — Voert overleg & reflecteert"},
         ]
     },
     "frontend": {

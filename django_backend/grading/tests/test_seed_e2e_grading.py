@@ -79,10 +79,14 @@ class TestSeedE2EGrading:
         assert cohort.org == seed_scaffold["org"]
 
         rubric = Rubric.objects.get()
-        assert len(rubric.criteria) == 4
+        assert len(rubric.criteria) == 6
         assert {c["id"] for c in rubric.criteria} == {
-            "readability", "error_handling", "security", "testing",
+            "code_ontwerp", "code_kwaliteit", "veiligheid",
+            "testen", "verbetering", "samenwerking",
         }
+        # Every Crebo criterion must carry its kerntaak code for the
+        # teacher-facing badge in RubricPanel.vue.
+        assert all(c.get("kerntaak") for c in rubric.criteria)
         assert rubric.owner == seed_scaffold["teacher"]
 
         course = Course.objects.get()
