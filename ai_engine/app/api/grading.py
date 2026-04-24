@@ -102,6 +102,11 @@ class InlineComment(BaseModel):
     # session detail UI renders empty placeholders in that case.
     original_snippet: str = ""
     suggested_snippet: str = ""
+    # Pedagogical context — the "Waarom dit beter is" pill in the UI.
+    # Explains the UNDERLYING PRINCIPLE (not just "this is wrong"), in Dutch.
+    # Empty when the comment doesn't need pedagogical expansion (simple typos,
+    # obvious one-liners). Teacher-editable; the default text comes from the LLM.
+    teacher_explanation: str = ""
 
 
 class GradeResponse(BaseModel):
@@ -259,7 +264,8 @@ Return ONLY valid JSON matching this exact schema (no prose, no markdown fences)
       "line": <integer line number>,
       "body": "<teacher-voiced review comment referencing the student by pseudonym>",
       "original_snippet": "<the exact 1-10 line code snippet from the diff this comment refers to, copied verbatim, preserving indentation; empty string if not applicable>",
-      "suggested_snippet": "<the rewritten code with the issue fixed, same structure, ≤10 lines, preserving indentation; empty string if no obvious fix>"
+      "suggested_snippet": "<the rewritten code with the issue fixed, same structure, ≤10 lines, preserving indentation; empty string if no obvious fix>",
+      "teacher_explanation": "<1-3 sentences in Dutch explaining the PRINCIPLE behind the fix — WHY the suggested approach is better, not just THAT it is. This teaches the pattern rather than the specific case. Empty string for typos / trivial one-liners that don't need pedagogical expansion.>"
     }}
   ]
 }}
@@ -287,6 +293,7 @@ Example 1 — Python hardcoded password:
   body: "Student-A, hardcoding passwords in source code is a serious security vulnerability. Use an environment variable instead."
   original_snippet: "ADMIN_PASSWORD = \\"admin123\\"  # tijdelijk wachtwoord, later aanpassen"
   suggested_snippet: "ADMIN_PASSWORD = os.environ.get(\\"ADMIN_PASSWORD\\")\\nif not ADMIN_PASSWORD:\\n    raise RuntimeError(\\"Set ADMIN_PASSWORD env var\\")"
+  teacher_explanation: "Secrets horen nooit in source control. Environment variables houden credentials buiten de codebase zodat je per omgeving (dev/prod) een andere waarde kunt zetten en accidentally-committed secrets voorkomt."
 
 Example 2 — PHP Laravel controller missing validation:
   file: "app/Http/Controllers/UserController.php"
@@ -378,6 +385,7 @@ def _parse_grade_json(text: str) -> dict:
                 "body": str(c.get("body", "")),
                 "original_snippet": str(c.get("original_snippet") or ""),
                 "suggested_snippet": str(c.get("suggested_snippet") or ""),
+                "teacher_explanation": str(c.get("teacher_explanation") or ""),
             }
         )
     parsed["comments"] = normalized_comments

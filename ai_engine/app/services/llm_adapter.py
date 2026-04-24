@@ -251,16 +251,25 @@ class LLMAdapter:
 
         self.tier = tier
 
-        # model_name resolution:
+        # model_name resolution (first match wins):
         # 1. Explicit caller override (per-org model from Django DB)
-        # 2. LLM_MODEL_QUALITY / LLM_MODEL_FAST per tier
-        # 3. Backward-compat LLM_MODEL
+        # 2. New-style: PR_LLM_MODEL (quality) / COMMIT_LLM_MODEL (fast)
+        # 3. Legacy: LLM_MODEL_QUALITY / LLM_MODEL_FAST per tier
+        # 4. Backward-compat LLM_MODEL
         if model_override:
             self.model_name = model_override
         elif tier == "quality":
-            self.model_name = settings.LLM_MODEL_QUALITY or settings.LLM_MODEL
+            self.model_name = (
+                settings.PR_LLM_MODEL
+                or settings.LLM_MODEL_QUALITY
+                or settings.LLM_MODEL
+            )
         else:  # fast (default)
-            self.model_name = settings.LLM_MODEL_FAST or settings.LLM_MODEL
+            self.model_name = (
+                settings.COMMIT_LLM_MODEL
+                or settings.LLM_MODEL_FAST
+                or settings.LLM_MODEL
+            )
 
     # ── Public: raw LLM call (used by grading endpoint) ──────────────────
 
