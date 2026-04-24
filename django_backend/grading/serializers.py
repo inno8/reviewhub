@@ -516,8 +516,19 @@ class GradingSessionDetailSerializer(serializers.ModelSerializer):
     def get_can_start_new_iteration(self, obj) -> bool:
         """
         True when the manual "Start nieuwe iteratie" button should be enabled.
-        Requires: current session is terminal, PR is not merged, AND there's
-        at least one activity signal since the session was POSTED.
+
+        Requirements:
+          - current session is in a terminal state (POSTED / PARTIAL / FAILED /
+            DISCARDED) — nothing to iterate from if still mid-flight
+          - PR is not merged (no point re-grading a closed-and-merged PR)
+          - this session isn't already superseded by a newer iteration
+
+        Note: we deliberately do NOT require an "activity signal" (push count,
+        resolved thread count). The teacher is the gatekeeper here. If they
+        decide the student's latest state is worth re-grading — even without
+        a fresh push — we let them. The backend `start_new_iteration` view
+        enforces the hard guards (terminal + not-merged) so a stale UI can't
+        create iterations on a merged PR.
         """
         if not self._is_terminal_state(obj.state):
             return False
@@ -525,11 +536,7 @@ class GradingSessionDetailSerializer(serializers.ModelSerializer):
             return False
         if obj.superseded_by_id is not None:
             return False
-        activity = self.get_activity_since_posted(obj)
-        return bool(
-            activity["push_count"] > 0
-            or activity["resolved_thread_count"] > 0
-        )
+        return True
 
     def get_contributors(self, obj) -> list[dict]:
         """All SubmissionContributor rows for the PR — the full group roster."""

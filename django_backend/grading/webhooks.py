@@ -445,6 +445,23 @@ def create_next_iteration(session: GradingSession) -> GradingSession | None:
         )
         latest.superseded_by = new_session
         latest.save(update_fields=["superseded_by", "updated_at"])
+
+    # Fire-and-forget the draft kickoff so the new iteration doesn't sit in
+    # PENDING until a teacher navigates to the session in the UI. This matches
+    # what GradingSessionDetailView.vue onMounted does for PENDING sessions,
+    # but backs it up server-side so webhook-driven iterations (student
+    # re-requests review while teacher isn't looking at the app) also draft
+    # automatically. Synchronous path is fine here — the actual LLM call is
+    # already non-blocking inside generate_draft via the ai_engine proxy.
+    try:
+        from grading.services import draft_kickoff  # lightweight async launcher
+        draft_kickoff.fire(new_session.id)
+    except Exception as e:  # pragma: no cover — kickoff is best-effort
+        import logging
+        logging.getLogger(__name__).warning(
+            "create_next_iteration: draft kickoff failed for session=%s: %s",
+            new_session.id, e,
+        )
     return new_session
 
 

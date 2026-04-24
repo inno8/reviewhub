@@ -325,8 +325,14 @@
                 <span v-if="canStartNewIteration">
                   Student is terug aan het werk. Start een nieuwe iteratie om opnieuw te beoordelen.
                 </span>
+                <span v-else-if="activeSession?.submission?.status === 'graded'">
+                  PR is al gemerged — geen nieuwe iteratie mogelijk.
+                </span>
+                <span v-else-if="activeSession?.superseded_by">
+                  Deze iteratie is al vervangen. Open de nieuwste iteratie.
+                </span>
                 <span v-else>
-                  Wacht op student-activiteit voordat je een nieuwe iteratie start.
+                  Nieuwe iteratie starten is nog niet beschikbaar voor deze sessie.
                 </span>
               </div>
               <button
@@ -710,7 +716,11 @@ const canStartNewIteration = computed(() => {
 });
 
 const newIterationTooltip = computed(() => {
-  return canStartNewIteration.value ? '' : 'Wacht op student-activiteit';
+  if (canStartNewIteration.value) return '';
+  const s: any = activeSession.value;
+  if (s?.submission?.status === 'graded') return 'PR is al gemerged — geen nieuwe iteratie mogelijk.';
+  if (s?.superseded_by) return 'Deze iteratie is al vervangen — open de nieuwste.';
+  return 'Nieuwe iteratie nog niet beschikbaar voor deze sessie.';
 });
 
 async function onStartNewIteration() {
