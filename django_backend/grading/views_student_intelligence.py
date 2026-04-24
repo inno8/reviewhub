@@ -450,6 +450,13 @@ class StudentTrajectoryView(APIView):
             weeks = 12
         weeks = max(1, min(weeks, 52))
 
+        # ── New query params (opt-in, back-compat) ───────────────────────
+        granularity = request.query_params.get("granularity", "category")
+        if granularity not in ("category", "skill"):
+            granularity = "category"
+        include_cohort_mean_raw = request.query_params.get("include_cohort_mean", "")
+        include_cohort_mean = str(include_cohort_mean_raw).lower() in ("1", "true", "yes")
+
         now = timezone.now()
         start = now - timedelta(weeks=weeks)
         # Normalise to Monday at 00:00 for consistent bucketing.
@@ -465,9 +472,13 @@ class StudentTrajectoryView(APIView):
         )
         # Bucket: { week_start_str: { category: [scores] } }
         buckets: dict[str, dict[str, list[float]]] = defaultdict(lambda: defaultdict(list))
+        # Per-skill bucket: { week_start_str: { slug: [scores] } }
+        skill_buckets: dict[str, dict[str, list[float]]] = defaultdict(lambda: defaultdict(list))
         for o in obs_qs:
             wk = (o.created_at - timedelta(days=o.created_at.weekday())).date()
             buckets[wk.isoformat()][o.skill.category.name].append(float(o.weighted_score))
+            if o.skill.slug in CREBO_SKILL_SLUGS:
+                skill_buckets[wk.isoformat()][o.skill.slug].append(float(o.weighted_score))
 
         # PR + finding counts per week (cheap aggregation).
         evals = Evaluation.objects.for_user(student).filter(created_at__gte=start_monday)
@@ -488,22 +499,30 @@ class StudentTrajectoryView(APIView):
 
         # Build ordered week list (chronological — oldest first).
         weeks_out = []
+        ordered_week_keys: list[str] = []
         cur = start_monday
         end_monday = (now - timedelta(days=now.weekday())).replace(
             hour=0, minute=0, second=0, microsecond=0
         )
         while cur <= end_monday:
             wk_key = cur.date().isoformat()
+            ordered_week_keys.append(wk_key)
             cat_avgs = {
                 cat: round(sum(scores) / len(scores), 1)
                 for cat, scores in buckets.get(wk_key, {}).items()
             }
-            weeks_out.append({
+            week_entry = {
                 "week_start": wk_key,
                 "avg_score_per_category": cat_avgs,
                 "prs_count": evals_by_week.get(wk_key, 0),
                 "findings_count": findings_by_week.get(wk_key, 0),
-            })
+            }
+            if granularity == "skill":
+                week_entry["avg_score_per_skill"] = {
+                    slug: round(sum(scores) / len(scores), 1)
+                    for slug, scores in skill_buckets.get(wk_key, {}).items()
+                }
+            weeks_out.append(week_entry)
             cur += timedelta(weeks=1)
 
         # ── Milestones (learning proofs) ─────────────────────────────────
@@ -536,11 +555,145 @@ class StudentTrajectoryView(APIView):
         # Chronological.
         milestones.sort(key=lambda m: m["date"] or "")
 
-        return Response({
+        response_data = {
             "student": _student_ref(student),
             "weeks": weeks_out,
             "milestones": milestones,
-        })
+            "granularity": granularity,
+        }
+
+        # ── Per-skill series (granularity=skill) ─────────────────────────
+        if granularity == "skill":
+            criterion_meta = _build_criterion_meta_for_student(student)
+            skill_series = []
+            for slug in CREBO_SKILL_SLUGS:
+                meta = criterion_meta.get(slug, {})
+                points = []
+                for wk_key in ordered_week_keys:
+                    scores = skill_buckets.get(wk_key, {}).get(slug, [])
+                    if scores:
+                        points.append({
+                            "week_start": wk_key,
+                            "avg_score": round(sum(scores) / len(scores), 1),
+                            "observation_count": len(scores),
+                        })
+                    else:
+                        points.append({
+                            "week_start": wk_key,
+                            "avg_score": None,
+                            "observation_count": 0,
+                        })
+                skill_series.append({
+                    "skill_slug": slug,
+                    "display_name": meta.get("name") or slug.replace("_", " ").title(),
+                    "kerntaak": meta.get("kerntaak"),
+                    "points": points,
+                })
+            response_data["series"] = skill_series
+
+        # ── Cohort-mean overlay ──────────────────────────────────────────
+        if include_cohort_mean:
+            cohort = _student_cohort(student)
+            cohort_mean: list[dict] = []
+            if cohort is not None:
+                peer_ids = list(
+                    CohortMembership.objects
+                    .filter(cohort=cohort, removed_at__isnull=True)
+                    .exclude(student_id=student.id)
+                    .values_list("student_id", flat=True)
+                )
+                if peer_ids:
+                    peer_obs = (
+                        SkillObservation.objects
+                        .filter(user_id__in=peer_ids, created_at__gte=start_monday)
+                        .select_related("skill__category")
+                        .values(
+                            "user_id", "created_at",
+                            "skill__slug", "skill__category__name",
+                            "weighted_score",
+                        )
+                    )
+                    if granularity == "skill":
+                        # { slug: { wk_key: { 'scores': [...], 'users': set() } } }
+                        agg: dict[str, dict[str, dict]] = defaultdict(
+                            lambda: defaultdict(lambda: {"scores": [], "users": set()})
+                        )
+                        for o in peer_obs:
+                            slug = o["skill__slug"]
+                            if slug not in CREBO_SKILL_SLUGS:
+                                continue
+                            created = o["created_at"]
+                            wk = (created - timedelta(days=created.weekday())).date().isoformat()
+                            bucket = agg[slug][wk]
+                            bucket["scores"].append(float(o["weighted_score"]))
+                            bucket["users"].add(o["user_id"])
+                        criterion_meta = _build_criterion_meta_for_student(student)
+                        for slug in CREBO_SKILL_SLUGS:
+                            meta = criterion_meta.get(slug, {})
+                            points = []
+                            for wk_key in ordered_week_keys:
+                                b = agg.get(slug, {}).get(wk_key)
+                                if b and b["scores"]:
+                                    points.append({
+                                        "week_start": wk_key,
+                                        "avg_score": round(
+                                            sum(b["scores"]) / len(b["scores"]), 1
+                                        ),
+                                        "student_count": len(b["users"]),
+                                    })
+                                else:
+                                    points.append({
+                                        "week_start": wk_key,
+                                        "avg_score": None,
+                                        "student_count": 0,
+                                    })
+                            cohort_mean.append({
+                                "key": slug,
+                                "skill_slug": slug,
+                                "display_name": (
+                                    meta.get("name")
+                                    or slug.replace("_", " ").title()
+                                ),
+                                "kerntaak": meta.get("kerntaak"),
+                                "points": points,
+                            })
+                    else:
+                        # { category: { wk_key: { 'scores': [...], 'users': set() } } }
+                        agg: dict[str, dict[str, dict]] = defaultdict(
+                            lambda: defaultdict(lambda: {"scores": [], "users": set()})
+                        )
+                        for o in peer_obs:
+                            cat = o["skill__category__name"]
+                            created = o["created_at"]
+                            wk = (created - timedelta(days=created.weekday())).date().isoformat()
+                            bucket = agg[cat][wk]
+                            bucket["scores"].append(float(o["weighted_score"]))
+                            bucket["users"].add(o["user_id"])
+                        for cat in sorted(agg.keys()):
+                            points = []
+                            for wk_key in ordered_week_keys:
+                                b = agg.get(cat, {}).get(wk_key)
+                                if b and b["scores"]:
+                                    points.append({
+                                        "week_start": wk_key,
+                                        "avg_score": round(
+                                            sum(b["scores"]) / len(b["scores"]), 1
+                                        ),
+                                        "student_count": len(b["users"]),
+                                    })
+                                else:
+                                    points.append({
+                                        "week_start": wk_key,
+                                        "avg_score": None,
+                                        "student_count": 0,
+                                    })
+                            cohort_mean.append({
+                                "key": cat,
+                                "points": points,
+                            })
+            response_data["cohort_mean"] = cohort_mean
+
+        return Response(response_data)
 
 
 # ─────────────────────────────────────────────────────────────────────────────

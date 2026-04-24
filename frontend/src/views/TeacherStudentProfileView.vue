@@ -84,13 +84,40 @@ interface Snapshot {
 interface TrajectoryWeek {
   week_start: string;
   avg_score_per_category: Record<string, number>;
+  avg_score_per_skill?: Record<string, number>;
   prs_count: number;
   findings_count: number;
+}
+interface TrajectorySkillPoint {
+  week_start: string;
+  avg_score: number | null;
+  observation_count: number;
+}
+interface TrajectorySkillSeries {
+  skill_slug: string;
+  display_name: string;
+  kerntaak: string | null;
+  points: TrajectorySkillPoint[];
+}
+interface TrajectoryCohortMeanPoint {
+  week_start: string;
+  avg_score: number | null;
+  student_count: number;
+}
+interface TrajectoryCohortMeanSeries {
+  key: string;
+  skill_slug?: string;
+  display_name?: string;
+  kerntaak?: string | null;
+  points: TrajectoryCohortMeanPoint[];
 }
 interface Trajectory {
   student: { id: number; name: string; email: string };
   weeks: TrajectoryWeek[];
   milestones: Array<{ date: string | null; event: string; skill: string }>;
+  granularity?: 'category' | 'skill';
+  series?: TrajectorySkillSeries[];
+  cohort_mean?: TrajectoryCohortMeanSeries[];
 }
 interface PRHistoryEntry {
   id?: number;
@@ -131,6 +158,11 @@ const history = ref<PRHistory | null>(null);
 
 const selectedPrState = ref<string | null>(null);
 
+// Trajectory view controls
+const trajectoryGranularity = ref<'category' | 'skill'>('category');
+const trajectoryShowCohortMean = ref(false);
+const trajectoryRefreshing = ref(false);
+
 // ── Loaders (parallel) ─────────────────────────────────────────────────
 async function loadSnapshot() {
   if (!studentId.value) return;
@@ -148,12 +180,19 @@ async function loadSnapshot() {
   }
 }
 
-async function loadTrajectory() {
+async function loadTrajectory(opts: { refresh?: boolean } = {}) {
   if (!studentId.value) return;
-  trajectoryLoading.value = true;
+  if (opts.refresh) {
+    trajectoryRefreshing.value = true;
+  } else {
+    trajectoryLoading.value = true;
+  }
   trajectoryError.value = null;
   try {
-    const { data } = await api.grading.students.trajectory(studentId.value, 12);
+    const { data } = await api.grading.students.trajectory(studentId.value, 12, {
+      granularity: trajectoryGranularity.value,
+      includeCohortMean: trajectoryShowCohortMean.value,
+    });
     trajectory.value = data;
   } catch (err: any) {
     trajectoryError.value =
@@ -161,8 +200,17 @@ async function loadTrajectory() {
     trajectory.value = null;
   } finally {
     trajectoryLoading.value = false;
+    trajectoryRefreshing.value = false;
   }
 }
+
+// Re-fetch trajectory when toggle or checkbox changes.
+watch([trajectoryGranularity, trajectoryShowCohortMean], () => {
+  loadTrajectory({ refresh: true });
+});
+
+// Whether the cohort-mean checkbox should be disabled.
+const cohortMeanDisabled = computed(() => snapshot.value?.student.cohort == null);
 
 async function loadHistory() {
   if (!studentId.value) return;
@@ -360,6 +408,26 @@ const CATEGORY_COLORS = [
   'rgba(56, 189, 248, 0.9)', // cyan
 ];
 
+// Stable color per Crebo skill slug. Picked from Tailwind 400-range tokens
+// to feel distinct at a glance — matches the accent tones already used
+// elsewhere in the teacher cockpit. Six hues for six criteria.
+const SKILL_COLOR_BY_SLUG: Record<string, string> = {
+  code_ontwerp: 'rgba(56, 189, 248, 0.9)',    // sky-400
+  code_kwaliteit: 'rgba(251, 191, 36, 0.9)',  // amber-400
+  veiligheid: 'rgba(251, 113, 133, 0.9)',     // rose-400
+  testen: 'rgba(52, 211, 153, 0.9)',          // emerald-400
+  verbetering: 'rgba(167, 139, 250, 0.9)',    // violet-400
+  samenwerking: 'rgba(232, 121, 249, 0.9)',   // fuchsia-400
+};
+
+function hexFromRgba(rgba: string, alpha: number): string {
+  // Turn 'rgba(r,g,b,0.9)' into 'rgba(r,g,b,<alpha>)'.
+  return rgba.replace(/rgba?\(([^)]+)\)/, (_m, body) => {
+    const [r, g, b] = body.split(',').map((s: string) => s.trim());
+    return `rgba(${r}, ${g}, ${b}, ${alpha})`;
+  });
+}
+
 function formatWeekLabel(iso: string): string {
   // Dutch week-number label: "wk 12"
   const d = new Date(iso + 'T00:00:00');
@@ -374,39 +442,119 @@ function formatWeekLabel(iso: string): string {
 }
 
 const trajectoryHasData = computed(() => {
-  const weeks = trajectory.value?.weeks || [];
+  const t = trajectory.value;
+  if (!t) return false;
+  if (t.granularity === 'skill' && t.series) {
+    return t.series.some(s =>
+      s.points.some(p => p.avg_score !== null && p.avg_score !== undefined),
+    );
+  }
+  const weeks = t.weeks || [];
   return weeks.some(w => Object.keys(w.avg_score_per_category || {}).length > 0);
 });
 
 const trajectoryChart = computed(() => {
-  const weeks = trajectory.value?.weeks || [];
+  const t = trajectory.value;
+  if (!t) return null;
+  const weeks = t.weeks || [];
   if (weeks.length === 0) return null;
-  const catSet = new Set<string>();
-  for (const w of weeks) {
-    for (const k of Object.keys(w.avg_score_per_category || {})) catSet.add(k);
+
+  const labels = weeks.map(w => formatWeekLabel(w.week_start));
+  const datasets: any[] = [];
+
+  if (t.granularity === 'skill' && t.series) {
+    // Skill-granularity: one line per Crebo slug.
+    for (const s of t.series) {
+      const color = SKILL_COLOR_BY_SLUG[s.skill_slug]
+        || CATEGORY_COLORS[datasets.length % CATEGORY_COLORS.length];
+      const label = s.kerntaak
+        ? `${s.display_name} (${s.kerntaak})`
+        : s.display_name;
+      datasets.push({
+        label,
+        data: s.points.map(p => (p.avg_score === null ? null : p.avg_score)),
+        borderColor: color,
+        backgroundColor: hexFromRgba(color, 0.1),
+        tension: 0.3,
+        spanGaps: true,
+        pointRadius: 3,
+        pointHoverRadius: 5,
+        borderWidth: 2,
+      });
+    }
+    // Cohort-mean overlay — dotted, matching colors, lower opacity.
+    if (t.cohort_mean && t.cohort_mean.length) {
+      for (const cm of t.cohort_mean) {
+        const slug = cm.skill_slug || cm.key;
+        const color = SKILL_COLOR_BY_SLUG[slug]
+          || CATEGORY_COLORS[datasets.length % CATEGORY_COLORS.length];
+        const baseLabel = cm.display_name || cm.key;
+        const label = cm.kerntaak
+          ? `${baseLabel} (klas)`
+          : `${baseLabel} (klas)`;
+        datasets.push({
+          label,
+          data: cm.points.map(p => (p.avg_score === null ? null : p.avg_score)),
+          borderColor: hexFromRgba(color, 0.5),
+          backgroundColor: hexFromRgba(color, 0.05),
+          borderDash: [6, 4],
+          tension: 0.3,
+          spanGaps: true,
+          pointRadius: 2,
+          pointHoverRadius: 4,
+          borderWidth: 2,
+        });
+      }
+    }
+  } else {
+    // Category granularity (default).
+    const catSet = new Set<string>();
+    for (const w of weeks) {
+      for (const k of Object.keys(w.avg_score_per_category || {})) catSet.add(k);
+    }
+    const categories = [...catSet].sort();
+    const catColor: Record<string, string> = {};
+    categories.forEach((cat, i) => {
+      catColor[cat] = CATEGORY_COLORS[i % CATEGORY_COLORS.length];
+    });
+    for (const cat of categories) {
+      datasets.push({
+        label: cat,
+        data: weeks.map(w =>
+          w.avg_score_per_category?.[cat] !== undefined
+            ? w.avg_score_per_category[cat]
+            : null,
+        ),
+        borderColor: catColor[cat],
+        backgroundColor: hexFromRgba(catColor[cat], 0.1),
+        tension: 0.3,
+        spanGaps: true,
+        pointRadius: 3,
+        pointHoverRadius: 5,
+        borderWidth: 2,
+      });
+    }
+    if (t.cohort_mean && t.cohort_mean.length) {
+      for (const cm of t.cohort_mean) {
+        const color = catColor[cm.key]
+          || CATEGORY_COLORS[datasets.length % CATEGORY_COLORS.length];
+        datasets.push({
+          label: `${cm.key} (klas)`,
+          data: cm.points.map(p => (p.avg_score === null ? null : p.avg_score)),
+          borderColor: hexFromRgba(color, 0.5),
+          backgroundColor: hexFromRgba(color, 0.05),
+          borderDash: [6, 4],
+          tension: 0.3,
+          spanGaps: true,
+          pointRadius: 2,
+          pointHoverRadius: 4,
+          borderWidth: 2,
+        });
+      }
+    }
   }
-  const categories = [...catSet].sort();
-  return {
-    labels: weeks.map(w => formatWeekLabel(w.week_start)),
-    datasets: categories.map((cat, i) => ({
-      label: cat,
-      data: weeks.map(w =>
-        w.avg_score_per_category?.[cat] !== undefined
-          ? w.avg_score_per_category[cat]
-          : null,
-      ),
-      borderColor: CATEGORY_COLORS[i % CATEGORY_COLORS.length],
-      backgroundColor: CATEGORY_COLORS[i % CATEGORY_COLORS.length].replace(
-        /0\.9\)/,
-        '0.1)',
-      ),
-      tension: 0.3,
-      spanGaps: true,
-      pointRadius: 3,
-      pointHoverRadius: 5,
-      borderWidth: 2,
-    })),
-  };
+
+  return { labels, datasets };
 });
 
 const trajectoryOptions = computed<ChartOptions<'line'>>(() => ({
@@ -731,7 +879,9 @@ const anyLoading = computed(
             <div class="flex flex-col gap-1">
               <h2 class="text-base font-bold text-on-surface m-0">Trajectorie</h2>
               <p class="text-xs text-on-surface-variant m-0">
-                Weekgemiddelde per categorie over de laatste 12 weken.
+                Weekgemiddelde
+                {{ trajectoryGranularity === 'skill' ? 'per criterium' : 'per categorie' }}
+                over de laatste 12 weken.
               </p>
             </div>
             <span
@@ -742,6 +892,63 @@ const anyLoading = computed(
             </span>
           </div>
 
+          <!-- Granularity toggle + cohort-mean checkbox -->
+          <div class="flex items-center justify-between gap-4 flex-wrap" data-testid="trajectory-controls">
+            <div
+              class="inline-flex rounded-md bg-surface-container p-0.5"
+              role="tablist"
+              aria-label="Weergave"
+              data-testid="trajectory-granularity-toggle"
+            >
+              <button
+                type="button"
+                role="tab"
+                :aria-selected="trajectoryGranularity === 'category'"
+                @click="trajectoryGranularity = 'category'"
+                :class="[
+                  'text-[11px] font-semibold uppercase tracking-widest px-3 py-1.5 rounded transition-colors',
+                  trajectoryGranularity === 'category'
+                    ? 'bg-primary/15 text-primary'
+                    : 'text-on-surface-variant hover:text-on-surface',
+                ]"
+                data-testid="trajectory-toggle-category"
+              >
+                Op categorie
+              </button>
+              <button
+                type="button"
+                role="tab"
+                :aria-selected="trajectoryGranularity === 'skill'"
+                @click="trajectoryGranularity = 'skill'"
+                :class="[
+                  'text-[11px] font-semibold uppercase tracking-widest px-3 py-1.5 rounded transition-colors',
+                  trajectoryGranularity === 'skill'
+                    ? 'bg-primary/15 text-primary'
+                    : 'text-on-surface-variant hover:text-on-surface',
+                ]"
+                data-testid="trajectory-toggle-skill"
+              >
+                Op criterium
+              </button>
+            </div>
+
+            <label
+              class="inline-flex items-center gap-2 text-xs text-on-surface-variant select-none"
+              :class="cohortMeanDisabled ? 'opacity-50 cursor-not-allowed' : 'cursor-pointer'"
+              :title="cohortMeanDisabled ? 'Deze student heeft geen klas toegewezen.' : ''"
+              data-testid="trajectory-cohort-mean-label"
+            >
+              <input
+                type="checkbox"
+                v-model="trajectoryShowCohortMean"
+                :disabled="cohortMeanDisabled"
+                class="h-3.5 w-3.5 rounded border-outline-variant bg-surface-container accent-primary"
+                data-testid="trajectory-cohort-mean-toggle"
+              />
+              <span>Vergelijk met klas-gemiddelde</span>
+            </label>
+          </div>
+
           <div v-if="trajectoryLoading && !trajectory" class="h-[320px] rounded-lg bg-surface-container animate-pulse"></div>
           <div
             v-else-if="trajectoryError"
@@ -749,8 +956,15 @@ const anyLoading = computed(
           >
             {{ trajectoryError }}
           </div>
-          <div v-else-if="trajectoryChart && trajectoryHasData" class="h-[320px]">
+          <div v-else-if="trajectoryChart && trajectoryHasData" class="relative h-[320px]">
             <Line :data="trajectoryChart" :options="trajectoryOptions" />
+            <div
+              v-if="trajectoryRefreshing"
+              class="absolute inset-0 flex items-center justify-center bg-surface-container-low/60 rounded-lg"
+              data-testid="trajectory-refreshing"
+            >
+              <span class="material-symbols-outlined text-2xl text-primary animate-spin">progress_activity</span>
+            </div>
           </div>
           <p v-else class="text-on-surface-variant text-sm m-0">
             Nog te weinig data voor een trajectorie — minimaal 3 weken nodig.

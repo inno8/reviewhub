@@ -265,7 +265,13 @@ export const api = {
         students: {
             list: (params = {}) => client.get('/grading/students/', { params }),
             snapshot: (studentId) => client.get(`/grading/students/${studentId}/snapshot/`),
-            trajectory: (studentId, weeks) => client.get(`/grading/students/${studentId}/trajectory/`, { params: weeks ? { weeks } : {} }),
+            trajectory: (studentId, weeks, opts = {}) => {
+                const params = {};
+                if (weeks) params.weeks = weeks;
+                if (opts.granularity) params.granularity = opts.granularity;
+                if (opts.includeCohortMean) params.include_cohort_mean = 'true';
+                return client.get(`/grading/students/${studentId}/trajectory/`, { params });
+            },
             prHistory: (studentId, limit) => client.get(`/grading/students/${studentId}/pr-history/`, { params: limit ? { limit } : {} }),
         },
         submissions: {
