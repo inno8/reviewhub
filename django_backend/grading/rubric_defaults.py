@@ -37,7 +37,7 @@ CREBO_RUBRIC_CRITERIA = [
         "name": "Code-ontwerp",
         "kerntaak": "B1-K1-W2",
         "kerntaak_label": "Ontwerpt software",
-        "weight": 1.0,
+        "weight": 15,
         "levels": [
             {"score": 1, "label": "Nog niet beheerst", "description": "Geen duidelijke structuur; alles in één functie of bestand."},
             {"score": 2, "label": "Gedeeltelijk beheerst", "description": "Basis-structuur, maar abstractie ontbreekt; veel herhaling."},
@@ -50,7 +50,7 @@ CREBO_RUBRIC_CRITERIA = [
         "name": "Code-kwaliteit",
         "kerntaak": "B1-K1-W3",
         "kerntaak_label": "Realiseert (onderdelen van) software",
-        "weight": 1.0,
+        "weight": 20,
         "levels": [
             {"score": 1, "label": "Nog niet beheerst", "description": "Moeilijk leesbaar; onduidelijke namen; geen foutafhandeling."},
             {"score": 2, "label": "Gedeeltelijk beheerst", "description": "Werkt, maar inconsistent; cryptische namen; fouten worden geslikt."},
@@ -64,7 +64,7 @@ CREBO_RUBRIC_CRITERIA = [
         "kerntaak": "B1-K1-W3",
         "kerntaak_sub": "veiligheid",
         "kerntaak_label": "Realiseert software (sub: veiligheid)",
-        "weight": 1.0,
+        "weight": 20,
         "levels": [
             {"score": 1, "label": "Nog niet beheerst", "description": "Duidelijke kwetsbaarheden: hardcoded secrets, SQL-injectie, geen input-validatie."},
             {"score": 2, "label": "Gedeeltelijk beheerst", "description": "Bewust van veiligheid, maar met gaten; inconsistente input-checks."},
@@ -77,7 +77,7 @@ CREBO_RUBRIC_CRITERIA = [
         "name": "Testen",
         "kerntaak": "B1-K1-W4",
         "kerntaak_label": "Test software",
-        "weight": 1.0,
+        "weight": 20,
         "levels": [
             {"score": 1, "label": "Nog niet beheerst", "description": "Geen tests aanwezig."},
             {"score": 2, "label": "Gedeeltelijk beheerst", "description": "Alleen happy-path tests; edge cases en errors ongetest."},
@@ -90,7 +90,7 @@ CREBO_RUBRIC_CRITERIA = [
         "name": "Verbetering",
         "kerntaak": "B1-K1-W5",
         "kerntaak_label": "Doet verbetervoorstellen voor de software",
-        "weight": 1.0,
+        "weight": 10,
         "levels": [
             {"score": 1, "label": "Nog niet beheerst", "description": "Geen reactie op eerdere feedback; TODOs blijven openstaan."},
             {"score": 2, "label": "Gedeeltelijk beheerst", "description": "Past feedback deels toe, zonder onderliggende patronen te herkennen."},
@@ -103,7 +103,7 @@ CREBO_RUBRIC_CRITERIA = [
         "name": "Samenwerking",
         "kerntaak": "B1-K2-W1+W3",
         "kerntaak_label": "Voert overleg & reflecteert op het werk",
-        "weight": 1.0,
+        "weight": 15,
         "levels": [
             {"score": 1, "label": "Nog niet beheerst", "description": "Commit-messages onduidelijk; PR-beschrijving ontbreekt; geen reactie op review."},
             {"score": 2, "label": "Gedeeltelijk beheerst", "description": "Basis-beschrijving; reageert op reviews maar kort of defensief."},

@@ -139,3 +139,67 @@ def fetch_pr_diff(
         raise GitHubError(f"GET /pulls/{pr_number}.diff {r.status_code}: {r.text[:200]}")
 
     return r.text
+
+
+def fetch_pr_commit_messages(
+    owner: str,
+    repo: str,
+    pr_number: int,
+    *,
+    token: Optional[str] = None,
+    limit: int = 50,
+) -> list[str]:
+    """
+    GET /repos/{owner}/{repo}/pulls/{pr_number}/commits → list of commit
+    messages (subject line only; body stripped). Used by the grading
+    service to feed the Samenwerking criterion real collaboration evidence.
+
+    Returns [] on any failure — non-fatal, the grader still runs.
+    """
+    url = f"{_GITHUB_API}/repos/{owner}/{repo}/pulls/{pr_number}/commits?per_page={limit}"
+    try:
+        r = requests.get(url, headers=_github_headers(token), timeout=_GITHUB_TIMEOUT)
+    except requests.RequestException as e:
+        log.warning("fetch_pr_commit_messages: network error: %s", e)
+        return []
+    if r.status_code != 200:
+        log.warning(
+            "fetch_pr_commit_messages: %s/%s#%d returned %d",
+            owner, repo, pr_number, r.status_code,
+        )
+        return []
+    try:
+        items = r.json()
+    except ValueError:
+        return []
+    out: list[str] = []
+    for item in items or []:
+        msg = (item.get("commit", {}) or {}).get("message", "") or ""
+        subject = msg.splitlines()[0].strip() if msg else ""
+        if subject:
+            out.append(subject)
+    return out
+
+
+def fetch_pr_body(
+    owner: str,
+    repo: str,
+    pr_number: int,
+    *,
+    token: Optional[str] = None,
+) -> str:
+    """
+    Return the PR description (body). Empty string on any failure.
+    """
+    url = f"{_GITHUB_API}/repos/{owner}/{repo}/pulls/{pr_number}"
+    try:
+        r = requests.get(url, headers=_github_headers(token), timeout=_GITHUB_TIMEOUT)
+    except requests.RequestException as e:
+        log.warning("fetch_pr_body: network error: %s", e)
+        return ""
+    if r.status_code != 200:
+        return ""
+    try:
+        return (r.json() or {}).get("body") or ""
+    except ValueError:
+        return ""

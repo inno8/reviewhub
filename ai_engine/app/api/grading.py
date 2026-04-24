@@ -79,6 +79,12 @@ class GradeRequest(BaseModel):
     llm_api_key: str | None = None
     llm_provider: str | None = None
     llm_model: str | None = None
+    # Collaboration signals (v1.1): enables fair scoring of the Samenwerking
+    # criterion. Without these the LLM only sees the diff and always scores
+    # collaboration 1/4 with evidence "geen commit messages zichtbaar".
+    commit_messages: list[str] = Field(default_factory=list)
+    pr_title: str | None = None
+    pr_body: str | None = None
 
 
 class CriterionScore(BaseModel):
@@ -131,6 +137,31 @@ You produce a STRUCTURED JSON output with two parts:
 
 You are DRAFTING. The teacher will review and edit before sending to the student.
 Be concrete, reference specific lines, and never invent code that isn't in the diff.
+
+SCORING GUIDANCE (v1.1 — addresses gaps flagged by docenten):
+
+- Samenwerking: evalueer commit-message helderheid, kwaliteit van de
+  PR-beschrijving, en reflectief taalgebruik. Als de "Collaboration signals"
+  sectie hieronder een niet-lege `commit_messages` lijst bevat, zeg dan NOOIT
+  "geen commit messages zichtbaar" — quote in plaats daarvan een echte
+  commit-message uit de lijst en beoordeel de helderheid (bijv. cryptische
+  berichten zoals "wip", "fix", "test" → lager niveau; beschrijvende berichten
+  met context → hoger niveau). Hetzelfde geldt voor pr_title/pr_body.
+
+- Code-ontwerp: score op BEIDE module- EN functie-niveau. Als individuele
+  functies meerdere concerns mengen (IO, business-logica, formatting,
+  state-mutatie in één blok), geef dan een lagere score zelfs wanneer de
+  module-structuur op zich netjes is. Een 3/4 vereist een schone scheiding
+  van verantwoordelijkheden op beide niveaus.
+
+- Suggested snippets — generalisatie: wanneer de intentie van de originele
+  code plausibel meerdere formaten, bestandstypes of waarden zou kunnen
+  omvatten (bijv. een path-traversal fix die alleen `.json` whitelist
+  terwijl de functie logisch ook `.csv` / `.md` / `.xlsx` zou ondersteunen),
+  stel dan een fix voor die een allowlist-constante gebruikt
+  (bijv. `ALLOWED_EXTENSIONS = {'.json', '.csv'}`) met een comment die het
+  patroon uitlegt — in plaats van één enkele waarde hard te coderen.
+  Leer de student het patroon, niet het specifieke geval.
 """
 
 
@@ -173,6 +204,30 @@ def _build_user_prompt(req: GradeRequest) -> str:
             f"  {json.dumps(req.context, ensure_ascii=False)[:1500]}\n"
         )
 
+    # Collaboration signals — feeds the Samenwerking criterion so the LLM
+    # doesn't blindly score 1/4 for "geen commit messages zichtbaar".
+    collab_lines: list[str] = []
+    if req.pr_title:
+        collab_lines.append(f"  pr_title: {req.pr_title}")
+    if req.pr_body:
+        body_snippet = req.pr_body.strip()
+        if len(body_snippet) > 1500:
+            body_snippet = body_snippet[:1500] + " …[truncated]"
+        collab_lines.append(f"  pr_body: |\n    {body_snippet.replace(chr(10), chr(10) + '    ')}")
+    if req.commit_messages:
+        collab_lines.append("  commit_messages:")
+        for msg in req.commit_messages[:40]:
+            safe = (msg or "").strip().splitlines()[0][:200]
+            collab_lines.append(f"    - {safe}")
+    collab_block = ""
+    if collab_lines:
+        collab_block = (
+            "COLLABORATION SIGNALS (use these when scoring Samenwerking — "
+            "do NOT say 'geen commit messages' if commit_messages is non-empty):\n"
+            + "\n".join(collab_lines)
+            + "\n"
+        )
+
     return f"""RUBRIC:
 {criteria_block}
 
@@ -183,7 +238,7 @@ CALIBRATION:
 
 {example_block}
 {context_block}
-
+{collab_block}
 DIFF TO GRADE:
 ```
 {req.redacted_diff}

@@ -729,10 +729,25 @@ class GradingSessionViewSet(
         from .exceptions import GitHubAuthExpired, GitHubError, PRClosedError
 
         combined_diff = ""
+        commit_messages: list[str] = []
+        pr_body_text: str = ""
         try:
             owner, repo = submission.repo_full_name.split("/", 1)
             teacher_pat = getattr(request.user, "github_personal_access_token", None)
             combined_diff = github_fetcher.fetch_pr_diff(
+                owner=owner,
+                repo=repo,
+                pr_number=submission.pr_number,
+                token=teacher_pat,
+            )
+            # Collaboration signals — best-effort; failures return [] / "".
+            commit_messages = github_fetcher.fetch_pr_commit_messages(
+                owner=owner,
+                repo=repo,
+                pr_number=submission.pr_number,
+                token=teacher_pat,
+            )
+            pr_body_text = github_fetcher.fetch_pr_body(
                 owner=owner,
                 repo=repo,
                 pr_number=submission.pr_number,
@@ -786,6 +801,9 @@ class GradingSessionViewSet(
             tier="premium",
             docent_id=request.user.id,
             llm_config=llm_config,
+            commit_messages=commit_messages,
+            pr_title=submission.pr_title or "",
+            pr_body=pr_body_text,
         )
 
         try:

@@ -90,6 +90,12 @@ class GraderInput:
     # When present, the AI engine uses these instead of its own env vars.
     # Shape: {"provider": str, "api_key": str, "model": str | None}
     llm_config: dict | None = None
+    # Collaboration signals (v1.1) — feed commit messages + PR title/body
+    # to the LLM so the Samenwerking criterion is scored on real evidence
+    # instead of "geen commit messages zichtbaar".
+    commit_messages: list = field(default_factory=list)
+    pr_title: str | None = None
+    pr_body: str | None = None
 
 
 @dataclass
@@ -142,6 +148,9 @@ def generate_draft(*, org_id: int, grading_session_id: int, input_: GraderInput)
         "context": input_.context,
         "tier": input_.tier,
         "docent_id": input_.docent_id,
+        "commit_messages": list(input_.commit_messages or []),
+        "pr_title": input_.pr_title or "",
+        "pr_body": input_.pr_body or "",
     }
 
     # Forward per-org LLM credentials when present so the AI engine uses the
