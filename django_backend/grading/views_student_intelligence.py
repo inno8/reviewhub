@@ -392,9 +392,14 @@ class StudentSnapshotView(APIView):
             })
 
         # ── Recent activity ──────────────────────────────────────────────
+        # `for_user(request.user)` is belt-and-braces: visibility is already
+        # enforced via _get_student_or_404 above, but if a future regression
+        # in can_view_student widened the surface, the OrgScopedManager
+        # wouldn't leak cross-org session counts here.
         thirty_days_ago = now - timedelta(days=30)
         prs_last_30d = (
             GradingSession.objects
+            .for_user(request.user)
             .filter(
                 submission__student=student,
                 created_at__gte=thirty_days_ago,
@@ -563,6 +568,11 @@ class StudentTrajectoryView(APIView):
         }
 
         # ── Per-skill series (granularity=skill) ─────────────────────────
+        # Lift criterion_meta out of the per-branch path: when skill-grained
+        # AND cohort-mean overlay is requested, this used to run twice (once
+        # here, once in the cohort_mean branch). Each call walks every Course
+        # rubric in the cohort — small but unnecessary.
+        criterion_meta: dict[str, dict] | None = None
         if granularity == "skill":
             criterion_meta = _build_criterion_meta_for_student(student)
             skill_series = []
@@ -627,7 +637,8 @@ class StudentTrajectoryView(APIView):
                             bucket = agg[slug][wk]
                             bucket["scores"].append(float(o["weighted_score"]))
                             bucket["users"].add(o["user_id"])
-                        criterion_meta = _build_criterion_meta_for_student(student)
+                        if criterion_meta is None:
+                            criterion_meta = _build_criterion_meta_for_student(student)
                         for slug in CREBO_SKILL_SLUGS:
                             meta = criterion_meta.get(slug, {})
                             points = []

@@ -40,7 +40,7 @@ reviewhub/
 | `Course`           | `grading/models.py`      | A vak (subject) inside a cohort. One teacher, one rubric.                 |
 | `CohortMembership` | `grading/models.py`      | Student ↔ cohort link. One cohort per student (OneToOne).                 |
 | `Submission`       | `grading/models.py`      | One PR = one row.                                                         |
-| `GradingSession`   | `grading/models.py`      | The AI-draft + docent-review state machine (OneToOne with Submission).   |
+| `GradingSession`   | `grading/models.py`      | The AI-draft + docent-review state machine (FK to Submission; one per iteration). |
 | `Rubric`           | `grading/models.py`      | Criteria + level definitions + docent voice calibration.                  |
 | `SkillMetric`      | `skills/models.py`       | Bayesian per-skill score. Starts at 50 (uncertain), not 100 (optimistic). |
 | `LearningProof`    | `skills/models.py`       | Fix & Learn → behavioral proof state (PROVEN / RELAPSED / REINFORCED).    |

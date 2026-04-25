@@ -63,7 +63,7 @@ with a different teacher and rubric.
 **Key invariants**
 - `CohortMembership.student` is a `OneToOneField` — a student is in exactly one cohort.
 - `Submission` is the PR-level grouping; a PR with N commits = 1 Submission with N Evaluations.
-- `GradingSession` is `OneToOne` with `Submission` — the PR (not the commit) is what gets graded.
+- `GradingSession` is a `ForeignKey` to `Submission` — one session per iteration. The PR (not the commit) is what gets graded; teacher regrades after a student push spawn a new session linked back via `superseded_by`.
 - `Course.owner` must have `role=teacher` (or admin). `Course.secondary_docent` is optional.
 
 ### Auxiliary models

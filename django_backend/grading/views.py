@@ -734,25 +734,47 @@ class GradingSessionViewSet(
         try:
             owner, repo = submission.repo_full_name.split("/", 1)
             teacher_pat = getattr(request.user, "github_personal_access_token", None)
-            combined_diff = github_fetcher.fetch_pr_diff(
-                owner=owner,
-                repo=repo,
-                pr_number=submission.pr_number,
-                token=teacher_pat,
-            )
-            # Collaboration signals — best-effort; failures return [] / "".
-            commit_messages = github_fetcher.fetch_pr_commit_messages(
-                owner=owner,
-                repo=repo,
-                pr_number=submission.pr_number,
-                token=teacher_pat,
-            )
-            pr_body_text = github_fetcher.fetch_pr_body(
-                owner=owner,
-                repo=repo,
-                pr_number=submission.pr_number,
-                token=teacher_pat,
-            )
+
+            # Three sequential GET /pulls/{n}/... round-trips were eating
+            # ~600-900ms before the LLM even started. They're independent
+            # (different endpoints / different Accept headers), so we fan
+            # them out across a small thread pool and join. requests is
+            # thread-safe per-Session and we don't share Sessions here.
+            #
+            # Hard failures on the diff fetch (PRClosedError / auth / 5xx)
+            # must still propagate so the caller's except blocks below can
+            # set FAILED state. The other two are best-effort by contract
+            # (commit_messages / pr_body return []/"" on internal failures).
+            from concurrent.futures import ThreadPoolExecutor
+
+            with ThreadPoolExecutor(max_workers=3, thread_name_prefix="gh-fetch") as pool:
+                fut_diff = pool.submit(
+                    github_fetcher.fetch_pr_diff,
+                    owner=owner,
+                    repo=repo,
+                    pr_number=submission.pr_number,
+                    token=teacher_pat,
+                )
+                fut_msgs = pool.submit(
+                    github_fetcher.fetch_pr_commit_messages,
+                    owner=owner,
+                    repo=repo,
+                    pr_number=submission.pr_number,
+                    token=teacher_pat,
+                )
+                fut_body = pool.submit(
+                    github_fetcher.fetch_pr_body,
+                    owner=owner,
+                    repo=repo,
+                    pr_number=submission.pr_number,
+                    token=teacher_pat,
+                )
+                # .result() re-raises the first exception from the diff
+                # call. The other two never raise (they return []/"" on
+                # failure), so they're safe to .result() unconditionally.
+                combined_diff = fut_diff.result()
+                commit_messages = fut_msgs.result()
+                pr_body_text = fut_body.result()
         except PRClosedError as e:
             with transaction.atomic():
                 s = GradingSession.objects.select_for_update().get(pk=session.id)
@@ -1171,9 +1193,60 @@ class GradingSessionViewSet(
         )
 
         teacher_pat = getattr(request.user, "github_personal_access_token", None)
+
+        # Reconciliation helper: counts actual PostedComment rows vs expected
+        # comments-to-post. Used to detect "false PARTIAL" — every inline
+        # comment is already on GitHub from a prior attempt and only the
+        # summary keeps failing. Without this, a teacher clicking Resume
+        # repeatedly stays stuck in PARTIAL with posted_so_far=0 forever
+        # because dupe-skips return [] from posted_ids.
+        from .models import PostedComment
+
+        def _all_inline_already_posted() -> tuple[bool, int, int]:
+            posted = PostedComment.objects.filter(grading_session=session).count()
+            expected_list = session.final_comments or session.ai_draft_comments or []
+            expected = len([
+                c for c in expected_list
+                if (c.get("file") or c.get("path"))
+                and int(c.get("line") or 0) > 0
+                and (c.get("body") or "").strip()
+            ])
+            return (posted >= expected and expected > 0, posted, expected)
+
         try:
             result = github_poster.resume_partial(session, teacher_pat=teacher_pat)
         except PartialPostError as e:
+            # If all inline comments were already on GitHub on a prior
+            # attempt and only the summary kept failing, this PartialPostError
+            # arrives with posted_ids=[] (every inline was dupe-skipped) and
+            # failed_at past the inline list. Recover to POSTED with a
+            # warning rather than leaving the teacher stuck.
+            inline_done, posted_count, expected = _all_inline_already_posted()
+            comments_to_post = session.final_comments or session.ai_draft_comments or []
+            summary_step = e.failed_at >= len(comments_to_post)
+            if inline_done and summary_step:
+                with transaction.atomic():
+                    s = GradingSession.objects.select_for_update().get(pk=session.id)
+                    s.state = GradingSession.State.POSTED
+                    s.posted_at = timezone.now()
+                    s.partial_post_error = {
+                        "error_class": type(e.inner).__name__,
+                        "message": (
+                            f"All {expected} inline comments posted; summary "
+                            f"step failed: {str(e.inner)[:300]}"
+                        ),
+                        "recovered": True,
+                    }
+                    s.save(update_fields=["state", "posted_at", "partial_post_error", "updated_at"])
+                return Response(
+                    {
+                        "state": s.state,
+                        "posted_count": posted_count,
+                        "skipped_duplicate_count": posted_count,
+                        "warning": "Inline comments already on PR; summary step failed but recovered.",
+                    },
+                    status=status.HTTP_200_OK,
+                )
             with transaction.atomic():
                 s = GradingSession.objects.select_for_update().get(pk=session.id)
                 s.state = GradingSession.State.PARTIAL
@@ -1182,13 +1255,19 @@ class GradingSessionViewSet(
                     "message": str(e.inner)[:500],
                     "failed_at_comment_idx": e.failed_at,
                     "posted_ids_so_far": e.posted_ids,
+                    # `posted_total` is the truth from the ledger (includes
+                    # comments posted in earlier attempts that this resume
+                    # dupe-skipped). Surfacing it stops the UI from showing
+                    # "0 posted" when in reality N are on the PR.
+                    "posted_total": posted_count,
+                    "expected_total": expected,
                 }
                 s.save(update_fields=["state", "partial_post_error", "updated_at"])
             return Response(
                 {
                     "error": "partial_post",
                     "state": s.state,
-                    "posted_so_far": len(e.posted_ids),
+                    "posted_so_far": posted_count,
                 },
                 status=status.HTTP_207_MULTI_STATUS,
             )
@@ -1204,6 +1283,49 @@ class GradingSessionViewSet(
             return Response(
                 {"error": type(e).__name__, "message": str(e)},
                 status=status.HTTP_502_BAD_GATEWAY,
+            )
+        except Exception as e:
+            # Mirror send()'s defensive catch-all. Without this, an unexpected
+            # exception during resume_partial would leave the session stuck
+            # in SENDING forever — no state flip, no error recorded. Same
+            # ledger-based reconciliation as send().
+            log.exception("resume: unexpected exception session=%s", session.id)
+            inline_done, posted_count, expected = _all_inline_already_posted()
+            with transaction.atomic():
+                s = GradingSession.objects.select_for_update().get(pk=session.id)
+                if inline_done:
+                    s.state = GradingSession.State.POSTED
+                    s.posted_at = timezone.now()
+                    s.partial_post_error = {
+                        "error_class": type(e).__name__,
+                        "message": f"Comments posted; summary step raised: {str(e)[:300]}",
+                        "recovered": True,
+                    }
+                    s.save(update_fields=["state", "posted_at", "partial_post_error", "updated_at"])
+                    return Response(
+                        {
+                            "state": s.state,
+                            "posted_count": posted_count,
+                            "skipped_duplicate_count": posted_count,
+                            "warning": "Summary step failed after all inline comments posted — recovered.",
+                        },
+                        status=status.HTTP_200_OK,
+                    )
+                s.state = GradingSession.State.PARTIAL
+                s.partial_post_error = {
+                    "error_class": type(e).__name__,
+                    "message": str(e)[:500],
+                    "posted_so_far": posted_count,
+                }
+                s.save(update_fields=["state", "partial_post_error", "updated_at"])
+            return Response(
+                {
+                    "error": "partial_post",
+                    "state": s.state,
+                    "posted_so_far": posted_count,
+                    "message": "Unexpected error during resume; click Resume to retry.",
+                },
+                status=status.HTTP_207_MULTI_STATUS,
             )
 
         with transaction.atomic():

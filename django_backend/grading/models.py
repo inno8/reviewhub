@@ -16,7 +16,7 @@ Model relationships (ASCII):
 
     Course ──< Submission ──< Evaluation       (evaluation is per-commit, existing model)
                   │
-                  └──> GradingSession (OneToOne w/ Submission; holds AI draft + docent review state)
+                  └──< GradingSession (FK Submission; one per iteration. Latest = the live one.)
 
     GradingSession ──< PostedComment         (idempotency ledger for GitHub comment posts)
 
@@ -26,7 +26,10 @@ Model relationships (ASCII):
 
 Notes:
   - Submission is the PR-level grouping. A PR with N commits = 1 Submission with N Evaluations.
-  - GradingSession is OneToOne with Submission (the PR is what gets graded, not the commit).
+  - GradingSession is a ForeignKey to Submission. One Submission has many
+    GradingSessions, one per iteration. The latest non-superseded session is
+    the active one. (Was OneToOne pre-multi-iteration; superseded_by +
+    iteration_number track the chain.)
   - PostedComment is the per-comment idempotency record (client_mutation_id hash).
   - All user-scoped models FK to Organization for OrgScopedManager.
 """
@@ -355,7 +358,9 @@ class Submission(models.Model):
     A PR-level grouping. One PR from one student in one class = one Submission.
     A Submission has many Evaluations (one per commit pushed to the PR).
 
-    The GradingSession is OneToOne with Submission (the PR is what gets graded).
+    A Submission has many GradingSessions — one per iteration (teacher
+    regrades after the student pushes new commits post-POSTED). The "live"
+    session is the latest one with `superseded_by IS NULL`.
     """
 
     class Status(models.TextChoices):

@@ -31,9 +31,10 @@ times you've run it before.
 
 Usage
 -----
-    python manage.py recompute_skill_metrics_from_observations                    # all users
-    python manage.py recompute_skill_metrics_from_observations --user tester@x.io # one user
-    python manage.py recompute_skill_metrics_from_observations --dry-run          # preview
+    python manage.py recompute_skill_metrics_from_observations --dry-run          # preview (always safe)
+    python manage.py recompute_skill_metrics_from_observations                    # all users (SQLite/dev only)
+    python manage.py recompute_skill_metrics_from_observations --user tester@x.io # one user (SQLite/dev only)
+    python manage.py recompute_skill_metrics_from_observations --allow-prod       # required on non-SQLite DBs
 """
 from __future__ import annotations
 
@@ -60,13 +61,43 @@ class Command(BaseCommand):
             action="store_true",
             help="Print the plan without writing to the DB.",
         )
+        parser.add_argument(
+            "--allow-prod",
+            action="store_true",
+            help=(
+                "Required to run on a production-flavoured DATABASE_URL. The "
+                "command resets every targeted SkillMetric to the 50.0 prior "
+                "before replaying observations — accidentally pointing it at "
+                "prod has wiped trust scores in the past. No-op on dev/SQLite."
+            ),
+        )
 
     def handle(self, *args, **opts):
+        from django.conf import settings
         from django.contrib.auth import get_user_model
         from skills.models import SkillObservation
 
         User = get_user_model()
         dry = opts["dry_run"]
+
+        # ── Production safety gate ──
+        # Heuristic: if the default DB engine isn't SQLite *and* the user
+        # didn't pass --allow-prod, refuse. The command resets bayesian_score
+        # to 50.0 for every targeted (user, project, skill) tuple before
+        # replaying — running it against prod without intent loses real data
+        # for the duration of the replay (and forever if observations are
+        # missing). --dry-run bypasses the gate (no writes happen).
+        if not dry and not opts.get("allow_prod"):
+            engine = settings.DATABASES.get("default", {}).get("engine", "")
+            looks_like_prod = "sqlite" not in engine.lower()
+            if looks_like_prod:
+                self.stderr.write(self.style.ERROR(
+                    "Refusing to run on a non-SQLite database without "
+                    "--allow-prod. This command resets SkillMetric rows "
+                    "before replaying. Pass --allow-prod if you really mean "
+                    "it, or --dry-run to preview the plan."
+                ))
+                return
 
         # ── target users ──
         if opts.get("user"):
