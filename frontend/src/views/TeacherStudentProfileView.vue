@@ -36,6 +36,7 @@ import { api } from '@/composables/useApi';
 import AppShell from '@/components/layout/AppShell.vue';
 import StudentHeaderChip from '@/components/grading/StudentHeaderChip.vue';
 import PRCard from '@/components/grading/PRCard.vue';
+import SkillRadarChart from '@/components/charts/SkillRadarChart.vue';
 
 ChartJS.register(CategoryScale, LinearScale, PointElement, LineElement, Tooltip, Legend, Filler);
 
@@ -369,6 +370,19 @@ function formatDelta(delta: number): string {
 const totalObservations = computed(() =>
   (snapshot.value?.per_skill || []).reduce((s, r) => s + (r.observation_count || 0), 0),
 );
+
+// ── Radar (visual sterke/zwakke plekken) ───────────────────────────────
+// SkillRadarChart wants { category, score } where score is 0-100. The
+// snapshot's skill_radar already speaks 0-100 per category, so we pass
+// it through. Hidden when there are fewer than 3 categories — a radar
+// with only 1-2 spokes degenerates into a line and is misleading.
+const radarPoints = computed(() =>
+  (snapshot.value?.skill_radar || []).map(r => ({
+    category: r.category,
+    score: r.score,
+  })),
+);
+const showRadar = computed(() => radarPoints.value.length >= 3);
 const prsLast30d = computed(() =>
   snapshot.value?.recent_activity?.prs_last_30d ?? 0,
 );
@@ -777,6 +791,18 @@ const anyLoading = computed(
             </template>
           </section>
         </div>
+
+        <!-- 2.5 Sterke/zwakke plekken (radar) -->
+        <section
+          v-if="showRadar"
+          data-testid="skill-radar-section"
+          class="flex flex-col gap-2"
+        >
+          <p class="text-xs text-on-surface-variant m-0 px-1">
+            Visuele samenvatting per categorie. Verder van het midden = sterker.
+          </p>
+          <SkillRadarChart :data="radarPoints" title="Sterke en zwakke plekken" />
+        </section>
 
         <!-- 3. Per criterium -->
         <section

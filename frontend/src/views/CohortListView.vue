@@ -7,10 +7,20 @@
  *
  * Workstream E1 of Nakijken Copilot v1 Scope B1.
  */
-import { ref, onMounted } from 'vue';
+import { ref, computed, onMounted } from 'vue';
 import { useRouter } from 'vue-router';
+import { storeToRefs } from 'pinia';
 import { api } from '@/composables/useApi';
+import { useAuthStore } from '@/stores/auth';
 import AppShell from '@/components/layout/AppShell.vue';
+
+// Cohort write actions (create / archive) are admin-only on the backend
+// (CohortViewSet.get_permissions returns IsOrgAdmin for these). The shared
+// `isAdmin` computed includes teachers — we want strict school-admin or
+// platform superuser here, so derive a tighter check.
+const auth = useAuthStore();
+const { isSchoolAdmin, isSuperuser } = storeToRefs(auth);
+const canWriteCohorts = computed(() => isSchoolAdmin.value || isSuperuser.value);
 
 interface Cohort {
   id: number;
@@ -110,6 +120,7 @@ onMounted(load);
               Include archived
             </label>
             <button
+              v-if="canWriteCohorts"
               @click="showCreate = true"
               class="primary-gradient text-on-primary px-5 py-2.5 rounded-lg font-bold flex items-center gap-2 shadow-lg shadow-primary/10 hover:shadow-primary/20 transition-all active:scale-95"
               data-testid="new-cohort-btn"
@@ -170,7 +181,7 @@ onMounted(load);
               </span>
             </div>
             <div
-              v-if="!c.archived_at"
+              v-if="!c.archived_at && canWriteCohorts"
               class="flex gap-2 border-t border-outline-variant/10 pt-3 mt-2"
             >
               <button
@@ -188,7 +199,7 @@ onMounted(load);
 
     <!-- Create modal -->
     <div
-      v-if="showCreate"
+      v-if="showCreate && canWriteCohorts"
       class="fixed inset-0 z-[100] flex items-center justify-center p-6 bg-background/80 backdrop-blur-sm"
       @click.self="showCreate = false"
     >
