@@ -88,7 +88,7 @@ class Command(BaseCommand):
         # for the duration of the replay (and forever if observations are
         # missing). --dry-run bypasses the gate (no writes happen).
         if not dry and not opts.get("allow_prod"):
-            engine = settings.DATABASES.get("default", {}).get("engine", "")
+            engine = settings.DATABASES.get("default", {}).get("ENGINE", "")
             looks_like_prod = "sqlite" not in engine.lower()
             if looks_like_prod:
                 self.stderr.write(self.style.ERROR(
