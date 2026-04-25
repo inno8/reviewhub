@@ -543,10 +543,31 @@ class GradingSession(models.Model):
     sending_started_at = models.DateTimeField(null=True, blank=True)
     posted_at = models.DateTimeField(null=True, blank=True)
 
-    # Partial-post recovery (eng-review concurrency bundle)
+    # Recovery / failure context (eng-review concurrency bundle).
+    # Despite the name, this field is now populated for any state-failure
+    # path, not just partial posts. Shape:
+    #   {
+    #     "stage": "drafting" | "sending",
+    #     "error_class": "<exception class name>",
+    #     "message": "<truncated message, <=500 chars>",
+    #     # sending-only:
+    #     "failed_at_comment_idx": int,         # PartialPostError mid-loop
+    #     "posted_ids_so_far": [int, ...],      # PartialPostError mid-loop
+    #     "posted_total": int,                  # PARTIAL: from ledger
+    #     "expected_total": int,                # PARTIAL: from ledger
+    #     "recovered": bool,                    # POSTED via summary-only-fail recovery
+    #     "unexpected": bool,                   # drafting catch-all
+    #     "reason": "pr_closed_by_student"|"pr_merged",  # DISCARDED
+    #   }
+    # Field name kept as `partial_post_error` to avoid a rename migration
+    # mid-pitch; treat it as the canonical "what went wrong last" record.
     partial_post_error = models.JSONField(
         null=True, blank=True,
-        help_text='{"error_class", "message", "failed_at_comment_idx"} when state=partial',
+        help_text=(
+            '{"stage", "error_class", "message", ...} populated on every '
+            'FAILED, PARTIAL, and DISCARDED transition. See model source '
+            'for the full shape.'
+        ),
     )
 
     created_at = models.DateTimeField(auto_now_add=True)

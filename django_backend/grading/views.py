@@ -818,7 +818,12 @@ class GradingSessionViewSet(
             with transaction.atomic():
                 s = GradingSession.objects.select_for_update().get(pk=session.id)
                 s.state = GradingSession.State.FAILED
-                s.save(update_fields=["state", "updated_at"])
+                s.partial_post_error = {
+                    "stage": "drafting",
+                    "error_class": "PRClosedError",
+                    "message": str(e)[:500],
+                }
+                s.save(update_fields=["state", "partial_post_error", "updated_at"])
             return Response(
                 {"error": "pr_closed", "message": str(e)},
                 status=status.HTTP_409_CONFLICT,
@@ -885,7 +890,12 @@ class GradingSessionViewSet(
             with transaction.atomic():
                 s = GradingSession.objects.select_for_update().get(pk=session.id)
                 s.state = GradingSession.State.FAILED
-                s.save(update_fields=["state", "updated_at"])
+                s.partial_post_error = {
+                    "stage": "drafting",
+                    "error_class": "EmptyDiffError",
+                    "message": "Submission has no code to grade (empty diff).",
+                }
+                s.save(update_fields=["state", "partial_post_error", "updated_at"])
             return Response(
                 {"error": "empty_diff", "message": "Submission has no code to grade"},
                 status=status.HTTP_400_BAD_REQUEST,
@@ -894,7 +904,12 @@ class GradingSessionViewSet(
             with transaction.atomic():
                 s = GradingSession.objects.select_for_update().get(pk=session.id)
                 s.state = GradingSession.State.FAILED
-                s.save(update_fields=["state", "updated_at"])
+                s.partial_post_error = {
+                    "stage": "drafting",
+                    "error_class": "LLMCeilingExceeded",
+                    "message": str(e)[:500] or "Daily LLM budget reached.",
+                }
+                s.save(update_fields=["state", "partial_post_error", "updated_at"])
             log.warning("generate_draft: ceiling exceeded for session=%s: %s", session.id, e)
             return Response(
                 {"error": "ceiling_exceeded", "message": "Daily budget reached, try again tomorrow"},
@@ -904,11 +919,38 @@ class GradingSessionViewSet(
             with transaction.atomic():
                 s = GradingSession.objects.select_for_update().get(pk=session.id)
                 s.state = GradingSession.State.FAILED
-                s.save(update_fields=["state", "updated_at"])
+                s.partial_post_error = {
+                    "stage": "drafting",
+                    "error_class": type(e).__name__,
+                    "message": str(e)[:500],
+                }
+                s.save(update_fields=["state", "partial_post_error", "updated_at"])
             log.warning("generate_draft failed session=%s: %s", session.id, e)
             return Response(
                 {"error": "llm_failed", "message": str(e)},
                 status=status.HTTP_502_BAD_GATEWAY,
+            )
+        except Exception as e:
+            # Defensive catch-all: without this, an unexpected exception during
+            # rubric_grader.generate_draft (network blip mid-stream, JSON parse
+            # error from a degraded model, etc.) would leave the session stuck
+            # in DRAFTING forever. Mirror the send()/resume() pattern: flip to
+            # FAILED with the error class so the teacher sees something
+            # actionable instead of a spinner that never resolves.
+            log.exception("generate_draft: unexpected exception session=%s", session.id)
+            with transaction.atomic():
+                s = GradingSession.objects.select_for_update().get(pk=session.id)
+                s.state = GradingSession.State.FAILED
+                s.partial_post_error = {
+                    "stage": "drafting",
+                    "error_class": type(e).__name__,
+                    "message": str(e)[:500] or repr(e)[:500],
+                    "unexpected": True,
+                }
+                s.save(update_fields=["state", "partial_post_error", "updated_at"])
+            return Response(
+                {"error": "draft_failed", "message": str(e) or type(e).__name__},
+                status=status.HTTP_500_INTERNAL_SERVER_ERROR,
             )
 
         # Persist the draft.
@@ -1026,6 +1068,7 @@ class GradingSessionViewSet(
                 s = GradingSession.objects.select_for_update().get(pk=session.id)
                 s.state = GradingSession.State.PARTIAL
                 s.partial_post_error = {
+                    "stage": "sending",
                     "error_class": type(e.inner).__name__,
                     "message": str(e.inner)[:500],
                     "failed_at_comment_idx": e.failed_at,
@@ -1046,7 +1089,11 @@ class GradingSessionViewSet(
             with transaction.atomic():
                 s = GradingSession.objects.select_for_update().get(pk=session.id)
                 s.state = GradingSession.State.FAILED
-                s.partial_post_error = {"error_class": "PRClosedError", "message": str(e)}
+                s.partial_post_error = {
+                    "stage": "sending",
+                    "error_class": "PRClosedError",
+                    "message": str(e)[:500],
+                }
                 s.save(update_fields=["state", "partial_post_error", "updated_at"])
             return Response(
                 {"error": "pr_closed", "message": str(e)},
@@ -1056,7 +1103,11 @@ class GradingSessionViewSet(
             with transaction.atomic():
                 s = GradingSession.objects.select_for_update().get(pk=session.id)
                 s.state = GradingSession.State.DRAFTED
-                s.partial_post_error = {"error_class": "GitHubAuthExpired", "message": str(e)}
+                s.partial_post_error = {
+                    "stage": "sending",
+                    "error_class": "GitHubAuthExpired",
+                    "message": str(e)[:500],
+                }
                 s.save(update_fields=["state", "partial_post_error", "updated_at"])
             return Response(
                 {"error": "github_auth", "message": "Re-authorize GitHub in Settings"},
@@ -1066,7 +1117,11 @@ class GradingSessionViewSet(
             with transaction.atomic():
                 s = GradingSession.objects.select_for_update().get(pk=session.id)
                 s.state = GradingSession.State.FAILED
-                s.partial_post_error = {"error_class": "GitHubError", "message": str(e)}
+                s.partial_post_error = {
+                    "stage": "sending",
+                    "error_class": "GitHubError",
+                    "message": str(e)[:500],
+                }
                 s.save(update_fields=["state", "partial_post_error", "updated_at"])
             return Response(
                 {"error": "github_failed", "message": str(e)},
@@ -1093,6 +1148,7 @@ class GradingSessionViewSet(
                     s.state = GradingSession.State.POSTED
                     s.posted_at = timezone.now()
                     s.partial_post_error = {
+                        "stage": "sending",
                         "error_class": type(e).__name__,
                         "message": f"Comments posted successfully; summary step raised: {str(e)[:300]}",
                         "recovered": True,
@@ -1114,6 +1170,7 @@ class GradingSessionViewSet(
                     )
                 s.state = GradingSession.State.PARTIAL
                 s.partial_post_error = {
+                    "stage": "sending",
                     "error_class": type(e).__name__,
                     "message": str(e)[:500],
                     "posted_so_far": posted_count,
@@ -1277,6 +1334,7 @@ class GradingSessionViewSet(
                     s.state = GradingSession.State.POSTED
                     s.posted_at = timezone.now()
                     s.partial_post_error = {
+                        "stage": "sending",
                         "error_class": type(e.inner).__name__,
                         "message": (
                             f"All {expected} inline comments posted; summary "
@@ -1302,6 +1360,7 @@ class GradingSessionViewSet(
                 s = GradingSession.objects.select_for_update().get(pk=session.id)
                 s.state = GradingSession.State.PARTIAL
                 s.partial_post_error = {
+                    "stage": "sending",
                     "error_class": type(e.inner).__name__,
                     "message": str(e.inner)[:500],
                     "failed_at_comment_idx": e.failed_at,
@@ -1327,8 +1386,9 @@ class GradingSessionViewSet(
                 s = GradingSession.objects.select_for_update().get(pk=session.id)
                 s.state = GradingSession.State.FAILED
                 s.partial_post_error = {
+                    "stage": "sending",
                     "error_class": type(e).__name__,
-                    "message": str(e),
+                    "message": str(e)[:500],
                 }
                 s.save(update_fields=["state", "partial_post_error", "updated_at"])
             return Response(
@@ -1348,6 +1408,7 @@ class GradingSessionViewSet(
                     s.state = GradingSession.State.POSTED
                     s.posted_at = timezone.now()
                     s.partial_post_error = {
+                        "stage": "sending",
                         "error_class": type(e).__name__,
                         "message": f"Comments posted; summary step raised: {str(e)[:300]}",
                         "recovered": True,
@@ -1368,6 +1429,7 @@ class GradingSessionViewSet(
                     )
                 s.state = GradingSession.State.PARTIAL
                 s.partial_post_error = {
+                    "stage": "sending",
                     "error_class": type(e).__name__,
                     "message": str(e)[:500],
                     "posted_so_far": posted_count,
