@@ -602,6 +602,45 @@ class SubmissionViewSet(
 # ─────────────────────────────────────────────────────────────────────────────
 # GradingSession — the grading inbox
 # ─────────────────────────────────────────────────────────────────────────────
+def _snapshot_final_from_ai_draft_if_empty(session: "GradingSession") -> list[str]:
+    """
+    Mirror ai_draft_* into final_* when the teacher accepted the draft as-is.
+
+    `github_poster.post_all_or_nothing` posts from `final_comments or
+    ai_draft_comments` (and same for scores). When the teacher made no edits,
+    final_* stays empty in the DB even after a successful POSTED transition,
+    which means:
+      - Reopening the session shows a blank summary editor (the comments and
+        scores still render via frontend fallbacks, but the data layer is
+        misleading).
+      - We cannot distinguish "teacher accepted as-is" from "no review yet"
+        purely from the row.
+      - The v1.1 "AI learns from teacher edits" loop has no diff to learn
+        from.
+
+    Convention: any session in POSTED has final_* = canonical "what landed on
+    GitHub." This helper is idempotent — only fills empties, never overwrites
+    teacher edits. Returns the list of fields it touched so the caller can
+    extend its `update_fields=[...]` list.
+    """
+    touched: list[str] = []
+    if not session.final_comments and session.ai_draft_comments:
+        # Defensive copy — JSONField stores list-of-dicts; we don't want a
+        # shared reference between final_* and ai_draft_* in case a later
+        # path mutates one of them.
+        import copy
+        session.final_comments = copy.deepcopy(session.ai_draft_comments)
+        touched.append("final_comments")
+    if not session.final_scores and session.ai_draft_scores:
+        import copy
+        session.final_scores = copy.deepcopy(session.ai_draft_scores)
+        touched.append("final_scores")
+    # final_summary has no AI counterpart (the rubric grader produces scores
+    # + per-comment evidence; the free-text summary is a teacher-only field).
+    # Leaving it empty is correct when the teacher didn't write one.
+    return touched
+
+
 class GradingSessionViewSet(
     mixins.ListModelMixin,
     mixins.RetrieveModelMixin,
@@ -1058,7 +1097,11 @@ class GradingSessionViewSet(
                         "message": f"Comments posted successfully; summary step raised: {str(e)[:300]}",
                         "recovered": True,
                     }
-                    s.save(update_fields=["state", "posted_at", "partial_post_error", "updated_at"])
+                    mirrored = _snapshot_final_from_ai_draft_if_empty(s)
+                    s.save(update_fields=[
+                        "state", "posted_at", "partial_post_error", "updated_at",
+                        *mirrored,
+                    ])
                     return Response(
                         {
                             "state": s.state,
@@ -1092,7 +1135,11 @@ class GradingSessionViewSet(
             s.state = GradingSession.State.POSTED
             s.posted_at = timezone.now()
             s.partial_post_error = None
-            s.save(update_fields=["state", "posted_at", "partial_post_error", "updated_at"])
+            mirrored = _snapshot_final_from_ai_draft_if_empty(s)
+            s.save(update_fields=[
+                "state", "posted_at", "partial_post_error", "updated_at",
+                *mirrored,
+            ])
 
         return Response(
             {
@@ -1237,7 +1284,11 @@ class GradingSessionViewSet(
                         ),
                         "recovered": True,
                     }
-                    s.save(update_fields=["state", "posted_at", "partial_post_error", "updated_at"])
+                    mirrored = _snapshot_final_from_ai_draft_if_empty(s)
+                    s.save(update_fields=[
+                        "state", "posted_at", "partial_post_error", "updated_at",
+                        *mirrored,
+                    ])
                 return Response(
                     {
                         "state": s.state,
@@ -1301,7 +1352,11 @@ class GradingSessionViewSet(
                         "message": f"Comments posted; summary step raised: {str(e)[:300]}",
                         "recovered": True,
                     }
-                    s.save(update_fields=["state", "posted_at", "partial_post_error", "updated_at"])
+                    mirrored = _snapshot_final_from_ai_draft_if_empty(s)
+                    s.save(update_fields=[
+                        "state", "posted_at", "partial_post_error", "updated_at",
+                        *mirrored,
+                    ])
                     return Response(
                         {
                             "state": s.state,
@@ -1333,7 +1388,11 @@ class GradingSessionViewSet(
             s.state = GradingSession.State.POSTED
             s.posted_at = timezone.now()
             s.partial_post_error = None
-            s.save(update_fields=["state", "posted_at", "partial_post_error", "updated_at"])
+            mirrored = _snapshot_final_from_ai_draft_if_empty(s)
+            s.save(update_fields=[
+                "state", "posted_at", "partial_post_error", "updated_at",
+                *mirrored,
+            ])
 
         return Response(
             {
