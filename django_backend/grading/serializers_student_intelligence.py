@@ -32,6 +32,10 @@ class SkillRadarItemSerializer(serializers.Serializer):
     category = serializers.CharField()
     score = serializers.FloatField()
     confidence = serializers.FloatField()
+    # True when avg confidence < CONFIDENCE_PRELIMINARY (0.15). Frontend
+    # uses this to render the spoke dotted/faded so a teacher doesn't
+    # over-trust early scores from <2-3 observations.
+    is_preliminary = serializers.BooleanField()
     level_label = serializers.CharField(allow_null=True)
     trend = serializers.CharField()  # up / down / stable
 

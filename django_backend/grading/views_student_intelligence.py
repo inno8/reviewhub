@@ -254,10 +254,19 @@ class StudentSnapshotView(APIView):
                     trend_counts[t] += 1
                 trend = max(trend_counts, key=trend_counts.get) if trend_counts else "stable"
 
+            # Honest UX: when avg confidence is below the preliminary
+            # threshold, the score is "directionally true at best." The
+            # frontend de-emphasizes those spokes (dotted line, faded fill)
+            # so a teacher doesn't see "95 in Design Patterns" on zero
+            # observations and over-trust the chart.
+            from skills.models import CONFIDENCE_PRELIMINARY
+            is_preliminary = avg_conf < CONFIDENCE_PRELIMINARY
+
             radar.append({
                 "category": cat,
                 "score": avg_score,
                 "confidence": avg_conf,
+                "is_preliminary": is_preliminary,
                 "level_label": level,
                 "trend": trend,
             })

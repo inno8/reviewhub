@@ -45,6 +45,7 @@ from .models import (
     Rubric,
     Submission,
 )
+from .pagination import GradingPagination
 from .permissions import (
     IsCohortVisible,
     IsCourseOwnerOrAdmin,
@@ -654,6 +655,10 @@ class GradingSessionViewSet(
     """
 
     permission_classes = [IsAuthenticated, IsTeacher]
+    # Inbox-specific pagination: honors ?page_size=N (clamped to 100).
+    # DRF default ignores the query param, forcing 20-row pages even on
+    # mobile-narrow screens.
+    pagination_class = GradingPagination
 
     def get_serializer_class(self):
         if self.action == "list":

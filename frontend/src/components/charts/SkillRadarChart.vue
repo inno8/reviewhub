@@ -24,6 +24,11 @@ ChartJS.register(
 interface CategoryScore {
   category: string;
   score: number;
+  /** Backend flag: confidence < 0.15 (CONFIDENCE_PRELIMINARY). When all
+   * spokes are preliminary the whole shape is faded; per-spoke we
+   * dotted-outline the point to flag low-evidence categories. */
+  is_preliminary?: boolean;
+  confidence?: number;
   color?: string;
 }
 
@@ -37,24 +42,45 @@ const props = withDefaults(
   }
 );
 
-const chartData = computed(() => ({
-  labels: props.data.map(d => d.category),
-  datasets: [
-    {
-      label: 'Skill Score',
-      data: props.data.map(d => d.score),
-      backgroundColor: 'rgba(162, 201, 255, 0.2)',
-      borderColor: 'rgba(162, 201, 255, 1)',
-      borderWidth: 2,
-      pointBackgroundColor: 'rgba(162, 201, 255, 1)',
-      pointBorderColor: '#fff',
-      pointHoverBackgroundColor: '#fff',
-      pointHoverBorderColor: 'rgba(162, 201, 255, 1)',
-      pointRadius: 4,
-      pointHoverRadius: 6,
-    }
-  ]
-}));
+// Honesty pass: if every spoke is preliminary, fade the whole dataset
+// (light fill, dashed border) so a teacher reading it knows we're
+// guessing from too few observations. Per-spoke, paint preliminary
+// points with the muted ring instead of the bright primary color.
+const allPreliminary = computed(() =>
+  props.data.length > 0 && props.data.every(d => d.is_preliminary === true),
+);
+
+const chartData = computed(() => {
+  const PRIMARY = 'rgba(162, 201, 255, 1)';
+  const PRIMARY_FILL = 'rgba(162, 201, 255, 0.2)';
+  const MUTED = 'rgba(148, 163, 184, 0.7)';
+  const MUTED_FILL = 'rgba(148, 163, 184, 0.08)';
+  return {
+    labels: props.data.map(d => d.category),
+    datasets: [
+      {
+        label: 'Skill Score',
+        data: props.data.map(d => d.score),
+        backgroundColor: allPreliminary.value ? MUTED_FILL : PRIMARY_FILL,
+        borderColor: allPreliminary.value ? MUTED : PRIMARY,
+        borderWidth: 2,
+        borderDash: allPreliminary.value ? [4, 4] : [],
+        // Per-point colors so individual preliminary spokes stay
+        // visually distinguishable inside an otherwise confident chart.
+        pointBackgroundColor: props.data.map(d =>
+          d.is_preliminary ? MUTED : PRIMARY,
+        ),
+        pointBorderColor: props.data.map(d =>
+          d.is_preliminary ? 'rgba(148, 163, 184, 0.4)' : '#fff',
+        ),
+        pointHoverBackgroundColor: '#fff',
+        pointHoverBorderColor: PRIMARY,
+        pointRadius: 4,
+        pointHoverRadius: 6,
+      },
+    ],
+  };
+});
 
 const chartOptions = computed<ChartOptions<'radar'>>(() => ({
   responsive: true,
@@ -93,8 +119,15 @@ const chartOptions = computed<ChartOptions<'radar'>>(() => ({
       padding: 12,
       displayColors: false,
       callbacks: {
-        label: (context) => `Score: ${context.parsed.r}/100`
-      }
+        label: (context) => {
+          const item = props.data[context.dataIndex];
+          const lines = [`Score: ${context.parsed.r}/100`];
+          if (item?.is_preliminary) {
+            lines.push('Voorlopig — te weinig observaties.');
+          }
+          return lines;
+        },
+      },
     }
   }
 }));
@@ -110,5 +143,12 @@ const chartOptions = computed<ChartOptions<'radar'>>(() => ({
         <p class="text-sm text-outline">No skill data available</p>
       </div>
     </div>
+    <p
+      v-if="allPreliminary"
+      class="mt-3 text-[11px] text-on-surface-variant text-center italic"
+      data-testid="radar-preliminary-banner"
+    >
+      Voorlopige scores. Verschijnt definitief zodra elke categorie meer observaties heeft.
+    </p>
   </div>
 </template>
