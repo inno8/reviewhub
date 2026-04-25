@@ -204,7 +204,13 @@ class CohortViewSet(viewsets.ModelViewSet):
 
         if request.method == "GET":
             qs = cohort.memberships.filter(removed_at__isnull=True).select_related("student").order_by("joined_at")
-            return Response(CohortMembershipSerializer(qs, many=True).data)
+            # context={"request": request} feeds CohortMembershipSerializer's
+            # PII-redaction logic. Without it, the serializer fails closed
+            # and returns null for every email — exactly the regression we
+            # don't want for staff callers.
+            return Response(
+                CohortMembershipSerializer(qs, many=True, context={"request": request}).data
+            )
 
         # POST — admin only
         if not _is_admin(request.user):
@@ -249,7 +255,7 @@ class CohortViewSet(viewsets.ModelViewSet):
             },
         )
         return Response(
-            CohortMembershipSerializer(m).data,
+            CohortMembershipSerializer(m, context={"request": request}).data,
             status=status.HTTP_201_CREATED if created else status.HTTP_200_OK,
         )
 
@@ -514,7 +520,9 @@ class CourseViewSet(viewsets.ModelViewSet):
             if cohort is None:
                 return Response([])
             qs = cohort.memberships.select_related("student").order_by("joined_at")
-            return Response(CohortMembershipSerializer(qs, many=True).data)
+            return Response(
+                CohortMembershipSerializer(qs, many=True, context={"request": request}).data
+            )
 
         if cohort is None:
             raise ValidationError({"cohort": "course has no cohort; assign one before managing members"})
@@ -548,7 +556,7 @@ class CourseViewSet(viewsets.ModelViewSet):
                 defaults={"cohort": cohort, "student_repo_url": repo_url},
             )
             return Response(
-                CohortMembershipSerializer(m).data,
+                CohortMembershipSerializer(m, context={"request": request}).data,
                 status=status.HTTP_201_CREATED if created else status.HTTP_200_OK,
             )
 
@@ -579,6 +587,10 @@ class SubmissionViewSet(
 
     serializer_class = SubmissionSerializer
     permission_classes = [IsAuthenticated, IsTeacherOrReadOnlyStudent]
+    # Honor ?page_size=N (clamped to 100). Same pagination class as the
+    # inbox, for the same reason: students with many PRs over a semester
+    # shouldn't get full 20-row pages on a phone screen.
+    pagination_class = GradingPagination
 
     def get_queryset(self):
         user = self.request.user

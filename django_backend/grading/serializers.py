@@ -157,8 +157,13 @@ class CohortSerializer(serializers.ModelSerializer):
 
 
 class CohortMembershipSerializer(serializers.ModelSerializer):
-    student_email = serializers.EmailField(source="student.email", read_only=True)
+    # display_name is non-PII (it's whatever the student set, often a
+    # nickname or first name) and is shown across the app already, so it's
+    # always exposed. Email and per-student repo URL are PII / personal
+    # workspace info — students see ONLY their own; staff see everyone's.
+    student_email = serializers.SerializerMethodField()
     student_name = serializers.CharField(source="student.display_name", read_only=True)
+    student_repo_url = serializers.SerializerMethodField()
 
     class Meta:
         model = CohortMembership
@@ -172,6 +177,38 @@ class CohortMembershipSerializer(serializers.ModelSerializer):
             "joined_at",
         ]
         read_only_fields = ["id", "joined_at"]
+
+    def _viewer_sees_pii(self, obj) -> bool:
+        """Staff (teacher / admin / superuser) see all rows in full.
+        Students see PII only on their OWN row — viewing peers in the
+        same cohort returns the row but with email/repo redacted.
+
+        Fails CLOSED (redact) when the request context is missing or
+        not authenticated. Callers that want full PII (management
+        commands, internal services) must pass `context={"request": req}`
+        with a staff user, or use the model fields directly.
+        """
+        request = self.context.get("request")
+        user = getattr(request, "user", None) if request is not None else None
+        if user is None or not getattr(user, "is_authenticated", False):
+            return False  # fail-closed — never leak PII to unauthenticated callers
+        if getattr(user, "is_superuser", False):
+            return True
+        role = getattr(user, "role", None)
+        if role in {"teacher", "admin"}:
+            return True
+        # Student case: only on their own row.
+        return getattr(obj, "student_id", None) == user.id
+
+    def get_student_email(self, obj) -> str | None:
+        if self._viewer_sees_pii(obj):
+            return obj.student.email
+        return None
+
+    def get_student_repo_url(self, obj) -> str | None:
+        if self._viewer_sees_pii(obj):
+            return obj.student_repo_url
+        return None
 
 
 class CohortTeacherSerializer(serializers.ModelSerializer):
