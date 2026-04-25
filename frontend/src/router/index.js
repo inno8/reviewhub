@@ -65,6 +65,11 @@ const router = createRouter({
         { path: '/grading/sessions/:id', name: 'grading-session-detail', component: GradingSessionDetailView, props: true },
         // Piece 2 — per-student PR list, intermediate view between inbox and session detail
         { path: '/grading/students/:id/prs', name: 'grading-student-prs', component: StudentPRListView, meta: { admin: true }, props: true },
+        // Student-facing self route: same component, no admin gate. The view
+        // detects the missing :id route param and substitutes the auth user's
+        // own id, so a student lands on their own feedback list without the
+        // teacher's explicit student-id URL.
+        { path: '/my/prs', name: 'my-prs', component: StudentPRListView, props: true },
         // Workstream E3 — teacher-facing full student profile
         { path: '/grading/students/:id', name: 'grading-student-profile', component: TeacherStudentProfileView, meta: { admin: true }, props: true },
         // Workstream E1 — cohort + course management.

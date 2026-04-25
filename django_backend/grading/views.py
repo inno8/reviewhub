@@ -654,11 +654,24 @@ class GradingSessionViewSet(
     review lifecycle.
     """
 
-    permission_classes = [IsAuthenticated, IsTeacher]
+    # Auth gate is per-action (see get_permissions). The default class-level
+    # gate is `IsAuthenticated`; teacher-only writes/state-flips opt in.
+    permission_classes = [IsAuthenticated]
     # Inbox-specific pagination: honors ?page_size=N (clamped to 100).
     # DRF default ignores the query param, forcing 20-row pages even on
     # mobile-narrow screens.
     pagination_class = GradingPagination
+
+    # Read actions (list, retrieve) are open to any authenticated user; the
+    # queryset further restricts students to their own sessions. Everything
+    # else (PATCH, generate_draft, send, resume, start_review, discard,
+    # start_new_iteration, ...) requires teacher/admin role.
+    _STUDENT_READABLE_ACTIONS = {"list", "retrieve"}
+
+    def get_permissions(self):
+        if self.action in self._STUDENT_READABLE_ACTIONS:
+            return [IsAuthenticated()]
+        return [IsAuthenticated(), IsTeacher()]
 
     def get_serializer_class(self):
         if self.action == "list":
@@ -695,6 +708,16 @@ class GradingSessionViewSet(
                     GradingSession.State.REVIEWING,
                 ],
             )
+
+        # Student gate: students see only sessions they own (i.e. they are
+        # the submission's primary student). Cross-student access returns
+        # 404 via get_object → consistent with the org-isolation pattern.
+        # Contributors-on-shared-repos is a v1.1 surface (currently they
+        # see the session via the primary author's view if invited).
+        role = getattr(user, "role", None)
+        is_staff = role in {"teacher", "admin"} or getattr(user, "is_superuser", False)
+        if not is_staff:
+            qs = qs.filter(submission__student=user)
 
         return qs.order_by("submission__due_at", "-created_at")
 

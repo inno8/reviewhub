@@ -59,6 +59,7 @@ onMounted(async () => {
 const navItems = [
   // Student experience (the learning loop)
   { name: 'Dashboard', icon: 'dashboard', path: '/', studentOnly: true },
+  { name: 'My Feedback', icon: 'rate_review', path: '/my/prs', studentOnly: true },
   { name: 'My Cohort', icon: 'groups', path: '/my-cohort', studentOnly: true },
   { name: 'Skills', icon: 'school', path: '/skills', studentOnly: true },
   { name: 'Recommendations', icon: 'route', path: '/recommendations', studentOnly: true },

@@ -148,7 +148,9 @@
  */
 import { ref, computed, onMounted, watch } from 'vue';
 import { useRoute, useRouter } from 'vue-router';
+import { storeToRefs } from 'pinia';
 import { api } from '@/composables/useApi';
+import { useAuthStore } from '@/stores/auth';
 import AppShell from '@/components/layout/AppShell.vue';
 import PRCard from '@/components/grading/PRCard.vue';
 
@@ -176,8 +178,18 @@ interface SessionEntry {
 
 const route = useRoute();
 const router = useRouter();
+const auth = useAuthStore();
+const { user } = storeToRefs(auth);
 
-const studentId = computed(() => Number(route.params.id));
+// Two routes mount this view:
+//   /grading/students/:id/prs    (teacher viewing a student — admin meta)
+//   /my/prs                      (student viewing their own — no :id param)
+// Fall back to the authed user's own id when :id is absent.
+const studentId = computed(() => {
+  const fromRoute = Number(route.params.id);
+  if (Number.isFinite(fromRoute) && fromRoute > 0) return fromRoute;
+  return Number(user.value?.id ?? 0);
+});
 
 const student = ref<StudentInfo | null>(null);
 const sessions = ref<SessionEntry[]>([]);

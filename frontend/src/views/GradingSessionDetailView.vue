@@ -238,8 +238,9 @@
               />
             </div>
 
-            <!-- Summary notes + bottom action row -->
+            <!-- Summary notes + bottom action row (teacher composer only) -->
             <section
+              v-if="!readOnlyStudent"
               class="rounded-xl border border-outline-variant/10 bg-surface-container-low p-4 flex flex-col gap-4"
             >
               <div class="flex flex-col gap-2">
@@ -303,6 +304,54 @@
                   </button>
                 </div>
               </footer>
+            </section>
+
+            <!-- Student read-only footer: feedback summary + GitHub link -->
+            <section
+              v-else
+              class="rounded-xl border border-outline-variant/10 bg-surface-container-low p-5 flex flex-col gap-3"
+              data-testid="student-readonly-footer"
+            >
+              <div class="flex items-baseline justify-between gap-3 flex-wrap">
+                <h2 class="text-base font-bold text-on-surface m-0">
+                  Feedback van je docent
+                </h2>
+                <span
+                  v-if="store.activeSession.state === 'posted' && store.activeSession.posted_at"
+                  class="text-xs text-on-surface-variant"
+                >
+                  Geplaatst op {{ formatPostedDate(store.activeSession.posted_at) }}
+                </span>
+              </div>
+              <p
+                v-if="store.activeSession.final_summary"
+                class="text-sm text-on-surface leading-relaxed m-0 whitespace-pre-line"
+                data-testid="student-summary"
+              >{{ store.activeSession.final_summary }}</p>
+              <p
+                v-else
+                class="text-sm text-on-surface-variant italic m-0"
+              >
+                Geen samenvatting van de docent — alle feedback staat als comments
+                bij de regels hierboven en op GitHub.
+              </p>
+              <div class="flex gap-3 flex-wrap pt-1">
+                <a
+                  v-if="store.activeSession.pr_url"
+                  :href="store.activeSession.pr_url"
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  class="primary-gradient text-on-primary px-5 py-2.5 rounded-lg font-bold flex items-center gap-2 shadow-lg shadow-primary/10 hover:shadow-primary/20 transition-all active:scale-95"
+                  data-testid="view-on-github-btn"
+                >
+                  <span class="material-symbols-outlined text-sm">open_in_new</span>
+                  Bekijk op GitHub
+                </a>
+                <button
+                  @click="goBack"
+                  class="bg-surface-container hover:bg-surface-container-high text-on-surface px-5 py-2.5 rounded-lg text-sm font-medium border border-outline-variant/20 transition-colors"
+                >Terug</button>
+              </div>
             </section>
 
             <!-- Vorige iteraties van deze PR -->
@@ -436,10 +485,22 @@ import RubricPanel from '@/components/grading/RubricPanel.vue';
 import DiffInlineViewer from '@/components/grading/DiffInlineViewer.vue';
 import RightSidebar from '@/components/grading/RightSidebar.vue';
 import AppShell from '@/components/layout/AppShell.vue';
+import { useAuthStore } from '@/stores/auth';
+import { storeToRefs } from 'pinia';
 
 const route = useRoute();
 const router = useRouter();
 const store = useGradingStore();
+
+// Role gating: this view is shared between teachers (compose / edit / send)
+// and students (read-only feedback view of their own posted PR). Backend
+// returns the same JSON shape; the difference is purely UI affordances.
+const auth = useAuthStore();
+const { isTeacher, isSchoolAdmin, isSuperuser, isStudent } = storeToRefs(auth);
+const isStaff = computed(() => isTeacher.value || isSchoolAdmin.value || isSuperuser.value);
+// Students get a read-only render with no Save/Send/Discard, no autosave,
+// no draft kickoff on mount, and no edit affordance on comments or rubric.
+const readOnlyStudent = computed(() => isStudent.value && !isStaff.value);
 
 // Local editable state (mirrored from activeSession; synced via watch)
 const editedComments = ref<GradingComment[]>([]);
@@ -468,12 +529,15 @@ const prClosedDiscardKind = computed<'pr_closed_by_student' | 'pr_merged' | null
 
 const EDITABLE_STATES = new Set<SessionState>(['drafted', 'reviewing', 'partial']);
 const canEdit = computed(() => {
+  // Students never edit. Mirrors backend gate on PATCH /sessions/<id>/.
+  if (readOnlyStudent.value) return false;
   if (prClosedDiscardKind.value) return false;
   const st = store.activeSession?.state;
   return st ? EDITABLE_STATES.has(st) : false;
 });
 
 const canSend = computed(() => {
+  if (readOnlyStudent.value) return false;
   if (prClosedDiscardKind.value) return false;
   const st = store.activeSession?.state;
   if (!st) return false;
@@ -559,7 +623,13 @@ onMounted(async () => {
   hydrateEdits();
   loadStudentIdFromSubmission();
   // Auto-fire draft if session is still PENDING — teacher shouldn't have to
-  // click a button; they opened this PR because they want feedback.
+  // click a button; they opened this PR because they want feedback. None of
+  // these state transitions are valid for a student viewer; backend would
+  // 403 anyway, but skipping the call keeps the network log clean and
+  // avoids spurious error toasts.
+  if (readOnlyStudent.value) {
+    return;
+  }
   if (store.activeSession?.state === 'pending') {
     autoStartDraft();
   } else if (store.activeSession?.state === 'drafting') {
@@ -625,6 +695,12 @@ async function autoStartDraft() {
 }
 
 onBeforeRouteLeave(async (_to, _from, next) => {
+  // Students have nothing to save; their edits aren't even allowed by the
+  // backend. Skip the save attempt to avoid a guaranteed 403 on navigation.
+  if (readOnlyStudent.value) {
+    next();
+    return;
+  }
   if (dirty.value && !savingEdits.value) {
     try { await onSave(); } catch { /* continue */ }
   }
@@ -743,6 +819,9 @@ const prIsMerged = computed(() => {
 });
 
 const showNewIterationStrip = computed(() => {
+  // Students never trigger iterations; this is a teacher-only manual
+  // override (the start_new_iteration endpoint is gated on IsTeacher).
+  if (readOnlyStudent.value) return false;
   const s: any = store.activeSession;
   if (!s) return false;
   if (!TERMINAL_STATES.has(s.state as SessionState)) return false;
@@ -792,7 +871,32 @@ async function onResume() {
 }
 
 function goBack() {
+  // Teachers go back to the inbox; students don't have access to it (the
+  // viewset is teacher-only). Send them home — the dashboard or their
+  // own PR list, whichever the router knows about.
+  if (readOnlyStudent.value) {
+    router.push({ name: 'dashboard' }).catch(() => {
+      router.push('/');
+    });
+    return;
+  }
   router.push({ name: 'grading-inbox' });
+}
+
+function formatPostedDate(iso: string): string {
+  // Match the Dutch teacher-facing date format used elsewhere
+  // ("25 apr 2026"). Fallback to the raw string on parse error so we
+  // never crash the read-only view because of a bad date.
+  try {
+    const d = new Date(iso);
+    return d.toLocaleDateString('nl-NL', {
+      day: 'numeric',
+      month: 'short',
+      year: 'numeric',
+    });
+  } catch {
+    return iso;
+  }
 }
 
 interface PreviousIteration {
