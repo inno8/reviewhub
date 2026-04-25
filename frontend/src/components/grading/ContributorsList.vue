@@ -42,12 +42,21 @@
             <span class="text-[11px] px-1.5 py-0.5 rounded bg-tertiary/15 text-tertiary font-medium">
               {{ formatPct(c.contribution_fraction) }}
             </span>
-            <span class="text-[11px] px-1.5 py-0.5 rounded bg-surface-container-highest text-on-surface-variant">
-              {{ c.commits_count }} commits
-            </span>
-            <span class="text-[11px] px-1.5 py-0.5 rounded bg-surface-container-highest text-on-surface-variant">
-              {{ c.lines_changed }} lines
-            </span>
+            <!--
+              Hide the commits/lines chips when both are 0 — those are the
+              webhook-time defaults that haven't been backfilled by the
+              v1.1 commit-attribution fetcher yet. Showing "0 commits, 0
+              lines, 100% authorship" reads as a bug, even when the data
+              is missing rather than wrong.
+            -->
+            <template v-if="hasCommitStats(c)">
+              <span class="text-[11px] px-1.5 py-0.5 rounded bg-surface-container-highest text-on-surface-variant">
+                {{ c.commits_count }} commits
+              </span>
+              <span class="text-[11px] px-1.5 py-0.5 rounded bg-surface-container-highest text-on-surface-variant">
+                {{ c.lines_changed }} lines
+              </span>
+            </template>
           </div>
         </div>
       </li>
@@ -87,6 +96,13 @@ function initials(label: string): string {
 function formatPct(fraction: number): string {
   const pct = Math.round((fraction ?? 0) * 100);
   return `${pct}%`;
+}
+
+function hasCommitStats(c: SubmissionContributor): boolean {
+  // Webhook seeds (commits_count=0, lines_changed=0) until the v1.1
+  // commit-attribution fetcher backfills. Show the chips only when at
+  // least one of the two has real data.
+  return (c.commits_count ?? 0) > 0 || (c.lines_changed ?? 0) > 0;
 }
 
 function goToProfile(userId: number) {
