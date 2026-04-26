@@ -60,7 +60,6 @@ const navItems = [
   // Student experience (the learning loop)
   { name: 'Dashboard', icon: 'dashboard', path: '/', studentOnly: true },
   { name: 'My Feedback', icon: 'rate_review', path: '/my/prs', studentOnly: true },
-  { name: 'My Cohort', icon: 'groups', path: '/my-cohort', studentOnly: true },
   { name: 'Skills', icon: 'school', path: '/skills', studentOnly: true },
   { name: 'Recommendations', icon: 'route', path: '/recommendations', studentOnly: true },
   // Commit Timeline stays in the sidebar — it's the rebuild target for the
@@ -68,7 +67,10 @@ const navItems = [
   // (chronological commits + scores + drill-into FileReviewView) and the
   // ai_engine push pipeline already populates the data.
   { name: 'Commit Timeline', icon: 'timeline', path: '/timeline', studentOnly: true },
-  { name: 'My Profile', icon: 'psychology', path: '/dev-profile/results', studentOnly: true },
+  // "My Profile" lives in the sidebar footer (Dev Profile link) — no need
+  // for a duplicate top-nav entry.
+  // "My Cohort" moved into Settings → My Cohort tab — it's reference info
+  // (cohort name, teachers, courses), not a daily-flow surface.
   // CUT FOR V1 (Apr 26 2026) — view files retained on disk for v1.1 restore:
   //   Journey (/journey, DeveloperJourneyView)
   //     The "growth narrative + behavioral proof" page. Backend endpoint

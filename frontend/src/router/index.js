@@ -32,7 +32,10 @@ import CohortListView from '@/views/CohortListView.vue';
 import CohortDetailView from '@/views/CohortDetailView.vue';
 import CourseDetailView from '@/views/CourseDetailView.vue';
 import TeacherStudentProfileView from '@/views/TeacherStudentProfileView.vue';
-import StudentHomeView from '@/views/StudentHomeView.vue';
+// StudentHomeView retired Apr 26 2026 — its only mount (`/my-cohort`) now
+// redirects into Settings. File kept on disk; uncomment this import + the
+// route to bring it back.
+//   import StudentHomeView from '@/views/StudentHomeView.vue';
 import { useAuthStore } from '@/stores/auth';
 const router = createRouter({
     history: createWebHistory(),
@@ -90,8 +93,11 @@ const router = createRouter({
         // Teacher's student roster — all students across all their cohorts.
         { path: '/grading/students', name: 'grading-students', component: () => import('@/views/TeacherStudentListView.vue'), meta: { admin: true } },
         { path: '/org/courses/:id', name: 'course-detail', component: CourseDetailView, meta: { admin: true }, props: true },
-        // Workstream E4 — student "My cohort" page (mount point for MyCohortWidget)
-        { path: '/my-cohort', name: 'my-cohort', component: StudentHomeView },
+        // Legacy student "My cohort" path — relocated into Settings as a tab
+        // Apr 26 2026. Kept as a redirect so old bookmarks / external links
+        // (e.g. teacher-shared URLs) keep working. The StudentHomeView file
+        // stays on disk in case we want to bring it back later.
+        { path: '/my-cohort', redirect: '/settings?tab=cohort' },
         // Platform ops — superuser only
         { path: '/ops', name: 'ops-dashboard', component: OpsDashboardView, meta: { ops: true } },
     ],

@@ -2,6 +2,7 @@
 import { ref, onMounted, computed, watch } from 'vue';
 import { useRoute, useRouter } from 'vue-router';
 import AppShell from '@/components/layout/AppShell.vue';
+import MyCohortWidget from '@/components/grading/MyCohortWidget.vue';
 import { useAuthStore } from '@/stores/auth';
 import { useProjectsStore } from '@/stores/projects';
 import { api } from '@/composables/useApi';
@@ -297,6 +298,11 @@ onMounted(async () => {
   }
   if (!auth.isAdmin && projectsStore.projects.length) {
     webhookProjectId.value = projectsStore.selectedProjectId;
+  }
+  // Land on the cohort tab when the URL says so (the redirect from the
+  // legacy /my-cohort route uses ?tab=cohort).
+  if (auth.isStudent && route.query.tab === 'cohort') {
+    activeTab.value = 'cohort';
   }
 });
 
@@ -621,6 +627,13 @@ const tabs = computed(() => {
     { id: 'profile', label: 'Profile', icon: 'person' },
     { id: 'notifications', label: 'Notifications', icon: 'notifications' },
   ];
+  // Student-only "My Cohort" tab (cohort name, teachers, courses). Was a
+  // top-level nav item; relocated here Apr 26 2026 because it's reference
+  // info, not a daily-flow surface. auth.isStudent gates this so teachers
+  // / school admins / ops don't see a confusing self-referential cohort tab.
+  if (auth.isStudent) {
+    t.push({ id: 'cohort', label: 'My Cohort', icon: 'groups' });
+  }
   if (auth.isSuperuser) {
     // Platform ops can still access LLM Config from here if they land on
     // settings directly. Primary entry point is /ops/llm-config.
@@ -822,6 +835,11 @@ const tabs = computed(() => {
           </div>
           <button @click="saveNotifications" class="bg-surface-container-highest text-on-surface font-bold py-3 px-6 rounded-lg hover:bg-outline-variant transition-colors">Save Preferences</button>
         </div>
+      </template>
+
+      <!-- My Cohort (student-only) — relocated from top-nav Apr 26 2026 -->
+      <template v-if="activeTab === 'cohort' && auth.isStudent">
+        <MyCohortWidget />
       </template>
 
       <!-- Git accounts (Developer) — multiple connections -->
