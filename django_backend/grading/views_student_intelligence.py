@@ -223,14 +223,32 @@ class StudentSnapshotView(APIView):
         def _avg(xs):
             return sum(xs) / len(xs) if xs else None
 
+        # Iterate over EVERY SkillCategory (that actually has skills under
+        # it), not just the ones the student has metrics for. This keeps
+        # radar shapes consistent across students — a teacher comparing
+        # two students always sees the same axes. Categories with no
+        # data render with score=0, confidence=0, is_preliminary=True.
+        # Pre-fix bug: tester showed 8 spokes (legacy 8-cat seed), Webdev
+        # cohort students showed 5 (only the categories their seeder
+        # populated), making the demo radar visibly inconsistent when
+        # flipping between students.
+        from skills.models import SkillCategory
+        all_categories = list(
+            SkillCategory.objects
+            .annotate(skill_count=Count("skills"))
+            .filter(skill_count__gt=0)
+            .order_by("name")
+            .values_list("name", flat=True)
+        )
+
         radar = []
         trending_up: list[str] = []
         trending_down: list[str] = []
-        for cat, scores in cat_scores.items():
-            avg_score = round(sum(scores) / len(scores), 1)
-            avg_conf = round(
-                sum(cat_confidences[cat]) / len(cat_confidences[cat]), 2
-            ) if cat_confidences[cat] else 0.0
+        for cat in all_categories:
+            scores = cat_scores.get(cat, [])
+            confs = cat_confidences.get(cat, [])
+            avg_score = round(sum(scores) / len(scores), 1) if scores else 0.0
+            avg_conf = round(sum(confs) / len(confs), 2) if confs else 0.0
             # Prefer a level label that appears; else None.
             level = cat_levels[cat][0] if cat_levels[cat] else None
 
