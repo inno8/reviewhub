@@ -841,13 +841,13 @@ function toggleAllBranches(selected: boolean) {
             </p>
           </div>
 
-          <!-- Webhook: ReviewHub endpoint + optional live traffic -->
+          <!-- Webhook: Leera endpoint + optional live traffic -->
           <div class="space-y-2 pt-2 border-t border-outline-variant/10">
             <div class="flex items-center gap-2">
               <span class="material-symbols-outlined text-sm" :class="reviewWebhookConnected ? 'text-green-400' : 'text-outline'">
                 {{ reviewWebhookConnected ? 'link' : 'link_off' }}
               </span>
-              <span class="text-sm font-bold text-on-surface">Webhook endpoint (ReviewHub)</span>
+              <span class="text-sm font-bold text-on-surface">Webhook endpoint (Leera)</span>
             </div>
             <p class="text-[11px] text-on-surface-variant">
               Paste this URL and secret in your Git host so pushes create evaluations for
@@ -934,7 +934,7 @@ function toggleAllBranches(selected: boolean) {
       <div class="p-6 space-y-4">
         <div class="space-y-1.5">
           <label class="text-xs font-bold uppercase tracking-widest text-outline">Project Name</label>
-          <input v-model="newProjectName" type="text" placeholder="e.g. ReviewHub" required
+          <input v-model="newProjectName" type="text" placeholder="e.g. Leera" required
             class="w-full bg-surface-container-lowest border border-outline-variant/30 rounded-lg text-on-surface placeholder:text-outline/40 focus:ring-1 focus:ring-primary/50 py-3 px-4" />
         </div>
 

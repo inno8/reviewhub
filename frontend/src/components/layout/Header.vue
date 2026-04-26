@@ -119,9 +119,9 @@ onMounted(() => {
 <template>
   <header class="flex justify-between items-center w-full px-6 h-16 fixed top-0 z-50 bg-background">
     <div class="flex items-center gap-8">
-      <!-- Logo -->
+      <!-- Wordmark — Leera (formerly ReviewHub, renamed Apr 26 2026) -->
       <span class="text-xl font-bold bg-gradient-to-r from-primary to-primary-container bg-clip-text text-transparent tracking-tight">
-        ReviewHub
+        Leera
       </span>
 
       <!-- Nav Links -->

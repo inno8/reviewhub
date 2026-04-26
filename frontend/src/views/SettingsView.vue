@@ -852,7 +852,7 @@ const tabs = computed(() => {
           <p class="text-sm text-on-surface-variant mb-6">
             Add one row per host identity (e.g. GitHub work + GitLab personal). Use the
             <strong class="text-on-surface">username</strong> that the platform shows when you push, and optionally a
-            <strong class="text-on-surface">commit email</strong> if it differs from your ReviewHub email.
+            <strong class="text-on-surface">commit email</strong> if it differs from your Leera email.
             The provider must match each project&apos;s host (GitHub project ↔ GitHub connection).
           </p>
 
