@@ -172,6 +172,12 @@ FASTAPI_URL = os.getenv('FASTAPI_URL', 'http://localhost:8001')
 # Optional server fallback for GitHub API (batch branch list). Users can store a PAT in Settings instead.
 GITHUB_TOKEN = os.getenv('GITHUB_TOKEN', '')
 
+# ai_engine FastAPI service. Nakijken's webhook gateway forwards push
+# events here for the per-commit Code Review pipeline. Both services
+# share GITHUB_WEBHOOK_SECRET so the forwarded signature stays valid.
+AI_ENGINE_URL = os.getenv('AI_ENGINE_URL', 'http://localhost:8001')
+GITHUB_WEBHOOK_SECRET = os.getenv('GITHUB_WEBHOOK_SECRET', '')
+
 # ═══════════════════════════════════════════════════════════════════════════════
 # LLM settings UI — Google OAuth (Gemini) & post-OAuth redirect
 # ═══════════════════════════════════════════════════════════════════════════════
@@ -196,5 +202,6 @@ EMAIL_PORT = int(os.getenv('EMAIL_PORT', '1025'))
 EMAIL_HOST_USER = os.getenv('EMAIL_HOST_USER', '')
 EMAIL_HOST_PASSWORD = os.getenv('EMAIL_HOST_PASSWORD', '')
 EMAIL_USE_TLS = os.getenv('EMAIL_USE_TLS', 'false').lower() == 'true'
-EMAIL_FROM = os.getenv('EMAIL_FROM', 'noreply@reviewhub.com')
+EMAIL_FROM = os.getenv('DEFAULT_FROM_EMAIL', os.getenv('EMAIL_FROM', 'noreply@reviewhub.com'))
 DEFAULT_FROM_EMAIL = EMAIL_FROM
+RESEND_API_KEY = os.getenv('RESEND_API_KEY', '')

@@ -212,11 +212,14 @@ class TestWebhookDedupe:
 @pytest.mark.django_db
 class TestWebhookIgnoredEvents:
     def test_non_pull_request_event_is_ignored(self, membership):
+        # Push events get forwarded to ai_engine (see test_webhook_push_fanout).
+        # `release` is a real GitHub event that Nakijken still doesn't care
+        # about — useful as the canonical "ignored" case.
         client = APIClient()
         resp = post_webhook(
             client, make_pr_payload(),
-            event_type="push",
-            delivery_id="d-push",
+            event_type="release",
+            delivery_id="d-release",
         )
         assert resp.status_code == 200
         assert "ignored" in resp.json()["message"].lower()

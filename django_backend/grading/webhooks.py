@@ -19,10 +19,15 @@ Flow:
   6. On pull_request.closed: mark Submission.status = GRADED (if merged)
      or OPEN (if just closed) — doesn't delete existing GradingSession.
 
-This is deliberately loose-coupled: we DON'T react to push events here
-(those fire the existing developer-flow ai_engine webhook for the learning
-loop). We DON'T pre-generate drafts on webhook — we wait for the teacher
-to click Generate Draft in the inbox so we don't burn LLM budget on every
+Push events are forwarded to the ai_engine FastAPI service for the
+per-commit Code Review pipeline (see forward_push_to_ai_engine). Nakijken
+itself only handles PR-level events (pull_request, pull_request_review,
+pull_request_review_thread); the per-commit AI auto-review is a separate
+loop in ai_engine. We act as the gateway so schools configure ONE webhook
+URL per repo, and Leera owns the fan-out.
+
+We DON'T pre-generate drafts on webhook — we wait for the teacher to
+click Generate Draft in the inbox so we don't burn LLM budget on every
 synchronize.
 
 Public: the endpoint is at /api/grading/webhooks/github/ and does NOT
@@ -35,6 +40,7 @@ import hashlib
 import hmac
 import json
 import logging
+import threading
 from urllib.parse import parse_qs, urlparse
 
 from django.conf import settings
@@ -83,6 +89,108 @@ def _parse_repo_url(repo_url: str) -> tuple[str, str] | None:
         return owner, repo
     except Exception:
         return None
+
+
+def _resolve_project_id_for_push(repo_html_url: str) -> int | None:
+    """
+    Find the projects.Project that owns this repo URL so we can target
+    the right ai_engine endpoint. Tolerant of trailing slashes and the
+    .git suffix that GitHub clones use but webhook payloads don't.
+
+    Returns None if no Project matches — push silently skips fan-out.
+    A teacher's first push to a fresh repo before they register the
+    Project should not 500; it should just no-op the AI auto-review
+    until the Project exists.
+    """
+    if not repo_html_url:
+        return None
+    from projects.models import Project
+    candidates = {
+        repo_html_url,
+        repo_html_url.rstrip("/"),
+        repo_html_url.rstrip("/") + ".git",
+    }
+    if repo_html_url.endswith(".git"):
+        candidates.add(repo_html_url[:-4])
+    project = Project.objects.filter(repo_url__in=list(candidates)).first()
+    return project.id if project else None
+
+
+def forward_push_to_ai_engine(
+    *,
+    body: bytes,
+    payload: dict,
+    signature_header: str,
+    delivery_id: str,
+) -> dict:
+    """
+    Fan-out for push events. Nakijken Copilot's webhook deliberately
+    handles only PR-level events (pull_request, pull_request_review,
+    ...). Per-commit AI auto-review lives in the ai_engine FastAPI
+    service at /api/v1/webhook/github/{project_id}.
+
+    This helper bridges the two: when a push lands at the Nakijken
+    endpoint, we forward the SAME raw body and signature to ai_engine.
+    Both services share GITHUB_WEBHOOK_SECRET, so ai_engine's signature
+    verification accepts the forwarded request as if GitHub had POSTed
+    directly.
+
+    Fire-and-forget: a daemon thread does the POST so Django can return
+    200 to GitHub immediately. Mirrors draft_kickoff's pattern. Errors
+    are logged, never raised — webhook delivery remains successful from
+    GitHub's perspective even if ai_engine is down.
+
+    Returns a dict describing the dispatch decision (for tests / logging).
+    """
+    repo_html_url = ((payload.get("repository") or {}).get("html_url") or "").strip()
+    project_id = _resolve_project_id_for_push(repo_html_url)
+    if not project_id:
+        log.info(
+            "forward_push_to_ai_engine: no Project matched repo=%r — skipping",
+            repo_html_url,
+        )
+        return {"forwarded": False, "reason": "no_project_match", "repo_url": repo_html_url}
+
+    ai_engine_url = getattr(settings, "AI_ENGINE_URL", "http://localhost:8001")
+    forward_url = f"{ai_engine_url.rstrip('/')}/api/v1/webhook/github/{project_id}"
+
+    # Headers: forward the signature verbatim so ai_engine's HMAC check
+    # passes (assumes both services share GITHUB_WEBHOOK_SECRET). We
+    # explicitly set X-GitHub-Event=push since that's what we're
+    # forwarding; the rest of GitHub's headers are not required by
+    # ai_engine's handler.
+    headers = {
+        "Content-Type": "application/json",
+        "X-GitHub-Event": "push",
+        "X-GitHub-Delivery": delivery_id or "",
+        "X-Hub-Signature-256": signature_header or "",
+        "User-Agent": "ReviewHub-Nakijken-Forwarder/1.0",
+    }
+
+    def _do_forward():
+        try:
+            import requests
+            resp = requests.post(forward_url, data=body, headers=headers, timeout=10)
+            log.info(
+                "forward_push_to_ai_engine: project=%s status=%s",
+                project_id, resp.status_code,
+            )
+        except Exception as exc:  # noqa: BLE001 — fan-out must never raise
+            log.warning(
+                "forward_push_to_ai_engine: project=%s POST failed: %s",
+                project_id, exc,
+            )
+
+    threading.Thread(
+        target=_do_forward,
+        daemon=True,
+        name=f"ai-engine-forward-{project_id}",
+    ).start()
+    return {
+        "forwarded": True,
+        "project_id": project_id,
+        "ai_engine_url": forward_url,
+    }
 
 
 def _memberships_for_pr(
@@ -752,7 +860,21 @@ def github_webhook(request):
         if not created:
             return JsonResponse({"ok": True, "deduped": True}, status=200)
 
-    # 4. Short-circuit anything that isn't an event we care about.
+    # 4. Push events: forward to ai_engine for the per-commit Code Review
+    #    pipeline. Nakijken itself doesn't touch push (rubric grading is
+    #    PR-level), but we own the GitHub webhook integration, so we act
+    #    as the gateway and fan out. See forward_push_to_ai_engine.
+    if event_type == "push":
+        sig_header = request.META.get("HTTP_X_HUB_SIGNATURE_256", "")
+        result = forward_push_to_ai_engine(
+            body=body,
+            payload=payload,
+            signature_header=sig_header,
+            delivery_id=delivery_id,
+        )
+        return JsonResponse({"ok": True, "fanout": result}, status=200)
+
+    # 5. Short-circuit anything that isn't an event we care about.
     ACCEPTED_EVENT_TYPES = (
         "pull_request",
         "pull_request_review",
