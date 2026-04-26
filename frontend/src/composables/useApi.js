@@ -287,6 +287,10 @@ export const api = {
             send: (id) => client.post(`/grading/sessions/${id}/send/`, {}),
             resume: (id) => client.post(`/grading/sessions/${id}/resume/`, {}),
             startNewIteration: (id) => client.post(`/grading/sessions/${id}/start_new_iteration/`, {}),
+            // Teacher dashboard front-door aggregate. Returns one
+            // round-trip of: kpi (state counts), next_up (oldest drafted),
+            // review_time (p50/p95 over last 30d), recurring_patterns.
+            inboxSummary: () => client.get('/grading/sessions/inbox-summary/'),
         },
         costLogs: {
             list: (params = {}) => client.get('/grading/cost-logs/', { params }),

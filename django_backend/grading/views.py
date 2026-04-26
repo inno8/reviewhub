@@ -735,6 +735,168 @@ class GradingSessionViewSet(
 
     # ── custom actions ───────────────────────────────────────────────────
 
+    @action(detail=False, methods=["get"], url_path="inbox-summary")
+    def inbox_summary(self, request):
+        """
+        Aggregate stats for the teacher dashboard front door.
+
+        Returns one round-trip with everything the dashboard needs:
+          - kpi: counts by state (needs_draft, needs_review, in_review,
+                 posted_today, posted_this_week)
+          - next_up: top 5 oldest drafted sessions with student/PR/cohort
+                     context, ordered by due_at asc then created_at asc
+          - review_time: p50/p95 of docent_review_time_seconds over the
+                         last 30d of posted sessions, with the v1 target
+          - recurring_patterns: top 3 unresolved patterns across the
+                                teacher's cohorts
+
+        Scoped to cohorts the teacher actually has standing in (course
+        owner, secondary docent, or explicit teacher assignment). Org
+        admins / superusers see the whole org.
+
+        Endpoint is teacher-only via get_permissions() (action is not in
+        _STUDENT_READABLE_ACTIONS).
+        """
+        from datetime import timedelta
+        from django.db.models import Avg, Count, Q
+        from .models import CohortTeacher
+        from evaluations.models import Pattern
+
+        user = request.user
+        role = getattr(user, "role", None)
+        is_admin = role == "admin" or getattr(user, "is_superuser", False)
+
+        # ── Scope: which sessions does this teacher see in the inbox? ──
+        base = GradingSession.objects.for_user(user).select_related(
+            "submission", "submission__course", "submission__course__cohort",
+            "submission__student",
+        )
+        if is_admin:
+            scoped = base
+        else:
+            # Teacher: cohorts where they own a course, co-teach a course,
+            # or are explicitly assigned. Mirrors CohortViewSet.get_queryset.
+            scoped = base.filter(
+                Q(submission__course__owner=user)
+                | Q(submission__course__secondary_docent=user)
+                | Q(
+                    submission__course__cohort__teacher_assignments__teacher=user
+                )
+            ).distinct()
+
+        # ── KPI counts (single aggregation, one query) ────────────────────
+        now = timezone.now()
+        week_ago = now - timedelta(days=7)
+        day_ago = now - timedelta(hours=24)
+        State = GradingSession.State
+        kpi_agg = scoped.aggregate(
+            needs_draft=Count(
+                "id",
+                filter=Q(state__in=[State.PENDING, State.DRAFTING]),
+            ),
+            needs_review=Count("id", filter=Q(state=State.DRAFTED)),
+            in_review=Count("id", filter=Q(state=State.REVIEWING)),
+            posted_this_week=Count(
+                "id",
+                filter=Q(state=State.POSTED, posted_at__gte=week_ago),
+            ),
+            posted_today=Count(
+                "id",
+                filter=Q(state=State.POSTED, posted_at__gte=day_ago),
+            ),
+        )
+
+        # ── Next up (oldest drafted, 5) ───────────────────────────────────
+        next_up_qs = (
+            scoped.filter(state=State.DRAFTED)
+            .order_by("submission__due_at", "created_at")[:5]
+        )
+        next_up = []
+        for s in next_up_qs:
+            submission = s.submission
+            student = submission.student
+            course = submission.course
+            cohort = getattr(course, "cohort", None) if course else None
+            age_days = (now - s.created_at).days
+            next_up.append({
+                "id": s.id,
+                "pr_title": submission.pr_title or "",
+                "pr_url": submission.pr_url or "",
+                "student_id": student.id if student else None,
+                "student_name": (
+                    getattr(student, "display_name", None)
+                    or getattr(student, "first_name", None)
+                    or (student.email.split("@")[0] if student and student.email else "")
+                ) if student else "",
+                "course_name": course.name if course else None,
+                "cohort_id": cohort.id if cohort else None,
+                "cohort_name": cohort.name if cohort else None,
+                "iteration_number": s.iteration_number,
+                "days_waiting": max(0, age_days),
+                "state": s.state,
+                "due_at": submission.due_at.isoformat() if submission.due_at else None,
+            })
+
+        # ── Review time (p50/p95 over last 30d posted sessions) ───────────
+        thirty_days_ago = now - timedelta(days=30)
+        review_seconds = list(
+            scoped.filter(
+                state=State.POSTED,
+                posted_at__gte=thirty_days_ago,
+                docent_review_time_seconds__isnull=False,
+                docent_review_time_seconds__gt=0,
+            ).values_list("docent_review_time_seconds", flat=True)
+        )
+        review_time = {
+            "p50_seconds": None,
+            "p95_seconds": None,
+            "samples": len(review_seconds),
+            "target_seconds": 300,  # v1 success metric: p50 ≤ 5 min
+        }
+        if review_seconds:
+            review_seconds.sort()
+            n = len(review_seconds)
+            p50_idx = max(0, (n // 2) - (1 if n % 2 == 0 else 0))
+            p95_idx = max(0, min(n - 1, int(n * 0.95)))
+            review_time["p50_seconds"] = int(review_seconds[p50_idx])
+            review_time["p95_seconds"] = int(review_seconds[p95_idx])
+
+        # ── Recurring patterns (top 3 across teacher's cohorts) ───────────
+        # Scoped to students who appear in the teacher's session set, not
+        # to all org students — keeps a teacher who shares an org with
+        # other teachers from seeing those teachers' students' patterns.
+        student_ids = scoped.values_list(
+            "submission__student_id", flat=True
+        ).distinct()
+        pattern_qs = (
+            Pattern.objects.filter(
+                user_id__in=student_ids,
+                is_resolved=False,
+            )
+            .values("pattern_key", "pattern_type")
+            .annotate(
+                frequency=Count("id"),
+                students_affected=Count("user_id", distinct=True),
+            )
+            .order_by("-frequency", "-students_affected")[:3]
+        )
+        recurring_patterns = [
+            {
+                "pattern_key": p["pattern_key"],
+                "pattern_type": p["pattern_type"],
+                "frequency": p["frequency"],
+                "students_affected": p["students_affected"],
+            }
+            for p in pattern_qs
+        ]
+
+        return Response({
+            "kpi": kpi_agg,
+            "next_up": next_up,
+            "review_time": review_time,
+            "recurring_patterns": recurring_patterns,
+        })
+
     @action(detail=True, methods=["post"], url_path="start_review")
     def start_review(self, request, pk=None):
         """

@@ -140,10 +140,105 @@ function getLevelBg(level: string) {
   return m[level] || 'bg-surface-container';
 }
 
+// ─── Teacher dashboard data (Nakijken-aware) ───────────────────────────────
+// Single round-trip aggregate replacing the legacy admin-team chrome.
+// Returns counts by state + oldest drafted PRs + review-time aggregate +
+// top recurring patterns scoped to this teacher's cohorts.
+interface InboxKpi {
+  needs_draft: number;
+  needs_review: number;
+  in_review: number;
+  posted_today: number;
+  posted_this_week: number;
+}
+interface InboxNextUpRow {
+  id: number;
+  pr_title: string;
+  pr_url: string;
+  student_id: number | null;
+  student_name: string;
+  course_name: string | null;
+  cohort_id: number | null;
+  cohort_name: string | null;
+  iteration_number: number;
+  days_waiting: number;
+  state: string;
+  due_at: string | null;
+}
+interface InboxReviewTime {
+  p50_seconds: number | null;
+  p95_seconds: number | null;
+  samples: number;
+  target_seconds: number;
+}
+interface InboxRecurringPattern {
+  pattern_key: string;
+  pattern_type: string;
+  frequency: number;
+  students_affected: number;
+}
+interface InboxSummary {
+  kpi: InboxKpi;
+  next_up: InboxNextUpRow[];
+  review_time: InboxReviewTime;
+  recurring_patterns: InboxRecurringPattern[];
+}
+
+const inboxSummary = ref<InboxSummary | null>(null);
+const inboxLoading = ref(false);
+
+async function loadInboxSummary() {
+  inboxLoading.value = true;
+  try {
+    const { data } = await (api as any).grading.sessions.inboxSummary();
+    inboxSummary.value = data as InboxSummary;
+  } catch (err) {
+    console.error('inbox-summary failed:', err);
+    inboxSummary.value = null;
+  } finally {
+    inboxLoading.value = false;
+  }
+}
+
+function formatDuration(seconds: number | null): string {
+  if (seconds == null) return '—';
+  if (seconds < 60) return `${seconds}s`;
+  const m = Math.round(seconds / 60);
+  if (m < 60) return `${m} min`;
+  const h = Math.floor(m / 60);
+  const rem = m % 60;
+  return rem ? `${h}u ${rem}m` : `${h}u`;
+}
+
+function reviewTimeStatus(rt: InboxReviewTime | undefined | null): {
+  color: string; label: string;
+} {
+  if (!rt || rt.p50_seconds == null) return { color: 'text-outline', label: 'geen data' };
+  if (rt.p50_seconds <= rt.target_seconds) return { color: 'text-green-400', label: 'onder doel' };
+  if (rt.p50_seconds <= rt.target_seconds * 1.5) return { color: 'text-yellow-400', label: 'rond doel' };
+  return { color: 'text-orange-400', label: 'boven doel' };
+}
+
+function goToInboxFiltered(state: string) {
+  router.push({ path: '/grading', query: { state } });
+}
+
+function goToSession(sessionId: number) {
+  router.push({ name: 'grading-session-detail', params: { id: sessionId } });
+}
+
+function goToStudent(studentId: number) {
+  router.push({ name: 'grading-student-profile', params: { id: studentId } });
+}
+
 onMounted(async () => {
   await projectsStore.fetchProjects();
   if (authStore.isAdmin) {
-    await Promise.all([loadAdminData(), loadAdminTeam()]);
+    // The Nakijken aggregate is the front-door story for teachers + admins.
+    // loadAdminTeam stays for the "All Developers" grid lower down (legacy
+    // pre-Nakijken pipeline data). loadAdminData populates the admin user
+    // detail drawer.
+    await Promise.all([loadInboxSummary(), loadAdminData(), loadAdminTeam()]);
   } else {
     await loadDevHome();
   }
@@ -268,15 +363,189 @@ function scoreColor(score: number) {
 
         <header class="mb-8">
           <span class="text-primary font-bold uppercase tracking-[0.2em] text-xs">
-            {{ authStore.isTeacher ? 'Klas-overzicht' : 'Admin Dashboard' }}
+            {{ authStore.isTeacher ? 'Vandaag op je bord' : 'Admin Dashboard' }}
           </span>
           <h1 class="text-4xl font-black text-on-surface tracking-tight mb-2">
-            {{ authStore.isTeacher ? 'Jouw klassen' : 'Team Overview' }}
+            {{ authStore.isTeacher ? 'Welkom terug' : 'Team Overview' }}
           </h1>
         </header>
 
-        <!-- ── Team Health Row ── -->
-        <section v-if="adminTeam" class="grid grid-cols-2 md:grid-cols-5 gap-4 mb-8">
+        <!-- ════════════════════════════════════════════════════════════════
+             NAKIJKEN COPILOT — front-door teacher KPIs
+             Single round-trip from /sessions/inbox-summary/ replaces a
+             half-dozen legacy admin-team calls and tells the docent the
+             three numbers they actually opened the app to find.
+        ════════════════════════════════════════════════════════════════ -->
+        <section
+          v-if="authStore.isTeacher && inboxSummary"
+          class="grid grid-cols-2 md:grid-cols-4 gap-4 mb-8"
+          data-testid="inbox-kpi-row"
+        >
+          <button
+            type="button"
+            class="bg-surface-container-low p-5 rounded-xl border border-outline-variant/10 text-left hover:border-primary/30 transition-colors group"
+            @click="goToInboxFiltered('pending')"
+          >
+            <p class="text-3xl font-black text-on-surface group-hover:text-primary">
+              {{ inboxSummary.kpi.needs_draft }}
+            </p>
+            <p class="text-[11px] text-outline uppercase tracking-wider mt-1">Concept opstellen</p>
+          </button>
+
+          <button
+            type="button"
+            class="primary-gradient p-5 rounded-xl text-left shadow-lg shadow-primary/15 hover:shadow-primary/30 transition-shadow group"
+            @click="goToInboxFiltered('drafted')"
+            data-testid="needs-review-card"
+          >
+            <p class="text-3xl font-black text-on-primary">
+              {{ inboxSummary.kpi.needs_review }}
+            </p>
+            <p class="text-[11px] uppercase tracking-wider mt-1 text-on-primary/80">Klaar voor review</p>
+          </button>
+
+          <button
+            type="button"
+            class="bg-surface-container-low p-5 rounded-xl border border-outline-variant/10 text-left hover:border-primary/30 transition-colors group"
+            @click="goToInboxFiltered('reviewing')"
+          >
+            <p class="text-3xl font-black text-on-surface group-hover:text-primary">
+              {{ inboxSummary.kpi.in_review }}
+            </p>
+            <p class="text-[11px] text-outline uppercase tracking-wider mt-1">Mid-review</p>
+          </button>
+
+          <button
+            type="button"
+            class="bg-surface-container-low p-5 rounded-xl border border-outline-variant/10 text-left hover:border-primary/30 transition-colors group"
+            @click="goToInboxFiltered('posted')"
+          >
+            <p class="text-3xl font-black text-green-400">
+              {{ inboxSummary.kpi.posted_this_week }}
+            </p>
+            <p class="text-[11px] text-outline uppercase tracking-wider mt-1">Verstuurd · 7 dagen</p>
+            <p
+              v-if="inboxSummary.kpi.posted_today"
+              class="text-[10px] text-green-400 mt-0.5"
+            >+{{ inboxSummary.kpi.posted_today }} vandaag</p>
+          </button>
+        </section>
+
+        <!-- Two-column: Next-up inbox preview + review-time / patterns -->
+        <section
+          v-if="authStore.isTeacher && inboxSummary"
+          class="grid grid-cols-1 lg:grid-cols-3 gap-6 mb-10"
+          data-testid="inbox-detail-row"
+        >
+          <!-- Next up (oldest drafted) -->
+          <div class="lg:col-span-2 bg-surface-container-low rounded-xl border border-outline-variant/10 overflow-hidden">
+            <div class="px-5 py-3 border-b border-outline-variant/10 flex items-center justify-between gap-2">
+              <div class="flex items-center gap-2">
+                <span class="material-symbols-outlined text-primary text-sm">rate_review</span>
+                <h3 class="text-sm font-bold">Next up</h3>
+              </div>
+              <button
+                @click="router.push('/grading')"
+                class="text-[11px] text-primary font-semibold hover:underline"
+              >
+                Open inbox →
+              </button>
+            </div>
+            <div v-if="inboxSummary.next_up.length === 0" class="p-8 text-center text-on-surface-variant text-sm">
+              <span class="material-symbols-outlined text-3xl text-outline mb-2 block">check_circle</span>
+              Geen openstaande PRs. Alles is bijgewerkt.
+            </div>
+            <ul v-else class="divide-y divide-outline-variant/10">
+              <li
+                v-for="row in inboxSummary.next_up"
+                :key="row.id"
+                class="px-5 py-3 flex items-center gap-3 cursor-pointer hover:bg-surface-container-lowest transition-colors group"
+                @click="goToSession(row.id)"
+                :data-testid="`next-up-${row.id}`"
+              >
+                <button
+                  type="button"
+                  class="w-8 h-8 rounded-full bg-surface-container-highest text-on-surface text-[11px] font-bold flex-shrink-0 inline-flex items-center justify-center hover:bg-primary/15 hover:text-primary transition-colors"
+                  :title="`Profiel van ${row.student_name}`"
+                  @click.stop="row.student_id && goToStudent(row.student_id)"
+                >
+                  {{ (row.student_name || '?').slice(0, 2).toUpperCase() }}
+                </button>
+                <div class="flex-1 min-w-0">
+                  <p class="text-sm font-semibold text-on-surface truncate">{{ row.pr_title || '(geen titel)' }}</p>
+                  <p class="text-xs text-on-surface-variant truncate">
+                    {{ row.student_name }}
+                    <span v-if="row.cohort_name"> · {{ row.cohort_name }}</span>
+                  </p>
+                </div>
+                <span
+                  class="text-[10px] font-bold px-2 py-0.5 rounded-full bg-surface-container text-on-surface-variant flex-shrink-0"
+                  :class="row.days_waiting >= 7 ? 'text-orange-400 bg-orange-500/10' : ''"
+                >
+                  {{ row.days_waiting }}d
+                </span>
+                <span class="material-symbols-outlined text-outline text-sm group-hover:text-primary transition-colors">chevron_right</span>
+              </li>
+            </ul>
+          </div>
+
+          <!-- Right: review time + recurring patterns -->
+          <div class="space-y-6">
+            <!-- Review time -->
+            <div class="bg-surface-container-low rounded-xl border border-outline-variant/10 p-5">
+              <div class="flex items-center gap-2 mb-3">
+                <span class="material-symbols-outlined text-primary text-sm">timer</span>
+                <h3 class="text-sm font-bold">Reviewtijd p50</h3>
+              </div>
+              <p
+                class="text-3xl font-black"
+                :class="reviewTimeStatus(inboxSummary.review_time).color"
+              >
+                {{ formatDuration(inboxSummary.review_time.p50_seconds) }}
+              </p>
+              <p class="text-[11px] text-outline mt-1">
+                doel ≤ {{ formatDuration(inboxSummary.review_time.target_seconds) }}
+                · {{ inboxSummary.review_time.samples }} sample{{ inboxSummary.review_time.samples === 1 ? '' : 's' }}
+                · {{ reviewTimeStatus(inboxSummary.review_time).label }}
+              </p>
+              <p
+                v-if="inboxSummary.review_time.p95_seconds != null"
+                class="text-[10px] text-on-surface-variant mt-2"
+              >
+                p95: {{ formatDuration(inboxSummary.review_time.p95_seconds) }}
+              </p>
+            </div>
+
+            <!-- Recurring patterns -->
+            <div class="bg-surface-container-low rounded-xl border border-outline-variant/10 p-5">
+              <div class="flex items-center gap-2 mb-3">
+                <span class="material-symbols-outlined text-tertiary text-sm">repeat</span>
+                <h3 class="text-sm font-bold">Terugkerende patronen</h3>
+              </div>
+              <ul
+                v-if="inboxSummary.recurring_patterns.length"
+                class="space-y-2"
+              >
+                <li
+                  v-for="p in inboxSummary.recurring_patterns"
+                  :key="p.pattern_key"
+                  class="flex items-center gap-2 text-xs"
+                >
+                  <span class="font-mono text-on-surface truncate flex-1" :title="p.pattern_key">
+                    {{ p.pattern_key }}
+                  </span>
+                  <span class="text-tertiary font-bold">{{ p.frequency }}×</span>
+                  <span class="text-outline">·</span>
+                  <span class="text-on-surface-variant">{{ p.students_affected }} stud</span>
+                </li>
+              </ul>
+              <p v-else class="text-sm text-on-surface-variant">Geen patronen.</p>
+            </div>
+          </div>
+        </section>
+
+        <!-- ── Team Health Row (legacy admin-team — hidden for teachers) ── -->
+        <section v-if="!authStore.isTeacher && adminTeam" class="grid grid-cols-2 md:grid-cols-5 gap-4 mb-8">
           <div v-if="!authStore.isTeacher" class="bg-surface-container-low p-5 rounded-xl border border-outline-variant/10 text-center">
             <p class="text-3xl font-black" :class="adminTeam.teamAvgScore >= 60 ? 'text-green-400' : adminTeam.teamAvgScore >= 40 ? 'text-yellow-400' : 'text-red-400'">
               {{ adminTeam.teamAvgScore }}
@@ -309,8 +578,13 @@ function scoreColor(score: number) {
           </div>
         </section>
 
-        <!-- ── Two Column: Attention + Leaderboard ── -->
-        <section v-if="adminTeam" class="grid grid-cols-1 lg:grid-cols-2 gap-6 mb-8">
+        <!-- ── Two Column: Attention + Leaderboard ──
+             Hidden for teachers — legacy admin-team data uses the
+             pre-Nakijken per-commit pipeline scoring, which would
+             confuse the demo audience next to the rubric grades.
+             Stays for non-teacher admins (school admins / superusers)
+             since it's the only summary surface they have today. -->
+        <section v-if="!authStore.isTeacher && adminTeam" class="grid grid-cols-1 lg:grid-cols-2 gap-6 mb-8">
           <!-- Needs Attention -->
           <div class="bg-surface-container-low rounded-xl border border-outline-variant/10">
             <div class="px-5 py-3 border-b border-outline-variant/10 flex items-center gap-2">
@@ -362,8 +636,12 @@ function scoreColor(score: number) {
 
         <!-- Team Patterns and Skill Matrix removed — available in Skills and Journey views -->
 
-        <!-- ── Developer Cards (with enhanced data) ── -->
-        <section>
+        <!-- ── Developer Cards (with enhanced data) ──
+             Teachers reach the canonical Nakijken-aware student roster via
+             the sidebar "Studenten" link (/grading/students). Hiding this
+             pre-Nakijken grid for them avoids two scoring systems on one
+             screen. School admins / superusers still see it. -->
+        <section v-if="!authStore.isTeacher">
           <div class="flex items-center justify-between mb-4">
             <h3 class="text-sm font-bold">All Developers</h3>
             <div class="flex items-center gap-3">
