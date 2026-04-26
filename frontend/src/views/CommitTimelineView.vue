@@ -379,11 +379,14 @@ function nextPage() { if (page.value < totalPages.value) page.value++; }
   <AppShell>
     <div class="p-8 flex-1">
       <!-- Header -->
-      <section class="flex flex-col md:flex-row items-start md:items-end justify-between gap-6 mb-10">
+      <section class="flex flex-col md:flex-row items-start md:items-end justify-between gap-6 mb-6">
         <div class="space-y-2">
-          <span class="text-primary font-bold uppercase tracking-[0.2em] text-xs">Commit History</span>
-          <h1 class="text-5xl font-black tracking-tighter text-on-surface">Commit Timeline</h1>
-          <p class="text-outline text-sm">Chronological view of all evaluated commits with scores and findings</p>
+          <span class="text-primary font-bold uppercase tracking-[0.2em] text-xs">AI auto-review</span>
+          <h1 class="text-5xl font-black tracking-tighter text-on-surface">Code Review</h1>
+          <p class="text-outline text-sm">
+            Elke commit krijgt instant AI-feedback. Klik een rij voor de
+            findings op regel-niveau.
+          </p>
         </div>
 
         <div class="flex items-center gap-3">
@@ -445,6 +448,30 @@ function nextPage() { if (page.value < totalPages.value) page.value++; }
           </div>
         </div>
       </section>
+
+      <!-- AI-vs-teacher clarification banner (student-only). The pitch
+           audience needs to understand: this page is the per-commit AI
+           auto-review, NOT the teacher's rubric grade. Two scoring
+           systems serve two purposes; the banner makes that explicit
+           so a docent in the room doesn't conflate them. -->
+      <aside
+        v-if="!authStore.isAdmin"
+        class="mb-8 rounded-xl border border-tertiary/30 bg-tertiary/10 px-5 py-4 flex items-start gap-3"
+        data-testid="ai-vs-teacher-banner"
+      >
+        <span class="material-symbols-outlined text-tertiary text-base mt-0.5">lightbulb</span>
+        <div class="text-sm leading-relaxed">
+          <p class="text-on-surface font-semibold">AI auto-review, niet je docent-cijfer.</p>
+          <p class="text-on-surface-variant mt-1">
+            Deze scores komen van de AI op elke commit. Voor je officiële
+            rubric-cijfer kijk je in
+            <router-link to="/my/prs" class="text-primary font-semibold underline-offset-2 hover:underline">
+              My Feedback
+            </router-link>
+            — daar staan de PR-beoordelingen van je docent.
+          </p>
+        </div>
+      </aside>
 
       <!-- ============ LIST VIEW ============ -->
       <template v-if="viewMode === 'list'">
@@ -532,7 +559,9 @@ function nextPage() { if (page.value < totalPages.value) page.value++; }
                   <!-- Right: stats -->
                   <div class="flex items-center gap-4 flex-shrink-0">
                     <div class="text-center">
-                      <p class="text-[10px] text-outline uppercase tracking-wider">Score</p>
+                      <p class="text-[10px] text-outline uppercase tracking-wider">
+                        AI score
+                      </p>
                       <p class="text-2xl font-black" :class="scoreColor(ev.overall_score)">
                         {{ ev.overall_score != null ? Math.round(ev.overall_score) : '—' }}
                       </p>
@@ -771,6 +800,7 @@ function nextPage() { if (page.value < totalPages.value) page.value++; }
           <div class="grid grid-cols-2 md:grid-cols-4 gap-4 mb-8">
             <div class="bg-surface-container-low rounded-xl border border-outline-variant/10 p-4 text-center">
               <p class="text-[10px] text-outline uppercase tracking-wider mb-1">Avg Score</p>
+              <p class="text-[10px] text-outline uppercase tracking-wider mb-0.5">AI gemiddeld</p>
               <p class="text-2xl font-black" :class="scoreColor(chartAvgScore)">
                 {{ chartAvgScore != null ? Math.round(chartAvgScore) : '—' }}
               </p>

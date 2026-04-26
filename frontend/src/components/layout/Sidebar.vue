@@ -59,14 +59,16 @@ onMounted(async () => {
 const navItems = [
   // Student experience (the learning loop)
   { name: 'Dashboard', icon: 'dashboard', path: '/', studentOnly: true },
-  { name: 'My Feedback', icon: 'rate_review', path: '/my/prs', studentOnly: true },
+  { name: 'My Feedback', icon: 'school', path: '/my/prs', studentOnly: true },
   { name: 'Skills', icon: 'school', path: '/skills', studentOnly: true },
   { name: 'Recommendations', icon: 'route', path: '/recommendations', studentOnly: true },
-  // Commit Timeline stays in the sidebar — it's the rebuild target for the
-  // per-commit "Code Review" feature (see backlog). The page works today
-  // (chronological commits + scores + drill-into FileReviewView) and the
-  // ai_engine push pipeline already populates the data.
-  { name: 'Commit Timeline', icon: 'timeline', path: '/timeline', studentOnly: true },
+  // Code Review — per-commit AI auto-review feed. Mounted at /timeline
+  // for backwards compat (route name retained); rebranded as "Code Review"
+  // in the nav because that's the student-facing concept. Drives off the
+  // ai_engine push pipeline which writes Evaluation + Finding rows on
+  // every commit. Distinct from "My Feedback" (teacher rubric grading
+  // at PR level) — the in-page banner makes that distinction explicit.
+  { name: 'Code Review', icon: 'bolt', path: '/timeline', studentOnly: true },
   // "My Profile" lives in the sidebar footer (Dev Profile link) — no need
   // for a duplicate top-nav entry.
   // "My Cohort" moved into Settings → My Cohort tab — it's reference info
