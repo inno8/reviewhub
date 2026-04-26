@@ -231,6 +231,161 @@ function goToStudent(studentId: number) {
   router.push({ name: 'grading-student-profile', params: { id: studentId } });
 }
 
+// ─── Student dashboard data (Nakijken-aware) ───────────────────────────────
+// Two extra fetches on top of the legacy developer-home aggregate, so the
+// student lands on "what did my teacher say + how am I doing on the rubric"
+// instead of pre-Nakijken commit-level numbers. Both endpoints already work
+// for students per the access fix in 29bafcb.
+interface StudentLatestFeedback {
+  session_id: number;
+  pr_title: string;
+  pr_url: string;
+  course_name: string | null;
+  posted_at: string;
+  comment_count: number;
+  has_summary: boolean;
+}
+interface StudentPerSkill {
+  skill_slug: string;
+  display_name: string;
+  bayesian_score: number | null;
+  confidence: number;
+  observation_count: number;
+  trend: 'up' | 'down' | 'stable';
+  trend_delta: number;
+  level_label: string | null;
+  kerntaak: string | null;
+}
+const studentLatestFeedback = ref<StudentLatestFeedback | null>(null);
+const studentPerSkill = ref<StudentPerSkill[]>([]);
+const studentCohortName = ref<string | null>(null);
+
+async function loadStudentLatestFeedback() {
+  try {
+    const { data } = await (api as any).grading.sessions.list({
+      state: 'posted', page_size: 1, ordering: '-posted_at',
+    });
+    const rows = Array.isArray(data) ? data : (data.results || []);
+    if (!rows.length) {
+      studentLatestFeedback.value = null;
+      return;
+    }
+    const r = rows[0];
+    // The list serializer is leaner than the detail one — fetch full
+    // detail just for the most-recent row so we have final_comments and
+    // final_summary populated. One extra request is fine; this is the
+    // pitch hero card.
+    const { data: full } = await (api as any).grading.sessions.get(r.id);
+    studentLatestFeedback.value = {
+      session_id: full.id,
+      pr_title: full.pr_title || full.repo_full_name || '',
+      pr_url: full.pr_url || '',
+      course_name: full.course_name || null,
+      posted_at: full.posted_at || full.updated_at,
+      comment_count: (full.final_comments || full.ai_draft_comments || []).length,
+      has_summary: !!(full.final_summary && full.final_summary.trim()),
+    };
+  } catch {
+    studentLatestFeedback.value = null;
+  }
+}
+
+async function loadStudentSnapshot() {
+  const sid = authStore.user?.id;
+  if (!sid) return;
+  try {
+    const axios = (await import('axios')).default;
+    const token = localStorage.getItem('reviewhub_token');
+    const { data } = await axios.get(
+      `${import.meta.env.VITE_API_URL}/grading/students/${sid}/snapshot/`,
+      { headers: token ? { Authorization: `Bearer ${token}` } : {} },
+    );
+    studentPerSkill.value = data.per_skill || [];
+    studentCohortName.value = data.student?.cohort?.name || null;
+  } catch {
+    studentPerSkill.value = [];
+  }
+}
+
+// Eindniveau: weighted avg of bayesian_score across rubric criteria,
+// rendered on the 0-4 rubric scale (divide by 25). Mirrors the teacher
+// view at /grading/students/<id> so a student sees the same number their
+// teacher does.
+const eindniveau = computed<number | null>(() => {
+  const usable = studentPerSkill.value.filter(r => r.bayesian_score !== null);
+  if (usable.length === 0) return null;
+  const sum = usable.reduce((s, r) => s + (r.bayesian_score as number), 0);
+  return sum / usable.length / 25;
+});
+
+interface EindniveauBand {
+  label: string;
+  bar: string;
+  pill: string;
+}
+const eindniveauBand = computed<EindniveauBand>(() => {
+  const v = eindniveau.value;
+  if (v === null) return { label: 'Geen data', bar: 'bg-outline-variant', pill: 'bg-surface-container text-on-surface-variant' };
+  if (v < 2) return { label: 'Onvoldoende', bar: 'bg-error', pill: 'bg-error/15 text-error' };
+  if (v < 3) return { label: 'Net aan', bar: 'bg-tertiary', pill: 'bg-tertiary/20 text-tertiary' };
+  if (v < 3.5) return { label: 'Voldoende', bar: 'bg-primary', pill: 'bg-primary/20 text-primary' };
+  return { label: 'Goed', bar: 'bg-emerald-400', pill: 'bg-emerald-900/40 text-emerald-300' };
+});
+
+// Aanbevolen focus: the weakest criterion with at least 2 observations
+// (so we don't recommend a focus area on a single noisy score). Tie-break
+// on trend (down first) then lower confidence.
+interface FocusItem {
+  criterion: string;
+  score_of_4: number;
+  trend_label: string;
+  observation_count: number;
+}
+const focus = computed<FocusItem | null>(() => {
+  const rows = studentPerSkill.value.filter(
+    r => r.bayesian_score !== null && r.observation_count >= 2,
+  );
+  if (rows.length === 0) return null;
+  const sorted = [...rows].sort((a, b) => {
+    const sa = a.bayesian_score as number;
+    const sb = b.bayesian_score as number;
+    if (sa !== sb) return sa - sb;
+    const trendRank = (t: string) => (t === 'down' ? 0 : t === 'stable' ? 1 : 2);
+    if (trendRank(a.trend) !== trendRank(b.trend)) return trendRank(a.trend) - trendRank(b.trend);
+    return a.confidence - b.confidence;
+  });
+  const pick = sorted[0];
+  return {
+    criterion: pick.display_name,
+    score_of_4: (pick.bayesian_score as number) / 25,
+    trend_label: pick.trend === 'up' ? 'stijgend' : pick.trend === 'down' ? 'dalend' : 'stabiel',
+    observation_count: pick.observation_count,
+  };
+});
+
+function formatRelativeTime(iso: string): string {
+  if (!iso) return '';
+  const then = new Date(iso).getTime();
+  const now = Date.now();
+  const diffMin = Math.round((now - then) / 60000);
+  if (diffMin < 1) return 'zojuist';
+  if (diffMin < 60) return `${diffMin} min geleden`;
+  const diffH = Math.round(diffMin / 60);
+  if (diffH < 24) return `${diffH} uur geleden`;
+  const diffD = Math.round(diffH / 24);
+  if (diffD < 14) return `${diffD} dag${diffD === 1 ? '' : 'en'} geleden`;
+  const d = new Date(iso);
+  return d.toLocaleDateString('nl-NL', { day: 'numeric', month: 'short' });
+}
+
+function goToLatestFeedback() {
+  if (!studentLatestFeedback.value) return;
+  router.push({
+    name: 'grading-session-detail',
+    params: { id: studentLatestFeedback.value.session_id },
+  });
+}
+
 onMounted(async () => {
   await projectsStore.fetchProjects();
   if (authStore.isAdmin) {
@@ -240,7 +395,13 @@ onMounted(async () => {
     // detail drawer.
     await Promise.all([loadInboxSummary(), loadAdminData(), loadAdminTeam()]);
   } else {
-    await loadDevHome();
+    // Student: legacy dev-home aggregate + the two Nakijken-aware pieces
+    // for the new front-door cards. All three independent → fan out.
+    await Promise.all([
+      loadDevHome(),
+      loadStudentLatestFeedback(),
+      loadStudentSnapshot(),
+    ]);
   }
   applyIssuesProjectFromRoute();
 });
@@ -760,7 +921,141 @@ function scoreColor(score: number) {
         <!-- Developer Overview (default view, no project filter) -->
         <template v-if="!devSelectedProject && devHome">
 
-          <!-- ── Top Metrics Row ── -->
+          <!-- ════════════════════════════════════════════════════════════
+               NAKIJKEN COPILOT — student front-door cards
+               (Path B: hero replace; legacy KPI row stays as auxiliary
+               stats below.)
+
+               Latest teacher feedback is the platform's promise — show it
+               first. Eindniveau on the rubric scale + Aanbevolen focus
+               give the student "where am I" + "what to fix next" using
+               the same numbers the teacher sees.
+          ════════════════════════════════════════════════════════════ -->
+          <section
+            v-if="studentLatestFeedback || eindniveau !== null"
+            class="grid grid-cols-1 lg:grid-cols-3 gap-4 mb-8"
+            data-testid="student-front-door"
+          >
+            <!-- Latest feedback card (spans 2 cols on lg) -->
+            <button
+              v-if="studentLatestFeedback"
+              type="button"
+              class="lg:col-span-2 primary-gradient rounded-xl p-5 text-left shadow-lg shadow-primary/15 hover:shadow-primary/30 transition-shadow group"
+              @click="goToLatestFeedback"
+              data-testid="latest-feedback-card"
+            >
+              <div class="flex items-start gap-3">
+                <span class="material-symbols-outlined text-on-primary text-xl mt-0.5">rate_review</span>
+                <div class="flex-1 min-w-0">
+                  <p class="text-[11px] uppercase tracking-[0.2em] text-on-primary/80 font-bold">
+                    Feedback van je docent
+                  </p>
+                  <h2 class="text-lg font-black text-on-primary mt-1 truncate">
+                    {{ studentLatestFeedback.pr_title || '(geen titel)' }}
+                  </h2>
+                  <p class="text-xs text-on-primary/85 mt-1">
+                    {{ studentLatestFeedback.comment_count }} comment{{ studentLatestFeedback.comment_count === 1 ? '' : 's' }}
+                    <span v-if="studentLatestFeedback.has_summary"> · samenvatting</span>
+                    <span v-if="studentLatestFeedback.course_name"> · {{ studentLatestFeedback.course_name }}</span>
+                    · {{ formatRelativeTime(studentLatestFeedback.posted_at) }}
+                  </p>
+                </div>
+                <span class="material-symbols-outlined text-on-primary group-hover:translate-x-1 transition-transform">arrow_forward</span>
+              </div>
+            </button>
+
+            <!-- Empty state when student has no posted feedback yet -->
+            <div
+              v-else
+              class="lg:col-span-2 bg-surface-container-low rounded-xl border border-outline-variant/10 p-5 flex items-center gap-3"
+            >
+              <span class="material-symbols-outlined text-outline text-xl">rate_review</span>
+              <div>
+                <p class="text-sm font-semibold text-on-surface">Nog geen feedback ontvangen</p>
+                <p class="text-xs text-on-surface-variant mt-0.5">
+                  Open een PR om feedback van je docent te krijgen.
+                </p>
+              </div>
+            </div>
+
+            <!-- Eindniveau bar -->
+            <div
+              v-if="eindniveau !== null"
+              class="bg-surface-container-low rounded-xl border border-outline-variant/10 p-5"
+              data-testid="eindniveau-card"
+            >
+              <div class="flex items-baseline justify-between gap-2 mb-2">
+                <p class="text-[11px] uppercase tracking-wider text-on-surface-variant font-semibold">
+                  Eindniveau
+                </p>
+                <span class="text-[10px] uppercase tracking-wider px-1.5 py-0.5 rounded font-bold" :class="eindniveauBand.pill">
+                  {{ eindniveauBand.label }}
+                </span>
+              </div>
+              <p class="text-3xl font-black text-on-surface">
+                {{ eindniveau.toFixed(1) }}<span class="text-base font-bold text-outline">/4</span>
+              </p>
+              <div class="mt-3 h-2 bg-surface-container rounded-full overflow-hidden">
+                <div
+                  class="h-full rounded-full transition-all"
+                  :class="eindniveauBand.bar"
+                  :style="{ width: Math.min(100, (eindniveau / 4) * 100) + '%' }"
+                ></div>
+              </div>
+              <p v-if="studentCohortName" class="text-[10px] text-outline mt-2">
+                {{ studentCohortName }}
+              </p>
+            </div>
+            <div
+              v-else
+              class="bg-surface-container-low rounded-xl border border-outline-variant/10 p-5"
+            >
+              <p class="text-[11px] uppercase tracking-wider text-on-surface-variant font-semibold">
+                Eindniveau
+              </p>
+              <p class="text-sm text-on-surface-variant mt-2">Nog geen rubric-data.</p>
+            </div>
+          </section>
+
+          <!-- Aanbevolen focus card -->
+          <section
+            v-if="focus"
+            class="mb-8 p-5 rounded-xl bg-tertiary/10 border border-tertiary/30 flex items-start gap-4"
+            data-testid="focus-card"
+          >
+            <span class="material-symbols-outlined text-tertiary text-xl mt-0.5">target</span>
+            <div class="flex-1 min-w-0">
+              <p class="text-[11px] uppercase tracking-wider text-tertiary font-bold">
+                Aanbevolen focus
+              </p>
+              <p class="text-base font-bold text-on-surface mt-1">
+                {{ focus.criterion }}
+                <span class="text-tertiary"> · {{ focus.score_of_4.toFixed(1) }}/4</span>
+              </p>
+              <p class="text-xs text-on-surface-variant mt-1">
+                Trend {{ focus.trend_label }} ·
+                {{ focus.observation_count }} observatie{{ focus.observation_count === 1 ? '' : 's' }} ·
+                gericht oefenen op dit criterium in je volgende PR.
+              </p>
+            </div>
+            <button
+              type="button"
+              class="bg-tertiary/15 text-tertiary hover:bg-tertiary/25 px-4 py-2 rounded-lg text-xs font-bold transition-colors flex-shrink-0"
+              @click="router.push('/skills')"
+            >
+              Open Skills →
+            </button>
+          </section>
+
+          <!-- ── Top Metrics Row (legacy auxiliary stats) ──
+               Pre-Nakijken AI-auto-review numbers from the per-commit
+               pipeline. Useful at a glance ("how active have I been")
+               but NOT the rubric grade — the new cards above own that.
+               Demoted by surrounding section header so the audience
+               doesn't conflate the two scoring systems. -->
+          <p class="text-[11px] uppercase tracking-wider text-outline font-semibold mb-2">
+            AI auto-review (over al je commits)
+          </p>
           <section class="grid grid-cols-2 md:grid-cols-5 gap-4 mb-8">
             <div class="bg-surface-container-low p-5 rounded-xl border border-outline-variant/10 text-center">
               <p class="text-4xl font-black" :class="devHome.avgScore >= 70 ? 'text-green-400' : devHome.avgScore >= 50 ? 'text-yellow-400' : 'text-red-400'">
