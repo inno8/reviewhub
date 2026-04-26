@@ -63,10 +63,21 @@ const navItems = [
   { name: 'My Cohort', icon: 'groups', path: '/my-cohort', studentOnly: true },
   { name: 'Skills', icon: 'school', path: '/skills', studentOnly: true },
   { name: 'Recommendations', icon: 'route', path: '/recommendations', studentOnly: true },
-  { name: 'Journey', icon: 'explore', path: '/journey', studentOnly: true },
+  // Commit Timeline stays in the sidebar — it's the rebuild target for the
+  // per-commit "Code Review" feature (see backlog). The page works today
+  // (chronological commits + scores + drill-into FileReviewView) and the
+  // ai_engine push pipeline already populates the data.
   { name: 'Commit Timeline', icon: 'timeline', path: '/timeline', studentOnly: true },
-  { name: 'Resolved Issues', icon: 'task_alt', path: '/resolved', studentOnly: true },
   { name: 'My Profile', icon: 'psychology', path: '/dev-profile/results', studentOnly: true },
+  // CUT FOR V1 (Apr 26 2026) — view files retained on disk for v1.1 restore:
+  //   Journey (/journey, DeveloperJourneyView)
+  //     The "growth narrative + behavioral proof" page. Backend endpoint
+  //     /api/skills/journey/<id>/ currently 500s and GrowthSnapshot writer
+  //     is v1.1 work. Restoration is a half-day after those land.
+  //   Resolved Issues (/resolved, ResolvedFindingsView)
+  //     Pre-Nakijken finding-level UI. 435 noisy legacy findings, doesn't
+  //     align with the v1 rubric story. The Nakijken loop surfaces issues
+  //     via PR comments instead.
 
   // Teacher experience (the grading loop).
   // School admins can land here to oversee teacher work.

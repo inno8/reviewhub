@@ -14,11 +14,15 @@ import DevProfileSetupView from '@/views/DevProfileSetupView.vue';
 import DevProfileResultsView from '@/views/DevProfileResultsView.vue';
 import CommitTimelineView from '@/views/CommitTimelineView.vue';
 import RecommendationsView from '@/views/RecommendationsView.vue';
-import ResolvedFindingsView from '@/views/ResolvedFindingsView.vue';
+// Cut from v1 nav (Apr 26 2026) — view files retained on disk for v1.1 restore.
+// Re-add the import + the matching route entry below to bring back. Both files
+// are still maintained against the current data shape; the cut is a routing /
+// nav decision, not a code deletion.
+//   import ResolvedFindingsView from '@/views/ResolvedFindingsView.vue';
+//   import DeveloperJourneyView from '@/views/DeveloperJourneyView.vue';
 import OrgSignupView from '@/views/OrgSignupView.vue';
 import AcceptInviteView from '@/views/AcceptInviteView.vue';
 import OrgStudentDetailView from '@/views/OrgStudentDetailView.vue';
-import DeveloperJourneyView from '@/views/DeveloperJourneyView.vue';
 import GradingInboxView from '@/views/GradingInboxView.vue';
 import GradingSessionDetailView from '@/views/GradingSessionDetailView.vue';
 import StudentPRListView from '@/views/StudentPRListView.vue';
@@ -52,8 +56,10 @@ const router = createRouter({
         { path: '/settings', name: 'settings', component: SettingsView },
         { path: '/recommendations', name: 'recommendations', component: RecommendationsView },
         { path: '/timeline', name: 'timeline', component: CommitTimelineView },
-        { path: '/resolved', name: 'resolved', component: ResolvedFindingsView },
-        { path: '/journey', name: 'journey', component: DeveloperJourneyView },
+        // Cut from v1 nav (Apr 26 2026) — see imports block above for context.
+        // Restore by uncommenting both the route AND the matching import:
+        //   { path: '/resolved', name: 'resolved', component: ResolvedFindingsView },
+        //   { path: '/journey', name: 'journey', component: DeveloperJourneyView },
         { path: '/org-signup', name: 'org-signup', component: OrgSignupView, meta: { public: true } },
         { path: '/accept-invite', name: 'accept-invite', component: AcceptInviteView, meta: { public: true } },
         // /org-dashboard redirects to the unified view; the old OrgDashboardView
