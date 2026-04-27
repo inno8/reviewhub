@@ -5,6 +5,49 @@ deployment, I found a stack of pre-existing issues that we're shipping
 around (not into) for the May 7 pitch deadline. Capturing them here so
 they don't drop on the floor.
 
+## Post-pitch ops polish (superuser dashboard + LLM cost views)
+
+The superuser dashboard (`OpsDashboardView.vue`) is solid for v1 — it
+already shows daily LLM cost, per-org and per-cohort breakdowns,
+sessions over time, and a sortable cohort table with cost. Pre-pitch
+we're adding only one cheap change: a `prompt_version` field on
+`LLMCostLog` (lands in the same migration as the Project layer
+schema), which lets us answer "did rubric prompt v3 cost more than v2"
+later without a backfill.
+
+Everything below is **post-pitch backlog** for our own ops sanity once
+we're managing more than one school:
+
+- **Per-model cost split KPI** (Claude-haiku vs GPT-4o vs Sonnet etc.)
+  on the ops dashboard. ~1 hour. Computed from existing
+  `LLMCostLog.model_name`.
+- **Per-prompt-version cost trend** chart. ~1 hour after `prompt_version`
+  starts populating. Lets us catch "we shipped a prompt rewrite, cost
+  per session went up 40%".
+- **Paginated cost log viewer** at `/ops/cost-log` with date range +
+  org + cohort + model filters, CSV export, link from each row to the
+  underlying GradingSession. ~5.5 hours (3h backend pagination /
+  filtering, 2.5h frontend).
+- **"Act as school admin"** drill-down — clicking an org row in the
+  ops dashboard scopes a side-panel to that org's school-admin view
+  (cohorts, teachers, students). ~1 hour.
+- **Per-cohort daily cost detail modal** — clicking a row in the
+  cohort breakdown table opens a daily breakdown chart for that
+  cohort over the selected period. ~2 hours.
+- **License + subscription endpoint** (`GET /api/org/subscription/`)
+  returning seats / cohorts / renewal date. School-admin dashboard
+  uses a placeholder card for the pitch; this endpoint replaces it
+  with real data. ~2-3 hours.
+
+Ops-readiness stress test (run before the dogfood goes live):
+1. Run the pitch demo end-to-end with 5 students, 5 PRs each (~25
+   LLM calls).
+2. Check `/ops/llm-log/?limit=100` for the cost rollup.
+3. Multiply by 6× to project a 30-student cohort week.
+4. If the projection exceeds the LLM budget for one school's monthly
+   €200 license, we need to cap rate or move some calls to the cheap
+   tier before scaling.
+
 ## Multi-course webhook routing (v1 known limitation)
 
 In the Nakijken Copilot v1 model, every PR (Submission) is associated
