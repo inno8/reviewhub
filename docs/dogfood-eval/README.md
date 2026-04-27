@@ -15,11 +15,13 @@ dogfood runs.
 
 ## Files
 
-| File                              | Purpose                                                                                                  |
-|-----------------------------------|----------------------------------------------------------------------------------------------------------|
-| `manual-timing-log.csv`           | Per-session stopwatch log. Cross-checked against `GradingSession.docent_review_time_seconds`.            |
-| `rubric-accuracy-scoresheet.csv`  | Per-session rubric-level accuracy vs. a human-graded reference. Shape mirrors `test_rubric_eval.py`.     |
-| `weekly-reflection-template.md`   | End-of-week qualitative reflection (what worked, what slowed me down, what I'd change).                  |
+
+| File                             | Purpose                                                                                              |
+| -------------------------------- | ---------------------------------------------------------------------------------------------------- |
+| `manual-timing-log.csv`          | Per-session stopwatch log. Cross-checked against `GradingSession.docent_review_time_seconds`.        |
+| `rubric-accuracy-scoresheet.csv` | Per-session rubric-level accuracy vs. a human-graded reference. Shape mirrors `test_rubric_eval.py`. |
+| `weekly-reflection-template.md`  | End-of-week qualitative reflection (what worked, what slowed me down, what I'd change).              |
+
 
 ## Fill-in rules
 

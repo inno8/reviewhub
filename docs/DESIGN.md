@@ -25,6 +25,7 @@ The audience is time-pressed professionals evaluating young craftsmen's work. Th
 ## 3. Aesthetic Direction
 
 **Primary aesthetic:** Brutally Minimal + Craftsman
+
 - Typography and whitespace do the work
 - Small amount of amber warmth where human feedback happens
 - No decoration for decoration's sake
@@ -32,6 +33,7 @@ The audience is time-pressed professionals evaluating young craftsmen's work. Th
 - Dark-first (teachers grade at night)
 
 **What this is NOT:**
+
 - Not playful K-12 edtech ("bubbly buttons, rainbow gradients")
 - Not enterprise LMS ("dense tabs, battleship grey")
 - Not AI-generic ("purple gradient hero, 3-column icon grid, centered CTA")
@@ -47,37 +49,43 @@ Source of truth: `frontend/tailwind.config.js`. Do NOT redefine elsewhere.
 
 **Surface scale (dark-first):**
 
-| Token | Hex | Usage |
-|---|---|---|
-| `background` / `surface` | `#10141a` | Page background, deepest level |
-| `surface-container-lowest` | `#0a0e14` | Modal backdrops, input backgrounds |
-| `surface-container-low` | `#181c22` | Cards, list rows, primary elevated surfaces |
-| `surface-container` | `#1c2026` | Secondary elevated sections |
-| `surface-container-high` | `#262a31` | Hover states, tertiary elevation |
-| `surface-container-highest` | `#31353c` | Button surfaces, active states |
-| `surface-bright` | `#353940` | Highest elevation |
+
+| Token                       | Hex       | Usage                                       |
+| --------------------------- | --------- | ------------------------------------------- |
+| `background` / `surface`    | `#10141a` | Page background, deepest level              |
+| `surface-container-lowest`  | `#0a0e14` | Modal backdrops, input backgrounds          |
+| `surface-container-low`     | `#181c22` | Cards, list rows, primary elevated surfaces |
+| `surface-container`         | `#1c2026` | Secondary elevated sections                 |
+| `surface-container-high`    | `#262a31` | Hover states, tertiary elevation            |
+| `surface-container-highest` | `#31353c` | Button surfaces, active states              |
+| `surface-bright`            | `#353940` | Highest elevation                           |
+
 
 **Accent colors:**
 
-| Token | Hex | Semantic |
-|---|---|---|
-| `primary` | `#a2c9ff` | Primary actions, active states, links |
-| `primary-container` | `#58a6ff` | Primary button gradients, focus rings |
-| `secondary` | `#aec8ef` | Secondary actions, subtle accents |
-| `tertiary` | `#ffba42` | Warmth, pending-review, warning-adjacent |
-| `tertiary-container` | `#da9600` | Deeper amber for emphasis |
-| `error` | `#ffb4ab` | Destructive actions, failed states, critical findings |
-| `error-container` | `#93000a` | Error banner backgrounds |
+
+| Token                | Hex       | Semantic                                              |
+| -------------------- | --------- | ----------------------------------------------------- |
+| `primary`            | `#a2c9ff` | Primary actions, active states, links                 |
+| `primary-container`  | `#58a6ff` | Primary button gradients, focus rings                 |
+| `secondary`          | `#aec8ef` | Secondary actions, subtle accents                     |
+| `tertiary`           | `#ffba42` | Warmth, pending-review, warning-adjacent              |
+| `tertiary-container` | `#da9600` | Deeper amber for emphasis                             |
+| `error`              | `#ffb4ab` | Destructive actions, failed states, critical findings |
+| `error-container`    | `#93000a` | Error banner backgrounds                              |
+
 
 **Text on surfaces:**
 
-| Token | Hex | Usage |
-|---|---|---|
-| `on-surface` | `#dfe2eb` | Primary body text |
-| `on-surface-variant` | `#c0c7d4` | Secondary text, labels |
-| `outline` | `#8b919d` | Tertiary text, disabled |
-| `outline-variant` | `#414752` | Borders, dividers |
-| `on-primary` | `#00315c` | Text on primary-colored surfaces |
+
+| Token                | Hex       | Usage                            |
+| -------------------- | --------- | -------------------------------- |
+| `on-surface`         | `#dfe2eb` | Primary body text                |
+| `on-surface-variant` | `#c0c7d4` | Secondary text, labels           |
+| `outline`            | `#8b919d` | Tertiary text, disabled          |
+| `outline-variant`    | `#414752` | Borders, dividers                |
+| `on-primary`         | `#00315c` | Text on primary-colored surfaces |
+
 
 ### 4.2 Usage rules
 
@@ -104,12 +112,14 @@ Source of truth: `frontend/tailwind.config.js`. Do NOT redefine elsewhere.
 
 ### 5.1 Families
 
-| Role | Family | Fallback |
-|---|---|---|
-| **App UI (all)** | `Inter` | `system-ui, sans-serif` |
-| **Marketing display** | `Fraunces` | `Georgia, serif` |
-| **Marketing body** | `Inter` | `system-ui, sans-serif` |
-| **Code / data tables** | `Fira Code` | `Consolas, monospace` |
+
+| Role                   | Family      | Fallback                |
+| ---------------------- | ----------- | ----------------------- |
+| **App UI (all)**       | `Inter`     | `system-ui, sans-serif` |
+| **Marketing display**  | `Fraunces`  | `Georgia, serif`        |
+| **Marketing body**     | `Inter`     | `system-ui, sans-serif` |
+| **Code / data tables** | `Fira Code` | `Consolas, monospace`   |
+
 
 **Why Inter for app:** best-in-class for dense data displays, tabular-nums for metrics, tight legibility at small sizes. Already in `tailwind.config.js`.
 
@@ -121,17 +131,19 @@ Source of truth: `frontend/tailwind.config.js`. Do NOT redefine elsewhere.
 
 App UI:
 
-| Role | Size | Weight | Line height | Letter spacing |
-|---|---|---|---|---|
-| Display (hero) | 36px / 2.25rem | 700 | 1.1 | -0.02em |
-| Page title | 28px / 1.75rem | 700 | 1.2 | -0.01em |
-| Section heading | 20px / 1.25rem | 600 | 1.3 | -0.005em |
-| Card title | 16px / 1rem | 600 | 1.4 | 0 |
-| Body | 14px / 0.875rem | 400 | 1.5 | 0 |
-| Body-small | 13px / 0.8125rem | 400 | 1.5 | 0 |
-| Label | 12px / 0.75rem | 600 | 1.4 | 0.01em |
-| Caption | 11px / 0.6875rem | 400 | 1.4 | 0.02em |
-| Code | 13px / 0.8125rem | 400 | 1.5 | 0 |
+
+| Role            | Size             | Weight | Line height | Letter spacing |
+| --------------- | ---------------- | ------ | ----------- | -------------- |
+| Display (hero)  | 36px / 2.25rem   | 700    | 1.1         | -0.02em        |
+| Page title      | 28px / 1.75rem   | 700    | 1.2         | -0.01em        |
+| Section heading | 20px / 1.25rem   | 600    | 1.3         | -0.005em       |
+| Card title      | 16px / 1rem      | 600    | 1.4         | 0              |
+| Body            | 14px / 0.875rem  | 400    | 1.5         | 0              |
+| Body-small      | 13px / 0.8125rem | 400    | 1.5         | 0              |
+| Label           | 12px / 0.75rem   | 600    | 1.4         | 0.01em         |
+| Caption         | 11px / 0.6875rem | 400    | 1.4         | 0.02em         |
+| Code            | 13px / 0.8125rem | 400    | 1.5         | 0              |
+
 
 Marketing display (hero, section leads): larger scale — 48px / 64px / 80px with Fraunces weight 500-700.
 
@@ -151,16 +163,18 @@ Marketing display (hero, section leads): larger scale — 48px / 64px / 80px wit
 
 **Scale** (using Tailwind tokens):
 
-| Token | Value | Usage |
-|---|---|---|
-| `p-1` / `m-1` | 4px | Chip padding, icon margins |
-| `p-2` / `m-2` | 8px | Tight groups |
-| `p-3` / `m-3` | 12px | List row internal padding |
-| `p-4` / `m-4` | 16px | Card internal padding (default) |
-| `p-6` / `m-6` | 24px | Section padding |
-| `p-8` / `m-8` | 32px | Page gutter (mobile) |
-| `p-12` / `m-12` | 48px | Page gutter (desktop) |
-| `p-16` / `m-16` | 64px | Major section separators |
+
+| Token           | Value | Usage                           |
+| --------------- | ----- | ------------------------------- |
+| `p-1` / `m-1`   | 4px   | Chip padding, icon margins      |
+| `p-2` / `m-2`   | 8px   | Tight groups                    |
+| `p-3` / `m-3`   | 12px  | List row internal padding       |
+| `p-4` / `m-4`   | 16px  | Card internal padding (default) |
+| `p-6` / `m-6`   | 24px  | Section padding                 |
+| `p-8` / `m-8`   | 32px  | Page gutter (mobile)            |
+| `p-12` / `m-12` | 48px  | Page gutter (desktop)           |
+| `p-16` / `m-16` | 64px  | Major section separators        |
+
 
 **Vertical rhythm:** sections separated by 32px minimum on desktop, 24px on mobile.
 
@@ -183,13 +197,15 @@ Marketing display (hero, section leads): larger scale — 48px / 64px / 80px wit
 
 ### 7.3 Border radius
 
-| Level | Value | Usage |
-|---|---|---|
-| DEFAULT | 4px (0.25rem) | Small inputs, chips |
-| `rounded-lg` | 8px (0.5rem) | Buttons, form inputs |
-| `rounded-xl` | 12px (0.75rem) | Cards, panels (most common) |
-| `rounded-2xl` | 16px (1rem) | Hero cards, modals |
-| `rounded-full` | 9999px | Circular avatars, pill buttons |
+
+| Level          | Value          | Usage                          |
+| -------------- | -------------- | ------------------------------ |
+| DEFAULT        | 4px (0.25rem)  | Small inputs, chips            |
+| `rounded-lg`   | 8px (0.5rem)   | Buttons, form inputs           |
+| `rounded-xl`   | 12px (0.75rem) | Cards, panels (most common)    |
+| `rounded-2xl`  | 16px (1rem)    | Hero cards, modals             |
+| `rounded-full` | 9999px         | Circular avatars, pill buttons |
+
 
 Consistency rule: within a single screen, radius variation must be purposeful. Don't mix `rounded-lg` and `rounded-2xl` side-by-side without hierarchy intent.
 
@@ -199,12 +215,14 @@ Consistency rule: within a single screen, radius variation must be purposeful. D
 
 ### 8.1 Durations
 
-| Type | Duration | Usage |
-|---|---|---|
-| Micro | 50-100ms | Hover color shifts, icon fills |
-| Short | 150-250ms | Button press, tab switch, dropdown open (default) |
-| Medium | 250-400ms | Modal open, drawer slide, page transition |
-| Long | 400-700ms | Marketing scroll reveals (rare) |
+
+| Type   | Duration  | Usage                                             |
+| ------ | --------- | ------------------------------------------------- |
+| Micro  | 50-100ms  | Hover color shifts, icon fills                    |
+| Short  | 150-250ms | Button press, tab switch, dropdown open (default) |
+| Medium | 250-400ms | Modal open, drawer slide, page transition         |
+| Long   | 400-700ms | Marketing scroll reveals (rare)                   |
+
 
 ### 8.2 Easing
 
@@ -263,18 +281,21 @@ Refer to the actual Vue components for canonical implementations. This section d
 Pattern: `bg-surface-container-low border border-outline-variant/10 rounded-xl p-6`
 
 Variants:
+
 - Hover: `hover:border-primary/40 hover:bg-surface-container`
 - Selected: `border-primary/60 bg-surface-container`
 - Disabled: `opacity-60`
 
 ### 11.2 Buttons
 
-| Variant | Class pattern | Usage |
-|---|---|---|
-| Primary | `primary-gradient text-on-primary font-bold px-5 py-2.5 rounded-lg shadow-lg shadow-primary/10 hover:shadow-primary/20 active:scale-95` | Main action per screen (one only) |
-| Secondary | `bg-surface-container hover:bg-surface-container-high text-on-surface px-5 py-2.5 rounded-lg` | Secondary actions |
-| Ghost | `text-on-surface-variant hover:text-on-surface px-4 py-2 rounded-lg` | Tertiary, "learn more" |
-| Destructive | `border border-error/30 text-error hover:bg-error/10 px-4 py-2.5 rounded-lg` | Delete, discard, critical |
+
+| Variant     | Class pattern                                                                                                                           | Usage                             |
+| ----------- | --------------------------------------------------------------------------------------------------------------------------------------- | --------------------------------- |
+| Primary     | `primary-gradient text-on-primary font-bold px-5 py-2.5 rounded-lg shadow-lg shadow-primary/10 hover:shadow-primary/20 active:scale-95` | Main action per screen (one only) |
+| Secondary   | `bg-surface-container hover:bg-surface-container-high text-on-surface px-5 py-2.5 rounded-lg`                                           | Secondary actions                 |
+| Ghost       | `text-on-surface-variant hover:text-on-surface px-4 py-2 rounded-lg`                                                                    | Tertiary, "learn more"            |
+| Destructive | `border border-error/30 text-error hover:bg-error/10 px-4 py-2.5 rounded-lg`                                                            | Delete, discard, critical         |
+
 
 ### 11.3 Form inputs
 
@@ -287,6 +308,7 @@ Small, pill-shaped, `rounded-full` + `bg-primary/15 text-primary px-3 py-1 text-
 ### 11.5 Empty states
 
 `glass-panel p-8 text-center rounded-xl` with:
+
 - Material Symbol icon (40px, `text-outline`)
 - Title (body-small weight 600)
 - Body explaining what the user should do to populate (body-small, `text-on-surface-variant`)
@@ -315,14 +337,16 @@ Avoid in all product, marketing, and doc copy:
 
 ### 12.3 Tone by surface
 
-| Surface | Tone |
-|---|---|
-| Onboarding / empty states | Warm, instructive, specific |
-| Success confirmations | Brief, matter-of-fact, acknowledges what happened |
-| Error messages | Direct, explains cause, suggests next action |
-| Marketing (landing page) | Confident, data-backed, teacher-first |
-| Legal / AVG copy | Formal "u", precise, no corporate hedging |
-| Student-facing | Same register as teacher — we don't talk down |
+
+| Surface                   | Tone                                              |
+| ------------------------- | ------------------------------------------------- |
+| Onboarding / empty states | Warm, instructive, specific                       |
+| Success confirmations     | Brief, matter-of-fact, acknowledges what happened |
+| Error messages            | Direct, explains cause, suggests next action      |
+| Marketing (landing page)  | Confident, data-backed, teacher-first             |
+| Legal / AVG copy          | Formal "u", precise, no corporate hedging         |
+| Student-facing            | Same register as teacher — we don't talk down     |
+
 
 ### 12.4 The signature hero quote
 
@@ -387,14 +411,16 @@ Not in v1 scope, documented so we don't forget:
 
 ## 16. Decisions Log
 
-| Date | Decision | Rationale |
-|---|---|---|
-| 2026-04-22 | Initial DESIGN.md created | Codify existing Stitch palette + Inter/Fira Code, add marketing Fraunces, document voice and motion rules, define wordmark direction |
-| 2026-04-22 | Dark-only for v1 | Teacher grading happens at night. Half-baked light mode is worse than none. |
-| 2026-04-22 | Fraunces for marketing display | Contrast with app's sans, editorial gravitas, differentiates from generic edtech |
-| 2026-04-22 | Double-E connected wordmark | Unique visual signature, symbolizes leer-leraar connection, scales well |
-| 2026-04-22 | Greens absent from accent palette | Category over-uses "success green"; restraint signals craft |
-| 2026-04-22 | No mascots, no illustrations in v1 | Every LMS has a cartoon robot. We don't. |
+
+| Date       | Decision                           | Rationale                                                                                                                            |
+| ---------- | ---------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------ |
+| 2026-04-22 | Initial DESIGN.md created          | Codify existing Stitch palette + Inter/Fira Code, add marketing Fraunces, document voice and motion rules, define wordmark direction |
+| 2026-04-22 | Dark-only for v1                   | Teacher grading happens at night. Half-baked light mode is worse than none.                                                          |
+| 2026-04-22 | Fraunces for marketing display     | Contrast with app's sans, editorial gravitas, differentiates from generic edtech                                                     |
+| 2026-04-22 | Double-E connected wordmark        | Unique visual signature, symbolizes leer-leraar connection, scales well                                                              |
+| 2026-04-22 | Greens absent from accent palette  | Category over-uses "success green"; restraint signals craft                                                                          |
+| 2026-04-22 | No mascots, no illustrations in v1 | Every LMS has a cartoon robot. We don't.                                                                                             |
+
 
 ---
 
@@ -424,3 +450,4 @@ Leera brand:
 - Double-E wordmark with joined horizontal bar between the two Es
 - Dutch primary language, English technical terms inline
 ```
+
