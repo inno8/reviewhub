@@ -1,0 +1,12 @@
+<svg id="wordmark-primary" viewBox="0 0 340 70" width="200" height="41.2" shape-rendering="crispEdges" data-src-loc="1239:1342:2235" data-om-id="9e8e61db:9" xmlns="http://www.w3.org/2000/svg">
+        <g fill="#a2c9ff" data-src-loc="1351:1369:2222" data-om-id="9e8e61db:10">
+          <rect x="0" y="0" width="10" height="70" data-src-loc="1380:1422" data-om-id="nc:1380"/><rect x="0" y="60" width="50" height="10" data-src-loc="1422:1465" data-om-id="nc:1422"/>
+          <rect x="60" y="0" width="10" height="70" data-src-loc="1476:1519" data-om-id="nc:1476"/><rect x="60" y="0" width="50" height="10" data-src-loc="1519:1562" data-om-id="nc:1519"/><rect x="60" y="60" width="50" height="10" data-src-loc="1562:1606" data-om-id="nc:1562"/>
+          <rect x="120" y="0" width="10" height="70" data-src-loc="1617:1661" data-om-id="nc:1617"/><rect x="120" y="0" width="50" height="10" data-src-loc="1661:1705" data-om-id="nc:1661"/><rect x="120" y="60" width="50" height="10" data-src-loc="1705:1750" data-om-id="nc:1705"/>
+          <rect x="60" y="30" width="110" height="10" data-src-loc="1761:1806" data-om-id="nc:1761"/>
+          <rect x="180" y="0" width="10" height="70" data-src-loc="1817:1861" data-om-id="nc:1817"/><rect x="180" y="0" width="50" height="10" data-src-loc="1861:1905" data-om-id="nc:1861"/><rect x="180" y="30" width="50" height="10" data-src-loc="1905:1950" data-om-id="nc:1905"/><rect x="220" y="0" width="10" height="40" data-src-loc="1950:1994" data-om-id="nc:1950"/>
+          <polygon points="190,40 200,40 230,70 220,70" data-src-loc="2005:2052" data-om-id="nc:2005"/>
+          <polygon points="240,70 250,70 275,0 265,0" data-src-loc="2063:2108" data-om-id="nc:2063"/><polygon points="290,70 280,70 265,0 275,0" data-src-loc="2108:2153" data-om-id="nc:2108"/>
+          <rect x="250" y="40" width="30" height="10" data-src-loc="2164:2209" data-om-id="nc:2164"/>
+        </g>
+      </svg>

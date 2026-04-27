@@ -1,5 +1,6 @@
 import { createRouter, createWebHistory } from 'vue-router';
 import LoginView from '@/views/LoginView.vue';
+import LandingView from '@/views/LandingView.vue';
 import DashboardView from '@/views/DashboardView.vue';
 import FindingDetailView from '@/views/FindingDetailView.vue';
 import FileReviewView from '@/views/FileReviewView.vue';
@@ -41,6 +42,7 @@ const router = createRouter({
     history: createWebHistory(),
     routes: [
         { path: '/login', name: 'login', component: LoginView, meta: { public: true } },
+        { path: '/welcome', name: 'welcome', component: LandingView, meta: { public: true } },
         { path: '/onboard', name: 'onboard', component: OnboardView, meta: { public: true } },
         { path: '/dev-profile-setup', name: 'dev-profile-setup', component: DevProfileSetupView, meta: { skipProfileCheck: true } },
         { path: '/dev-profile/results', name: 'dev-profile-results', component: DevProfileResultsView, meta: { skipProfileCheck: true } },
@@ -111,6 +113,12 @@ router.beforeEach(async (to) => {
         return true;
     }
     if (!auth.isAuthenticated) {
+        // Front door: unauthenticated users hitting `/` see the marketing
+        // landing page (LandingView). All other private routes still
+        // bounce to /login so deep links don't lose their destination.
+        if (to.path === '/' || to.name === 'dashboard') {
+            return { name: 'welcome' };
+        }
         return { name: 'login' };
     }
     // Admin-gated routes: allow admin, teacher, and platform ops (superuser).
