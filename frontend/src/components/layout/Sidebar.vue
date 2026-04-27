@@ -59,14 +59,14 @@ onMounted(async () => {
 const navItems = [
   // Student experience (the learning loop)
   { name: 'Dashboard', icon: 'dashboard', path: '/', studentOnly: true },
-  { name: 'My Feedback', icon: 'school', path: '/my/prs', studentOnly: true },
+  { name: 'PR Review', icon: 'school', path: '/my/prs', studentOnly: true },
   { name: 'Skills', icon: 'school', path: '/skills', studentOnly: true },
   { name: 'Recommendations', icon: 'route', path: '/recommendations', studentOnly: true },
   // Code Review — per-commit AI auto-review feed. Mounted at /timeline
   // for backwards compat (route name retained); rebranded as "Code Review"
   // in the nav because that's the student-facing concept. Drives off the
   // ai_engine push pipeline which writes Evaluation + Finding rows on
-  // every commit. Distinct from "My Feedback" (teacher rubric grading
+  // every commit. Distinct from "PR Review" (teacher rubric grading
   // at PR level) — the in-page banner makes that distinction explicit.
   { name: 'Code Review', icon: 'bolt', path: '/timeline', studentOnly: true },
   // "My Profile" lives in the sidebar footer (Dev Profile link) — no need
@@ -620,8 +620,12 @@ function toggleAllBranches(selected: boolean) {
         <span>{{ item.name }}</span>
       </router-link>
 
-      <!-- Calendar Widget -->
-      <div class="mt-8 px-4">
+      <!-- Calendar Widget — student-only.
+           For teachers / school admins / superusers the activity grid
+           was confusing (it shows the LOGGED-IN user's review activity,
+           which for staff is "rare" by design — they grade, they don't
+           push). Hiding it on staff sidebars cleans up the rail. -->
+      <div v-if="auth.isStudent" class="mt-8 px-4">
         <div class="flex items-center justify-between mb-4">
           <h3 class="text-[10px] uppercase tracking-widest text-outline font-bold">
             Activity — {{ monthName }}
@@ -712,13 +716,6 @@ function toggleAllBranches(selected: boolean) {
         <span class="material-symbols-outlined">psychology</span>
         <span>Dev Profile</span>
       </router-link>
-      <a
-        href="#"
-        class="text-outline hover:bg-surface-container/50 hover:text-on-surface rounded-lg mx-2 my-1 px-4 py-3 flex items-center gap-3 transition-transform active:translate-x-1 text-sm font-medium"
-      >
-        <span class="material-symbols-outlined">help</span>
-        <span>Support</span>
-      </a>
     </div>
   </aside>
 

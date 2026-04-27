@@ -466,7 +466,7 @@ function nextPage() { if (page.value < totalPages.value) page.value++; }
             Deze scores komen van de AI op elke commit. Voor je officiële
             rubric-cijfer kijk je in
             <router-link to="/my/prs" class="text-primary font-semibold underline-offset-2 hover:underline">
-              My Feedback
+              PR Review
             </router-link>
             — daar staan de PR-beoordelingen van je docent.
           </p>
