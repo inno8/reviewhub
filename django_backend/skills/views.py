@@ -689,57 +689,85 @@ def _resolve_target_user(request):
 
 class DashboardSkillsView(APIView):
     """
-    Get skill scores grouped by category for radar chart.
-    Returns: categories with avg scores.
+    Get skill scores grouped by category for the dashboard radar chart.
+
+    Honest scoring (Apr 28 2026):
+      - Use `bayesian_score` (evidence-weighted, starts at 50, converges
+        with observations) instead of the legacy `.score` field. The
+        legacy score defaulted to 100 — anything we hadn't seen showed
+        as "perfect" which is a misread of the actual signal.
+      - Aggregate per-category confidence (mean across the category's
+        metrics) and emit `is_preliminary = mean_confidence < 0.15`.
+        The frontend SkillRadarChart fades the whole spoke / dataset
+        when this flag is true so a teacher can tell the difference
+        between "real 50%" and "we have no idea, defaulted to 50%".
+      - Mirrors the pattern already in UserSkillsView and the grading
+        student-intelligence radar (single source of truth on scoring).
     """
 
     permission_classes = [permissions.IsAuthenticated]
 
     def get(self, request):
-        from django.db.models import Avg
+        from skills.models import CONFIDENCE_PRELIMINARY
 
         project_id = request.query_params.get('project')
         target_user = _resolve_target_user(request)
 
-        # Get user's metrics grouped by category
         metrics = SkillMetric.objects.filter(
             user=target_user
         ).select_related('skill', 'skill__category')
-        
+
         if project_id:
             metrics = metrics.filter(project_id=project_id)
-        
-        # Group by category and calculate averages
-        categories = {}
+
+        # Group by category — collect Bayesian scores + confidences.
+        categories: dict = {}
         for metric in metrics:
             cat_name = metric.skill.category.name
             if cat_name not in categories:
                 categories[cat_name] = {
-                    'name': cat_name,
                     'scores': [],
-                    'color': metric.skill.category.color
+                    'confidences': [],
+                    'color': metric.skill.category.color,
                 }
-            categories[cat_name]['scores'].append(metric.score)
-        
-        # Calculate averages
+            # Use Bayesian score once we have any observation; fall back
+            # to the legacy seed score for the zero-observation case so
+            # we still render a spoke for the category (the is_preliminary
+            # flag will mark it as untrusted).
+            if metric.observation_count > 0:
+                categories[cat_name]['scores'].append(metric.bayesian_score)
+            else:
+                categories[cat_name]['scores'].append(metric.score)
+            categories[cat_name]['confidences'].append(metric.confidence)
+
         result = []
         for cat_name, data in categories.items():
-            avg_score = sum(data['scores']) / len(data['scores']) if data['scores'] else 0
+            scores = data['scores']
+            confs = data['confidences']
+            avg_score = sum(scores) / len(scores) if scores else 0.0
+            avg_conf = sum(confs) / len(confs) if confs else 0.0
             result.append({
                 'category': cat_name,
                 'score': round(avg_score, 1),
-                'color': data['color']
+                'confidence': round(avg_conf, 3),
+                'is_preliminary': avg_conf < CONFIDENCE_PRELIMINARY,
+                'color': data['color'],
             })
 
         if not result:
-            # No SkillMetric rows (e.g. author was null at ingest); approximate from FindingSkill
+            # No SkillMetric rows (e.g. author was null at ingest);
+            # approximate from FindingSkill. These pseudo-scores are
+            # always preliminary — a teacher should see them as a
+            # rough hint, not a verdict.
             from evaluations.models import Evaluation, FindingSkill
 
             evals = Evaluation.objects.for_user(request.user)
             if project_id:
                 evals = evals.filter(project_id=project_id)
             cat_map: dict = {}
-            for row in FindingSkill.objects.filter(finding__evaluation__in=evals).select_related('skill__category'):
+            for row in FindingSkill.objects.filter(
+                finding__evaluation__in=evals
+            ).select_related('skill__category'):
                 c = row.skill.category
                 name = c.name
                 if name not in cat_map:
@@ -747,8 +775,14 @@ class DashboardSkillsView(APIView):
                 cat_map[name]['issues'] += 1
             for cat_name, data in cat_map.items():
                 pseudo = max(5.0, 100.0 - min(data['issues'] * 6.0, 85.0))
-                result.append({'category': cat_name, 'score': round(pseudo, 1), 'color': data['color']})
-        
+                result.append({
+                    'category': cat_name,
+                    'score': round(pseudo, 1),
+                    'confidence': 0.0,
+                    'is_preliminary': True,
+                    'color': data['color'],
+                })
+
         return Response(result)
 
 
