@@ -430,10 +430,12 @@ function applyIssuesProjectFromRoute() {
   selectDevProject(n);
 }
 
-function backToProjects() {
-  devSelectedProject.value = null;
-  router.push('/projects');
-}
+// `backToProjects()` was removed Apr 28 2026 — it pushed to `/projects`
+// (the legacy ProjectsView, decoupled from Nakijken grading) but
+// nothing in the active UI invoked it. The grading-first v1 nav
+// goes Dashboard → Code Review / PR Review / Skills, not back through
+// a Projects index. Route still exists for direct-URL access until we
+// fully retire the legacy projects.Project model post-pitch.
 
 watch(() => projectsStore.selectedProjectId, async (newId) => {
   if (newId && !authStore.isAdmin && devSelectedProject.value) {

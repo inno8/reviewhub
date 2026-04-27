@@ -1,9 +1,56 @@
-# TODO — Technical Debt Surfaced During Dogfood Hardening (Apr 27 2026)
+# TODO — Technical Debt Surfaced During Dogfood Hardening (Apr 27–28 2026)
 
 While preparing the `feat/grading-nakijken-copilot-v1` branch for dogfood
 deployment, I found a stack of pre-existing issues that we're shipping
 around (not into) for the May 7 pitch deadline. Capturing them here so
 they don't drop on the floor.
+
+## Multi-course webhook routing (v1 known limitation)
+
+In the Nakijken Copilot v1 model, every PR (Submission) is associated
+with a single Course inside a Cohort. When the GitHub webhook handler
+receives a push, it has to pick which Course the new PR belongs to.
+
+Today's behavior (`grading/webhooks.py:_upsert_submission_and_session`):
+the handler picks **the first Course in the Cohort**. If a Cohort has
+exactly one Course, this is correct. If a Cohort has more than one
+active Course (e.g. "Frontend" + "Backend" + "Database"), the PR is
+arbitrarily assigned to whichever Course was created first.
+
+Real-world impact: a student's Backend PR could land in the Frontend
+teacher's grading inbox.
+
+For v1 dogfood, mitigations:
+- Run one Course per Cohort during the dogfood period (clean default)
+- Or accept the misroute and let teachers manually re-assign in the
+  inbox (Submission has a `course` FK that's editable)
+
+For v1.1, the proper fix is one of:
+- Branch-prefix routing: `frontend/...` → Frontend Course, `backend/...`
+  → Backend Course (configurable per Course)
+- Branch-name suffix routing: `<student>/<course-slug>/...`
+- Repository-mapping: students register a separate repo per Course
+- A "pick course" prompt when a teacher opens an ambiguous session
+
+CLAUDE.md notes this is "Workstream B+" — flagged here so it's not
+forgotten the moment a multi-course cohort spins up.
+
+## Legacy `projects.Project` cleanup (post-pitch)
+
+The pre-Nakijken `projects.Project` model still exists alongside the
+new `grading.Course` model. The new model is the v1 source of truth
+(every Submission FKs to a Course; every Course FKs to a Cohort). The
+legacy model is mostly inert — Projects nav was already removed from
+the sidebar, the dead `backToProjects()` callback was deleted on
+Apr 28, but the `/projects` route still exists and `ProjectsView.vue`
+still loads if a user navigates there directly.
+
+Cleanup pass (post-pitch, half-day):
+- Delete the `/projects` route + `ProjectsView.vue`
+- Audit any remaining FKs from active models to `projects.Project`
+- Migrate any active data into `grading.Course` if applicable
+- Drop the `projects` app entirely once references are zero
+
 
 ## Frontend type-check (44 errors across 9 files)
 
