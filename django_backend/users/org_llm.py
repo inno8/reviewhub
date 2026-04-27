@@ -41,6 +41,21 @@ def _organisation_admin_ids(user) -> set[int]:
 
     admin_ids: set[int] = set()
 
+    # ── New multi-tenant org model (Nakijken Copilot v1) ──────────────────
+    # All admins + the owner in the same Organization can supply LLM config.
+    org_id = getattr(user, "organization_id", None)
+    if org_id:
+        from .models import Organization
+        org = Organization.objects.filter(pk=org_id).first()
+        if org and org.owner_id:
+            admin_ids.add(org.owner_id)
+        org_admin_ids = (
+            User.objects.filter(organization_id=org_id, role=User.Role.ADMIN)
+            .values_list("pk", flat=True)
+        )
+        admin_ids.update(org_admin_ids)
+
+    # ── Legacy: Team / UserCategory admin resolution ──────────────────────
     team_ids = set(
         TeamMember.objects.filter(user=user).values_list("team_id", flat=True)
     )

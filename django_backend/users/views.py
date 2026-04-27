@@ -51,9 +51,16 @@ class UserListView(generics.ListCreateAPIView):
 
     def get_queryset(self):
         user = self.request.user
-        if user.organization_id:
-            return User.objects.filter(organization=user.organization)
-        return User.objects.filter(id=user.id)
+        qs = (
+            User.objects.filter(organization=user.organization)
+            if user.organization_id
+            else User.objects.filter(id=user.id)
+        )
+        # Optional role filter: ?role=developer  or  ?role=teacher
+        role = self.request.query_params.get("role")
+        if role:
+            qs = qs.filter(role=role)
+        return qs
 
     def get_serializer_class(self):
         if self.request.method == 'POST':
