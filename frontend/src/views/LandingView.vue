@@ -375,9 +375,9 @@ function scrollTo(id: string) {
                     </div>
                     <div style="display:flex;align-items:center;gap:8px">
                       <span style="color:var(--primary)">$</span>
-                      <span class="typewriter" data-text='git commit -m "feat: validate email format on signup"' data-speed="50"></span>
+                      <span class="typewriter" data-text='git commit -m "Leera: elke commit een les"' data-speed="50"></span>
                     </div>
-                    <div class="typewriter" data-text="[main a4f2c1b] feat: validate email format on signup" data-speed="30" style="color:var(--outline);font-size:11px;padding-left:16px"></div>
+                    <div class="typewriter" data-text="[main a4f2c1b] Leera: elke commit een les" data-speed="30" style="color:var(--outline);font-size:11px;padding-left:16px"></div>
                     <div class="typewriter" data-text=" 2 files changed, 28 insertions(+), 4 deletions(-)" data-speed="30" style="color:var(--outline);font-size:11px;padding-left:16px"></div>
                     <div style="display:flex;align-items:center;gap:8px">
                       <span style="color:var(--primary)">$</span>
