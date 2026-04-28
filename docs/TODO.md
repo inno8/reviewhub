@@ -5,7 +5,42 @@ deployment, I found a stack of pre-existing issues that we're shipping
 around (not into) for the May 7 pitch deadline. Capturing them here so
 they don't drop on the floor.
 
-## PHP / Laravel deterministic layer (priority: HIGH for v1.1)
+## Forgot-password flow (priority: HIGH for v1.1)
+
+We don't have one today. The "Forgot?" link on `LoginView` was
+removed Apr 28 2026 — pointing to a `#` href that did nothing eroded
+trust more than the missing feature did.
+
+What we DO have today (don't confuse with this):
+- `OnboardSetPasswordView` (`users/views.py:339`) — first-time-
+  onboarding token-set-password flow. Triggered by an email code
+  during initial signup, NOT for resetting an existing password.
+
+What v1.1 needs (~4-6 hours):
+
+Backend (`django_backend/users/`):
+- `PasswordResetRequestView` — POST `/api/users/password-reset/`
+  with `email`. Generates a short-lived token (matches the existing
+  `OnboardCode` pattern: 6-digit code, 15-min expiry, single-use).
+  Sends an email with a tokenized reset link via the same SMTP /
+  Resend backend already in `users/emails.py`. Returns 200 even
+  when the email is unknown (avoid enumeration).
+- `PasswordResetConfirmView` — POST `/api/users/password-reset/confirm/`
+  with `token` + `new_password`. Validates the token, sets
+  `user.password = make_password(new_password)`, marks the token used.
+
+Frontend:
+- `ForgotPasswordView.vue` at `/forgot-password` — public route, email
+  input + submit, success message
+- `ResetPasswordView.vue` at `/reset-password/:token` — public route,
+  password + confirm fields, calls confirm endpoint, redirects to
+  /login on success
+- Restore the "Forgot?" link in `LoginView.vue` once the routes exist
+
+Email template — match the onboarding email style; Dutch + English
+copy. Resend / SMTP dispatch is already wired.
+
+
 
 User correction Apr 28 2026: **PHP + Laravel is the most common stack
 in Dutch MBO-4 ICT curricula** — more common than Python/Django.

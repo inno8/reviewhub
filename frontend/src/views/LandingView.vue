@@ -1017,9 +1017,8 @@ function scrollTo(id: string) {
           </div>
         </div>
 
-        <div style="border-top:1px solid rgba(139,145,157,.08);padding-top:24px;display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:16px">
-          <div style="color:var(--outline);font-size:13px">© 2026 LEERA · Gebouwd door Inno8</div>
-          <div style="color:var(--outline);font-size:13px">v1.0 · Pilot 2026</div>
+        <div style="border-top:1px solid rgba(139,145,157,.08);padding-top:24px;display:flex;justify-content:center;align-items:center;flex-wrap:wrap;gap:16px">
+          <div style="color:var(--outline);font-size:13px">© 2026 LEERA</div>
         </div>
       </div>
     </footer>

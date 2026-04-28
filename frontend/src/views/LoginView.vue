@@ -71,13 +71,13 @@ async function handleSubmit() {
 
             <!-- Password Field -->
             <div class="space-y-2">
-              <div class="flex justify-between items-center ml-1">
+              <div class="ml-1">
                 <label class="block text-xs font-semibold uppercase tracking-widest text-outline">
                   Password
                 </label>
-                <a href="#" class="text-[10px] text-primary hover:underline uppercase tracking-widest font-bold">
-                  Forgot?
-                </a>
+                <!-- Forgot-password flow not implemented yet (v1.1 backlog —
+                     see docs/TODO.md). The link is removed until the
+                     PasswordResetRequest + PasswordResetConfirm views land. -->
               </div>
               <div class="relative">
                 <span class="material-symbols-outlined absolute left-3 top-1/2 -translate-y-1/2 text-outline text-xl">lock</span>
