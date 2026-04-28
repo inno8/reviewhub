@@ -161,10 +161,6 @@ function goLogin() {
   mobileNavOpen.value = false;
   router.push('/login');
 }
-function goSignup() {
-  mobileNavOpen.value = false;
-  router.push('/org-signup');
-}
 function scrollTo(id: string) {
   mobileNavOpen.value = false;
   const el = document.getElementById(id);
@@ -190,9 +186,6 @@ function scrollTo(id: string) {
         </div>
         <div class="nav-desktop-actions" style="display:flex;gap:12px;align-items:center">
           <button @click="goLogin" class="login-link">Inloggen</button>
-          <button @click="goSignup" class="primary-gradient cta-btn" style="color:var(--on-primary);padding:10px 20px;font-size:14px">
-            Vraag een demo aan
-          </button>
         </div>
 
         <!-- Mobile hamburger -->
@@ -225,9 +218,6 @@ function scrollTo(id: string) {
           <button @click="scrollTo('languages')" class="mobile-menu-link">Talen</button>
           <div class="mobile-menu-divider"></div>
           <button @click="goLogin" class="mobile-menu-link mobile-menu-secondary">Inloggen</button>
-          <button @click="goSignup" class="mobile-menu-cta primary-gradient">
-            Vraag een demo aan
-          </button>
         </div>
       </div>
     </Transition>
