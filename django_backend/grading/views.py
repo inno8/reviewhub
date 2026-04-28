@@ -27,6 +27,7 @@ from __future__ import annotations
 import logging
 
 from django.db import transaction
+from django.db.models import Q
 from django.utils import timezone
 from rest_framework import mixins, status, viewsets
 from rest_framework.decorators import action
@@ -42,7 +43,9 @@ from .models import (
     Course,
     GradingSession,
     LLMCostLog,
+    Project,
     Rubric,
+    StudentProjectRepo,
     Submission,
 )
 from .pagination import GradingPagination
@@ -50,6 +53,8 @@ from .permissions import (
     IsCohortVisible,
     IsCourseOwnerOrAdmin,
     IsOrgAdmin,
+    IsProjectCourseOwnerOrAdmin,
+    IsProjectStudentOrCourseOwner,
     IsTeacher,
     IsTeacherOrAdmin,
     IsTeacherOrReadOnlyStudent,
@@ -63,7 +68,9 @@ from .serializers import (
     GradingSessionEditSerializer,
     GradingSessionListSerializer,
     LLMCostLogSerializer,
+    ProjectSerializer,
     RubricSerializer,
+    StudentProjectRepoSerializer,
     SubmissionSerializer,
 )
 
@@ -370,7 +377,13 @@ class CourseViewSet(viewsets.ModelViewSet):
         if self.action in {"list", "retrieve", "members"}:
             return [IsAuthenticated()]
         if self.action in {"create"}:
-            return [IsAuthenticated(), IsTeacherOrAdmin()]
+            # Apr 28 2026: tightened from IsTeacherOrAdmin() to IsOrgAdmin().
+            # Per the v1 permission spec the school admin owns Course
+            # creation; teachers create *Projects* inside courses. The
+            # frontend already gates the create button to admins; this
+            # closes the matching backend leak where a teacher could
+            # POST /courses/ directly via API.
+            return [IsAuthenticated(), IsOrgAdmin()]
         if self.action in {"reassign"}:
             return [IsAuthenticated(), IsOrgAdmin()]
         # update, partial_update, destroy, archive → owner-or-admin
@@ -1704,3 +1717,169 @@ class LLMCostLogViewSet(
         if tier:
             qs = qs.filter(tier=tier)
         return qs.order_by("-occurred_at")
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Project — assignment layer (Apr 28 2026)
+# ─────────────────────────────────────────────────────────────────────────────
+class ProjectViewSet(viewsets.ModelViewSet):
+    """
+    /api/grading/projects/
+
+    Project = an assignment within a Course (Cohort → Course → Project).
+
+    Permissions:
+      - LIST / RETRIEVE: any authenticated user, scoped via OrgScopedManager.
+        Students see projects in their cohort; teachers see projects in
+        cohorts where they own a course; admins see everything in their org.
+      - CREATE: the parent course's owner (teacher) — NOT school admin.
+        Verified in `perform_create`. Admin can override (escape hatch).
+      - UPDATE / PARTIAL_UPDATE / DESTROY: course owner or admin
+        (object-level via IsProjectCourseOwnerOrAdmin).
+
+    DESTROY soft-archives by setting `archived_at`; a hard DELETE on the row
+    is intentionally not exposed (grading history must remain queryable).
+
+    Query params:
+      - `course=<id>`: filter to one course's projects
+      - `include_archived=true`: include archived projects in list output
+    """
+
+    serializer_class = ProjectSerializer
+
+    def get_permissions(self):
+        if self.action in {"list", "retrieve"}:
+            return [IsAuthenticated()]
+        if self.action == "create":
+            return [IsAuthenticated(), IsTeacherOrAdmin()]
+        # update / partial_update / destroy
+        return [
+            IsAuthenticated(),
+            IsTeacherOrAdmin(),
+            IsProjectCourseOwnerOrAdmin(),
+        ]
+
+    def get_queryset(self):
+        user = self.request.user
+        base = (
+            Project.objects.for_user(user)
+            .select_related("course", "course__cohort", "rubric", "created_by")
+        )
+        # Filter by ?course=<id>
+        course_id = self.request.query_params.get("course")
+        if course_id:
+            base = base.filter(course_id=course_id)
+        # Hide archived by default on list
+        include_archived = self.request.query_params.get("include_archived") == "true"
+        if not include_archived and self.action == "list":
+            base = base.filter(archived_at__isnull=True)
+        return base
+
+    def perform_create(self, serializer):
+        """
+        Enforce: only the parent course's owner (or an admin in the same org)
+        may create a project under that course. The IsTeacherOrAdmin gate at
+        the action level lets teachers in, but they need to own the *specific*
+        course they're attaching the project to.
+        """
+        user = self.request.user
+        course = serializer.validated_data["course"]
+        # Cross-org: belt-and-braces (OrgScopedManager would already 404, but
+        # serializer validation accepts any FK by default).
+        if course.org_id != getattr(user, "organization_id", None) and not user.is_superuser:
+            raise PermissionDenied("Course is not in your organization.")
+        is_admin = user.is_superuser or getattr(user, "role", None) == "admin"
+        is_owner = course.owner_id == user.id or course.secondary_docent_id == user.id
+        if not (is_admin or is_owner):
+            raise PermissionDenied(
+                "Only the owner of the parent course (or an admin) may create a project under it."
+            )
+        serializer.save(
+            org=course.org,
+            created_by=user,
+        )
+
+    def perform_destroy(self, instance):
+        """Soft-archive instead of hard DELETE."""
+        if instance.archived_at is None:
+            instance.archived_at = timezone.now()
+            instance.save(update_fields=["archived_at", "updated_at"])
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# StudentProjectRepo — student-managed repo URL per project (Apr 28 2026)
+# ─────────────────────────────────────────────────────────────────────────────
+class StudentProjectRepoViewSet(viewsets.ModelViewSet):
+    """
+    /api/grading/student-project-repos/
+
+    A student's repo URL for a Project they're enrolled in. Self-service.
+
+    Permissions:
+      - LIST: a student sees only their own rows; a teacher sees rows for
+        projects whose course they own; admin sees everything in org.
+      - CREATE: a student creates a row for themselves. The view layer fixes
+        `student = request.user` regardless of what's in the request body
+        (so a student can't impersonate a peer by passing a different
+        `student` field). Admin override is allowed for support cases.
+      - UPDATE / DESTROY: own row only (student) or admin.
+
+    Query params:
+      - `project=<id>`: filter to one project's repos.
+    """
+
+    serializer_class = StudentProjectRepoSerializer
+
+    def get_permissions(self):
+        if self.action in {"list", "retrieve"}:
+            return [IsAuthenticated()]
+        # create / update / partial_update / destroy
+        return [IsAuthenticated(), IsProjectStudentOrCourseOwner()]
+
+    def get_queryset(self):
+        user = self.request.user
+        base = (
+            StudentProjectRepo.objects.for_user(user)
+            .select_related("project", "project__course", "student")
+        )
+        # Filter by ?project=<id>
+        project_id = self.request.query_params.get("project")
+        if project_id:
+            base = base.filter(project_id=project_id)
+        # Role-based scoping inside the org:
+        if user.is_superuser or getattr(user, "role", None) == "admin":
+            return base
+        if getattr(user, "role", None) == "teacher":
+            # Teachers see rows for projects whose course they own
+            # (primary or secondary docent).
+            return base.filter(
+                Q(project__course__owner_id=user.id)
+                | Q(project__course__secondary_docent_id=user.id)
+            )
+        # Student: own rows only
+        return base.filter(student_id=user.id)
+
+    def perform_create(self, serializer):
+        """
+        Force `student = request.user` for non-admins. Admins can pass an
+        explicit student for support cases.
+        """
+        user = self.request.user
+        is_admin = user.is_superuser or getattr(user, "role", None) == "admin"
+        project = serializer.validated_data["project"]
+        # Cross-org guard
+        if project.org_id != getattr(user, "organization_id", None) and not user.is_superuser:
+            raise PermissionDenied("Project is not in your organization.")
+        # Student gets locked to self regardless of request body
+        if not is_admin:
+            serializer.save(
+                student=user,
+                org=project.org,
+            )
+        else:
+            # Admin path: respect explicit `student` if provided, else default to caller
+            student = serializer.validated_data.get("student") or user
+            serializer.save(
+                student=student,
+                org=project.org,
+            )

@@ -173,6 +173,67 @@ class CanViewStudent(permissions.BasePermission):
         return can_view_student(request.user, obj)
 
 
+class IsProjectCourseOwnerOrAdmin(permissions.BasePermission):
+    """
+    Project write actions (create / update / archive).
+
+    Admins always pass. Teachers pass only when they own the parent
+    Course (the teacher who created the course owns the projects under
+    it). The view layer is responsible for verifying course ownership
+    on `perform_create`, since list-endpoints don't dispatch to
+    `has_object_permission`.
+    """
+
+    message = "Only the course owner or an admin may write to this project."
+
+    def has_permission(self, request, view) -> bool:
+        return _is_teacher_or_admin(request.user)
+
+    def has_object_permission(self, request, view, obj) -> bool:
+        user = request.user
+        if _is_admin(user):
+            return True
+        course = getattr(obj, "course", None)
+        if course is None:
+            return False
+        return getattr(course, "owner_id", None) == getattr(user, "id", None)
+
+
+class IsProjectStudentOrCourseOwner(permissions.BasePermission):
+    """
+    StudentProjectRepo permissions.
+
+    - Admin: full access.
+    - Student: read + write their OWN row only (cannot read peers,
+      cannot write peers).
+    - Teacher: read-only access when they own the parent course.
+    - Everyone else: deny.
+
+    The view layer must filter the list queryset accordingly so a
+    student doesn't see peers in a list response — has_object_permission
+    is only invoked on detail endpoints.
+    """
+
+    message = "You may only manage your own project repos."
+
+    def has_permission(self, request, view) -> bool:
+        return bool(request.user and request.user.is_authenticated)
+
+    def has_object_permission(self, request, view, obj) -> bool:
+        user = request.user
+        if _is_admin(user):
+            return True
+        if getattr(obj, "student_id", None) == getattr(user, "id", None):
+            return True
+        # Teachers who own the project's course get read-only access.
+        if request.method in permissions.SAFE_METHODS:
+            project = getattr(obj, "project", None)
+            course = getattr(project, "course", None) if project else None
+            if course is not None and getattr(course, "owner_id", None) == getattr(user, "id", None):
+                return True
+        return False
+
+
 class IsCohortVisible(permissions.BasePermission):
     """
     Object permission for Cohort — caller can see the cohort if any of:
