@@ -1486,7 +1486,10 @@ function scrollTo(id: string) {
 
   /* Nav: hide desktop link row + actions, show the hamburger */
   .landing-root nav { padding: 12px 16px !important; }
-  .landing-root .nav-links { display: none; }
+  /* !important because the inline style="display:flex" on the
+     nav-links div would otherwise win — same inline-vs-css trap as
+     the section padding overrides above. */
+  .landing-root .nav-links { display: none !important; }
   .landing-root .nav-desktop-actions { display: none !important; }
   .landing-root .hamburger { display: flex; }
 
