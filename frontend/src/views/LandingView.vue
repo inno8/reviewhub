@@ -531,14 +531,7 @@ function scrollTo(id: string) {
                 <span class="material-symbols-outlined" style="font-size:22px;color:var(--primary)">build</span>
               </div>
               <h4 style="font-size:16px;font-weight:700;margin-bottom:10px">Statische tools eerst</h4>
-              <p style="font-size:13px;color:var(--on-surface-variant);line-height:1.6;margin-bottom:12px">Voor het LLM iets ziet, draaien we de gevestigde tools. Goedkoop, snel, betrouwbaar — en ze lossen al een groot deel van de comments op zonder één AI-token.</p>
-              <div style="display:flex;flex-wrap:wrap;gap:6px">
-                <code style="background:var(--surface-container-high);padding:2px 6px;border-radius:4px;font-size:10px;color:var(--primary);font-family:'Fira Code',monospace">Ruff</code>
-                <code style="background:var(--surface-container-high);padding:2px 6px;border-radius:4px;font-size:10px;color:var(--primary);font-family:'Fira Code',monospace">ESLint</code>
-                <code style="background:var(--surface-container-high);padding:2px 6px;border-radius:4px;font-size:10px;color:var(--primary);font-family:'Fira Code',monospace">SQLFluff</code>
-                <code style="background:var(--surface-container-high);padding:2px 6px;border-radius:4px;font-size:10px;color:var(--primary);font-family:'Fira Code',monospace">Dolos</code>
-                <code style="background:var(--surface-container-high);padding:2px 6px;border-radius:4px;font-size:10px;color:var(--primary);font-family:'Fira Code',monospace">CodeT5</code>
-              </div>
+              <p style="font-size:13px;color:var(--on-surface-variant);line-height:1.6">Voor het LLM iets ziet, draaien we de gevestigde tools. Goedkoop, snel, betrouwbaar — en ze lossen al een groot deel van de comments op zonder één AI-token.</p>
             </div>
 
             <!-- Step 02 -->
@@ -548,13 +541,7 @@ function scrollTo(id: string) {
                 <span class="material-symbols-outlined" style="font-size:22px;color:var(--primary)">person_search</span>
               </div>
               <h4 style="font-size:16px;font-weight:700;margin-bottom:10px">Wij laden de student in</h4>
-              <p style="font-size:13px;color:var(--on-surface-variant);line-height:1.6;margin-bottom:12px">Vorige rubric-scores, terugkerende fouten, skill-trajectorie, wat de student vorige week leerde. Geen leeg blad — de pijplijn weet wie hij voor zich heeft.</p>
-              <div style="display:flex;flex-wrap:wrap;gap:6px">
-                <code style="background:var(--surface-container-high);padding:2px 6px;border-radius:4px;font-size:10px;color:var(--primary);font-family:'Fira Code',monospace">Bayes-skill</code>
-                <code style="background:var(--surface-container-high);padding:2px 6px;border-radius:4px;font-size:10px;color:var(--primary);font-family:'Fira Code',monospace">Patterns</code>
-                <code style="background:var(--surface-container-high);padding:2px 6px;border-radius:4px;font-size:10px;color:var(--primary);font-family:'Fira Code',monospace">Trajectorie</code>
-                <code style="background:var(--surface-container-high);padding:2px 6px;border-radius:4px;font-size:10px;color:var(--primary);font-family:'Fira Code',monospace">30d historie</code>
-              </div>
+              <p style="font-size:13px;color:var(--on-surface-variant);line-height:1.6">Vorige rubric-scores, terugkerende fouten, skill-trajectorie, wat de student vorige week leerde. Geen leeg blad — de pijplijn weet wie hij voor zich heeft.</p>
             </div>
 
             <!-- Step 03 -->
@@ -564,12 +551,7 @@ function scrollTo(id: string) {
                 <span class="material-symbols-outlined" style="font-size:22px;color:var(--primary)">tune</span>
               </div>
               <h4 style="font-size:16px;font-weight:700;margin-bottom:10px">Wij bouwen de unieke prompt</h4>
-              <p style="font-size:13px;color:var(--on-surface-variant);line-height:1.6;margin-bottom:12px">Statische bevindingen + student-context + jouw rubric + jouw stem-kalibratie = één prompt op maat van deze student, deze commit, dit criterium. Niet één template voor iedereen.</p>
-              <div style="display:flex;flex-wrap:wrap;gap:6px">
-                <code style="background:rgba(162,201,255,.12);border:1px solid rgba(162,201,255,.3);padding:2px 6px;border-radius:4px;font-size:10px;color:var(--primary);font-family:'Fira Code',monospace">Prompt engineering</code>
-                <code style="background:rgba(162,201,255,.12);border:1px solid rgba(162,201,255,.3);padding:2px 6px;border-radius:4px;font-size:10px;color:var(--primary);font-family:'Fira Code',monospace">Voice calibration</code>
-                <code style="background:rgba(162,201,255,.12);border:1px solid rgba(162,201,255,.3);padding:2px 6px;border-radius:4px;font-size:10px;color:var(--primary);font-family:'Fira Code',monospace">Rubric grounding</code>
-              </div>
+              <p style="font-size:13px;color:var(--on-surface-variant);line-height:1.6">Statische bevindingen + student-context + jouw rubric + jouw stem-kalibratie = één prompt op maat van deze student, deze commit, dit criterium. Niet één template voor iedereen.</p>
             </div>
 
             <!-- Step 04 -->
@@ -579,12 +561,7 @@ function scrollTo(id: string) {
                 <span class="material-symbols-outlined" style="font-size:22px;color:var(--tertiary)">how_to_reg</span>
               </div>
               <h4 style="font-size:16px;font-weight:700;margin-bottom:10px">Jij geeft het laatste woord</h4>
-              <p style="font-size:13px;color:var(--on-surface-variant);line-height:1.6;margin-bottom:12px">Concept verschijnt in jouw inbox. Lezen, bijsturen, klikken. Geen comment gaat naar de student zonder jouw klik. Jouw bewerkingen leren de pijplijn hoe jij grade.</p>
-              <div style="display:flex;flex-wrap:wrap;gap:6px">
-                <code style="background:var(--surface-container-high);padding:2px 6px;border-radius:4px;font-size:10px;color:var(--primary);font-family:'Fira Code',monospace">Inline edit</code>
-                <code style="background:var(--surface-container-high);padding:2px 6px;border-radius:4px;font-size:10px;color:var(--primary);font-family:'Fira Code',monospace">Send-after-review</code>
-                <code style="background:var(--surface-container-high);padding:2px 6px;border-radius:4px;font-size:10px;color:var(--primary);font-family:'Fira Code',monospace">Calibration loop</code>
-              </div>
+              <p style="font-size:13px;color:var(--on-surface-variant);line-height:1.6">Concept verschijnt in jouw inbox. Lezen, bijsturen, klikken. Geen comment gaat naar de student zonder jouw klik. Jouw bewerkingen leren de pijplijn hoe jij grade.</p>
             </div>
           </div>
         </div>
