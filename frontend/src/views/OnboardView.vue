@@ -160,13 +160,8 @@ async function handleSetPassword() {
     <main class="w-full max-w-md">
       <!-- Brand Identity -->
       <div class="flex flex-col items-center mb-10">
-        <div class="mb-4 bg-surface-container-highest p-4 rounded-xl">
-          <span class="material-symbols-outlined text-primary text-4xl">terminal</span>
-        </div>
-        <h1 class="text-3xl font-extrabold tracking-tight text-on-surface">
-          Review<span class="text-primary-container">Hub</span>
-        </h1>
-        <p class="text-on-surface-variant mt-2 text-sm tracking-wide">THE MONOLITH & THE LENS</p>
+        <img src="/logo/leera-wordmark-primary.svg" alt="LEERA" class="h-9 mb-3" />
+        <p class="text-on-surface-variant text-sm tracking-wide">Nakijken Copilot voor het MBO</p>
       </div>
 
       <!-- Onboard Card -->
@@ -196,7 +191,7 @@ async function handleSetPassword() {
                   <input
                     v-model="email"
                     type="email"
-                    placeholder="your_email@reviewhub.io"
+                    placeholder="naam@school.nl"
                     class="w-full bg-surface-container-lowest border border-outline-variant/30 text-on-surface rounded-lg py-3 pl-10 pr-4 focus:outline-none focus:ring-1 focus:ring-primary/50 focus:border-primary transition-all placeholder:text-outline/40"
                     required
                   />

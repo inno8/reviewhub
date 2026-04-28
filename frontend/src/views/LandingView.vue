@@ -167,10 +167,6 @@ function scrollTo(id: string) {
     <section id="top" class="hero">
       <div class="hero-grid dots drift"></div>
       <div class="container" style="position:relative;z-index:1;text-align:center">
-        <div style="display:inline-flex;align-items:center;gap:8px;background:rgba(162,201,255,.12);border:1px solid rgba(162,201,255,.2);padding:8px 16px;border-radius:999px;font-size:13px;font-weight:600;color:var(--primary);margin-bottom:24px">
-          <span style="width:7px;height:7px;border-radius:99px;background:var(--primary);animation:pulse 2s infinite"></span>
-          Nakijken Copilot — gebouwd voor het MBO
-        </div>
         <h1 style="font-size:clamp(42px,7vw,72px);font-weight:800;letter-spacing:-2px;line-height:1.1;margin-bottom:20px">
           Elke commit een les.<br/>Elke <span style="background:linear-gradient(135deg,#a2c9ff,#58a6ff);-webkit-background-clip:text;-webkit-text-fill-color:transparent;background-clip:text">PR een beoordeling</span><br/>die uit bewijs komt.
         </h1>
@@ -200,9 +196,9 @@ function scrollTo(id: string) {
           <div ref="heroMockEl" id="hero-mock" class="glass glow" style="border-radius:16px;overflow:hidden;transform:perspective(1200px) rotateX(4deg);transition:transform .5s">
             <div style="background:var(--surface-container-lowest);padding:20px;border-bottom:1px solid rgba(139,145,157,.08)">
               <div style="display:flex;align-items:center;gap:12px;margin-bottom:14px">
-                <div style="width:40px;height:40px;border-radius:99px;background:linear-gradient(135deg,#a2c9ff,#58a6ff);display:grid;place-items:center;color:#00315c;font-weight:800;font-size:14px">FA</div>
+                <div style="width:40px;height:40px;border-radius:99px;background:linear-gradient(135deg,#a2c9ff,#58a6ff);display:grid;place-items:center;color:#00315c;font-weight:800;font-size:14px">VS</div>
                 <div>
-                  <div style="font-weight:700;font-size:15px">Fatima El Amrani</div>
+                  <div style="font-weight:700;font-size:15px">Vash De Stampede</div>
                   <div style="font-size:12px;color:var(--outline)">feat: JWT refresh-rotatie + expiry check</div>
                 </div>
                 <div style="margin-left:auto;display:inline-flex;align-items:center;gap:6px;background:rgba(162,201,255,.15);color:var(--primary);padding:4px 10px;border-radius:999px;font-size:11px;font-weight:700;letter-spacing:.06em;text-transform:uppercase">
@@ -469,7 +465,7 @@ function scrollTo(id: string) {
                     <div style="width:40px;height:40px;border-radius:99px;background:linear-gradient(135deg,#a2c9ff,#58a6ff);display:grid;place-items:center;color:#00315c;font-weight:800;font-size:14px">DM</div>
                     <div>
                       <div style="font-weight:700;font-size:13px">Dennis Meulenberg</div>
-                      <div style="font-size:10px;color:var(--outline)">Reviewing Fatima's PR</div>
+                      <div style="font-size:10px;color:var(--outline)">Reviewing Vash's PR</div>
                     </div>
                   </div>
 
@@ -701,9 +697,9 @@ function scrollTo(id: string) {
             <div class="glass" style="border-radius:16px;overflow:hidden;box-shadow:0 20px 60px -20px rgba(255,186,66,.4)">
               <div style="background:var(--surface-container-low);padding:20px">
                 <div style="display:flex;align-items:center;gap:12px;margin-bottom:16px">
-                  <div style="width:48px;height:48px;border-radius:99px;background:linear-gradient(135deg,#a2c9ff,#58a6ff);display:grid;place-items:center;color:#00315c;font-weight:800;font-size:18px">FA</div>
+                  <div style="width:48px;height:48px;border-radius:99px;background:linear-gradient(135deg,#a2c9ff,#58a6ff);display:grid;place-items:center;color:#00315c;font-weight:800;font-size:18px">VS</div>
                   <div>
-                    <div style="font-weight:700;font-size:14px">Fatima El Amrani</div>
+                    <div style="font-weight:700;font-size:14px">Vash De Stampede</div>
                     <div style="font-size:11px;color:var(--outline)">Klas 2A ICT — MBO-4</div>
                   </div>
                 </div>
