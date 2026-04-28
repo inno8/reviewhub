@@ -1,0 +1,16 @@
+diff --git a/app/main.py b/app/main.py
+index 6666666..7777777 100644
+--- a/app/main.py
++++ b/app/main.py
+@@ -1,5 +1,12 @@
+-def main():
+-    pass
++def m():
++    x = [1,2,3]
++    r = 0
++    for i in x:
++        r = r + i
++    print(r)
++
++if __name__ == "__main__":
++    m()

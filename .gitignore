@@ -57,3 +57,8 @@ build/
 *.bak
 *.tmp
 /doc
+.gstack/
+
+# Reference scratch — youtube-reference.py extracts large MP4s + frame
+# folders for visual reference work. Re-runnable, not source of truth.
+tmp/

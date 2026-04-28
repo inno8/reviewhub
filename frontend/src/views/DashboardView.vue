@@ -2,8 +2,8 @@
 import { ref, computed, onMounted, watch } from 'vue';
 import { useRoute, useRouter } from 'vue-router';
 import AppShell from '@/components/layout/AppShell.vue';
+import SchoolAdminDashboardView from '@/views/SchoolAdminDashboardView.vue';
 import SkillRadarChart from '@/components/charts/SkillRadarChart.vue';
-import TrendChart from '@/components/charts/TrendChart.vue';
 import SkillBreakdownDialog from '@/components/skills/SkillBreakdownDialog.vue';
 import { useFindingsStore } from '@/stores/findings';
 import { useProjectsStore } from '@/stores/projects';
@@ -43,28 +43,6 @@ const adminCategories = ref<{ id: number; name: string }[]>([]);
 const adminProjects = ref<{ id: number; displayName: string }[]>([]);
 const drawerUser = ref<UserStat | null>(null);
 const adminTeam = ref<any>(null);
-const skillMatrix = ref<any>(null);
-
-async function loadSkillMatrix() {
-  try {
-    const axios = (await import('axios')).default;
-    const token = localStorage.getItem('reviewhub_token');
-    const { data } = await axios.get(
-      `${import.meta.env.VITE_API_URL}/skills/dashboard/admin-skill-matrix/`,
-      { headers: token ? { Authorization: `Bearer ${token}` } : {} }
-    );
-    skillMatrix.value = data;
-  } catch { skillMatrix.value = null; }
-}
-
-function heatColor(score: number | null): string {
-  if (score == null) return 'bg-surface-container-lowest text-outline';
-  if (score >= 90) return 'bg-green-500/30 text-green-300';
-  if (score >= 75) return 'bg-green-500/15 text-green-400';
-  if (score >= 60) return 'bg-yellow-500/15 text-yellow-400';
-  if (score >= 40) return 'bg-orange-500/15 text-orange-400';
-  return 'bg-red-500/20 text-red-400';
-}
 
 async function loadAdminTeam() {
   try {
@@ -163,12 +141,268 @@ function getLevelBg(level: string) {
   return m[level] || 'bg-surface-container';
 }
 
+// ─── Teacher dashboard data (Nakijken-aware) ───────────────────────────────
+// Single round-trip aggregate replacing the legacy admin-team chrome.
+// Returns counts by state + oldest drafted PRs + review-time aggregate +
+// top recurring patterns scoped to this teacher's cohorts.
+interface InboxKpi {
+  needs_draft: number;
+  needs_review: number;
+  in_review: number;
+  posted_today: number;
+  posted_this_week: number;
+}
+interface InboxNextUpRow {
+  id: number;
+  pr_title: string;
+  pr_url: string;
+  student_id: number | null;
+  student_name: string;
+  course_name: string | null;
+  cohort_id: number | null;
+  cohort_name: string | null;
+  iteration_number: number;
+  days_waiting: number;
+  state: string;
+  due_at: string | null;
+}
+interface InboxReviewTime {
+  p50_seconds: number | null;
+  p95_seconds: number | null;
+  samples: number;
+  target_seconds: number;
+}
+interface InboxRecurringPattern {
+  pattern_key: string;
+  pattern_type: string;
+  frequency: number;
+  students_affected: number;
+}
+interface InboxSummary {
+  kpi: InboxKpi;
+  next_up: InboxNextUpRow[];
+  review_time: InboxReviewTime;
+  recurring_patterns: InboxRecurringPattern[];
+}
+
+const inboxSummary = ref<InboxSummary | null>(null);
+const inboxLoading = ref(false);
+
+async function loadInboxSummary() {
+  inboxLoading.value = true;
+  try {
+    const { data } = await (api as any).grading.sessions.inboxSummary();
+    inboxSummary.value = data as InboxSummary;
+  } catch (err) {
+    console.error('inbox-summary failed:', err);
+    inboxSummary.value = null;
+  } finally {
+    inboxLoading.value = false;
+  }
+}
+
+function formatDuration(seconds: number | null): string {
+  if (seconds == null) return '—';
+  if (seconds < 60) return `${seconds}s`;
+  const m = Math.round(seconds / 60);
+  if (m < 60) return `${m} min`;
+  const h = Math.floor(m / 60);
+  const rem = m % 60;
+  return rem ? `${h}u ${rem}m` : `${h}u`;
+}
+
+function reviewTimeStatus(rt: InboxReviewTime | undefined | null): {
+  color: string; label: string;
+} {
+  if (!rt || rt.p50_seconds == null) return { color: 'text-outline', label: 'geen data' };
+  if (rt.p50_seconds <= rt.target_seconds) return { color: 'text-green-400', label: 'onder doel' };
+  if (rt.p50_seconds <= rt.target_seconds * 1.5) return { color: 'text-yellow-400', label: 'rond doel' };
+  return { color: 'text-orange-400', label: 'boven doel' };
+}
+
+function goToInboxFiltered(state: string) {
+  router.push({ path: '/grading', query: { state } });
+}
+
+function goToSession(sessionId: number) {
+  router.push({ name: 'grading-session-detail', params: { id: sessionId } });
+}
+
+function goToStudent(studentId: number) {
+  router.push({ name: 'grading-student-profile', params: { id: studentId } });
+}
+
+// ─── Student dashboard data (Nakijken-aware) ───────────────────────────────
+// Two extra fetches on top of the legacy developer-home aggregate, so the
+// student lands on "what did my teacher say + how am I doing on the rubric"
+// instead of pre-Nakijken commit-level numbers. Both endpoints already work
+// for students per the access fix in 29bafcb.
+interface StudentLatestFeedback {
+  session_id: number;
+  pr_title: string;
+  pr_url: string;
+  course_name: string | null;
+  posted_at: string;
+  comment_count: number;
+  has_summary: boolean;
+}
+interface StudentPerSkill {
+  skill_slug: string;
+  display_name: string;
+  bayesian_score: number | null;
+  confidence: number;
+  observation_count: number;
+  trend: 'up' | 'down' | 'stable';
+  trend_delta: number;
+  level_label: string | null;
+  kerntaak: string | null;
+}
+const studentLatestFeedback = ref<StudentLatestFeedback | null>(null);
+const studentPerSkill = ref<StudentPerSkill[]>([]);
+const studentCohortName = ref<string | null>(null);
+
+async function loadStudentLatestFeedback() {
+  try {
+    const { data } = await (api as any).grading.sessions.list({
+      state: 'posted', page_size: 1, ordering: '-posted_at',
+    });
+    const rows = Array.isArray(data) ? data : (data.results || []);
+    if (!rows.length) {
+      studentLatestFeedback.value = null;
+      return;
+    }
+    const r = rows[0];
+    // The list serializer is leaner than the detail one — fetch full
+    // detail just for the most-recent row so we have final_comments and
+    // final_summary populated. One extra request is fine; this is the
+    // pitch hero card.
+    const { data: full } = await (api as any).grading.sessions.get(r.id);
+    studentLatestFeedback.value = {
+      session_id: full.id,
+      pr_title: full.pr_title || full.repo_full_name || '',
+      pr_url: full.pr_url || '',
+      course_name: full.course_name || null,
+      posted_at: full.posted_at || full.updated_at,
+      comment_count: (full.final_comments || full.ai_draft_comments || []).length,
+      has_summary: !!(full.final_summary && full.final_summary.trim()),
+    };
+  } catch {
+    studentLatestFeedback.value = null;
+  }
+}
+
+async function loadStudentSnapshot() {
+  const sid = authStore.user?.id;
+  if (!sid) return;
+  try {
+    const axios = (await import('axios')).default;
+    const token = localStorage.getItem('reviewhub_token');
+    const { data } = await axios.get(
+      `${import.meta.env.VITE_API_URL}/grading/students/${sid}/snapshot/`,
+      { headers: token ? { Authorization: `Bearer ${token}` } : {} },
+    );
+    studentPerSkill.value = data.per_skill || [];
+    studentCohortName.value = data.student?.cohort?.name || null;
+  } catch {
+    studentPerSkill.value = [];
+  }
+}
+
+// Eindniveau: weighted avg of bayesian_score across rubric criteria,
+// rendered on the 0-4 rubric scale (divide by 25). Mirrors the teacher
+// view at /grading/students/<id> so a student sees the same number their
+// teacher does.
+const eindniveau = computed<number | null>(() => {
+  const usable = studentPerSkill.value.filter(r => r.bayesian_score !== null);
+  if (usable.length === 0) return null;
+  const sum = usable.reduce((s, r) => s + (r.bayesian_score as number), 0);
+  return sum / usable.length / 25;
+});
+
+interface EindniveauBand {
+  label: string;
+  bar: string;
+  pill: string;
+}
+const eindniveauBand = computed<EindniveauBand>(() => {
+  const v = eindniveau.value;
+  if (v === null) return { label: 'Geen data', bar: 'bg-outline-variant', pill: 'bg-surface-container text-on-surface-variant' };
+  if (v < 2) return { label: 'Onvoldoende', bar: 'bg-error', pill: 'bg-error/15 text-error' };
+  if (v < 3) return { label: 'Net aan', bar: 'bg-tertiary', pill: 'bg-tertiary/20 text-tertiary' };
+  if (v < 3.5) return { label: 'Voldoende', bar: 'bg-primary', pill: 'bg-primary/20 text-primary' };
+  return { label: 'Goed', bar: 'bg-emerald-400', pill: 'bg-emerald-900/40 text-emerald-300' };
+});
+
+// Aanbevolen focus: the weakest criterion with at least 2 observations
+// (so we don't recommend a focus area on a single noisy score). Tie-break
+// on trend (down first) then lower confidence.
+interface FocusItem {
+  criterion: string;
+  score_of_4: number;
+  trend_label: string;
+  observation_count: number;
+}
+const focus = computed<FocusItem | null>(() => {
+  const rows = studentPerSkill.value.filter(
+    r => r.bayesian_score !== null && r.observation_count >= 2,
+  );
+  if (rows.length === 0) return null;
+  const sorted = [...rows].sort((a, b) => {
+    const sa = a.bayesian_score as number;
+    const sb = b.bayesian_score as number;
+    if (sa !== sb) return sa - sb;
+    const trendRank = (t: string) => (t === 'down' ? 0 : t === 'stable' ? 1 : 2);
+    if (trendRank(a.trend) !== trendRank(b.trend)) return trendRank(a.trend) - trendRank(b.trend);
+    return a.confidence - b.confidence;
+  });
+  const pick = sorted[0];
+  return {
+    criterion: pick.display_name,
+    score_of_4: (pick.bayesian_score as number) / 25,
+    trend_label: pick.trend === 'up' ? 'stijgend' : pick.trend === 'down' ? 'dalend' : 'stabiel',
+    observation_count: pick.observation_count,
+  };
+});
+
+function formatRelativeTime(iso: string): string {
+  if (!iso) return '';
+  const then = new Date(iso).getTime();
+  const now = Date.now();
+  const diffMin = Math.round((now - then) / 60000);
+  if (diffMin < 1) return 'zojuist';
+  if (diffMin < 60) return `${diffMin} min geleden`;
+  const diffH = Math.round(diffMin / 60);
+  if (diffH < 24) return `${diffH} uur geleden`;
+  const diffD = Math.round(diffH / 24);
+  if (diffD < 14) return `${diffD} dag${diffD === 1 ? '' : 'en'} geleden`;
+  const d = new Date(iso);
+  return d.toLocaleDateString('nl-NL', { day: 'numeric', month: 'short' });
+}
+
+function goToLatestFeedback() {
+  if (!studentLatestFeedback.value) return;
+  router.push({
+    name: 'grading-session-detail',
+    params: { id: studentLatestFeedback.value.session_id },
+  });
+}
+
 onMounted(async () => {
   await projectsStore.fetchProjects();
   if (authStore.isAdmin) {
-    await Promise.all([loadAdminData(), loadAdminTeam(), loadSkillMatrix()]);
+    // The Nakijken aggregate is the front-door story for teachers + admins.
+    // loadAdminTeam stays for the "All Developers" grid lower down (legacy
+    // pre-Nakijken pipeline data). loadAdminData populates the admin user
+    // detail drawer.
+    await Promise.all([loadInboxSummary(), loadAdminData(), loadAdminTeam()]);
   } else {
-    await loadDevHome();
+    // Student: legacy dev-home aggregate + the two Nakijken-aware pieces
+    // for the new front-door cards. All three independent → fan out.
+    await Promise.all([
+      loadDevHome(),
+      loadStudentLatestFeedback(),
+      loadStudentSnapshot(),
+    ]);
   }
   applyIssuesProjectFromRoute();
 });
@@ -197,10 +431,12 @@ function applyIssuesProjectFromRoute() {
   selectDevProject(n);
 }
 
-function backToProjects() {
-  devSelectedProject.value = null;
-  router.push('/projects');
-}
+// `backToProjects()` was removed Apr 28 2026 — it pushed to `/projects`
+// (the legacy ProjectsView, decoupled from Nakijken grading) but
+// nothing in the active UI invoked it. The grading-first v1 nav
+// goes Dashboard → Code Review / PR Review / Skills, not back through
+// a Projects index. Route still exists for direct-URL access until we
+// fully retire the legacy projects.Project model post-pitch.
 
 watch(() => projectsStore.selectedProjectId, async (newId) => {
   if (newId && !authStore.isAdmin && devSelectedProject.value) {
@@ -261,17 +497,231 @@ function scoreColor(score: number) {
 
 <template>
   <AppShell>
+    <!-- ═══ SCHOOL ADMIN DASHBOARD (new Apr 28 2026) ═══
+         A non-developer IT/program manager doesn't need the per-student
+         code metrics, leaderboards, or commit feeds the legacy admin
+         dashboard rendered. They need cohorts, teachers, students-at-
+         risk, license health. SchoolAdminDashboardView is the answer.
+         Falls through to the existing admin dashboard for superusers
+         and teacher-admins (a school admin role + teacher role combo). -->
+    <template v-if="authStore.isSchoolAdmin && !authStore.isTeacher && !authStore.isSuperuser">
+      <SchoolAdminDashboardView />
+    </template>
+
     <!-- ═══ ADMIN DASHBOARD ═══ -->
-    <template v-if="authStore.isAdmin">
+    <template v-else-if="authStore.isAdmin">
       <div class="p-8 flex-1">
+        <!-- Teacher-first hero banner (shown for role=teacher before the admin KPIs). -->
+        <section
+          v-if="authStore.isTeacher"
+          class="mb-8 p-6 rounded-xl bg-primary/10 border border-primary/30 flex flex-wrap items-center justify-between gap-4"
+          data-testid="teacher-hero-banner"
+        >
+          <div class="min-w-0">
+            <p class="text-[11px] uppercase tracking-[0.2em] text-primary font-bold">Nakijken Copilot</p>
+            <h1 class="text-2xl md:text-3xl font-black text-on-surface tracking-tight mt-1">
+              Welkom terug{{ authStore.user?.first_name ? `, ${authStore.user.first_name}` : '' }}.
+            </h1>
+            <p class="text-sm text-on-surface-variant mt-1">
+              Ga naar je inbox om de PRs van je studenten na te kijken.
+            </p>
+          </div>
+          <button
+            @click="router.push('/grading')"
+            class="primary-gradient text-on-primary font-bold px-5 py-2.5 rounded-lg text-sm shadow-lg shadow-primary/10 hover:shadow-primary/20 active:scale-95 inline-flex items-center gap-1.5"
+            data-testid="teacher-start-grading-btn"
+          >
+            <span class="material-symbols-outlined text-base">rate_review</span>
+            <span>Nakijken beginnen</span>
+          </button>
+        </section>
+
         <header class="mb-8">
-          <span class="text-primary font-bold uppercase tracking-[0.2em] text-xs">Admin Dashboard</span>
-          <h1 class="text-4xl font-black text-on-surface tracking-tight mb-2">Team Overview</h1>
+          <span class="text-primary font-bold uppercase tracking-[0.2em] text-xs">
+            {{ authStore.isTeacher ? 'Vandaag op je bord' : 'Admin Dashboard' }}
+          </span>
+          <h1 class="text-4xl font-black text-on-surface tracking-tight mb-2">
+            {{ authStore.isTeacher ? 'Welkom terug' : 'Team Overview' }}
+          </h1>
         </header>
 
-        <!-- ── Team Health Row ── -->
-        <section v-if="adminTeam" class="grid grid-cols-2 md:grid-cols-5 gap-4 mb-8">
-          <div class="bg-surface-container-low p-5 rounded-xl border border-outline-variant/10 text-center">
+        <!-- ════════════════════════════════════════════════════════════════
+             NAKIJKEN COPILOT — front-door teacher KPIs
+             Single round-trip from /sessions/inbox-summary/ replaces a
+             half-dozen legacy admin-team calls and tells the docent the
+             three numbers they actually opened the app to find.
+        ════════════════════════════════════════════════════════════════ -->
+        <section
+          v-if="authStore.isTeacher && inboxSummary"
+          class="grid grid-cols-2 md:grid-cols-4 gap-4 mb-8"
+          data-testid="inbox-kpi-row"
+        >
+          <button
+            type="button"
+            class="bg-surface-container-low p-5 rounded-xl border border-outline-variant/10 text-left hover:border-primary/30 transition-colors group"
+            @click="goToInboxFiltered('pending')"
+          >
+            <p class="text-3xl font-black text-on-surface group-hover:text-primary">
+              {{ inboxSummary.kpi.needs_draft }}
+            </p>
+            <p class="text-[11px] text-outline uppercase tracking-wider mt-1">Concept opstellen</p>
+          </button>
+
+          <button
+            type="button"
+            class="primary-gradient p-5 rounded-xl text-left shadow-lg shadow-primary/15 hover:shadow-primary/30 transition-shadow group"
+            @click="goToInboxFiltered('drafted')"
+            data-testid="needs-review-card"
+          >
+            <p class="text-3xl font-black text-on-primary">
+              {{ inboxSummary.kpi.needs_review }}
+            </p>
+            <p class="text-[11px] uppercase tracking-wider mt-1 text-on-primary/80">Klaar voor review</p>
+          </button>
+
+          <button
+            type="button"
+            class="bg-surface-container-low p-5 rounded-xl border border-outline-variant/10 text-left hover:border-primary/30 transition-colors group"
+            @click="goToInboxFiltered('reviewing')"
+          >
+            <p class="text-3xl font-black text-on-surface group-hover:text-primary">
+              {{ inboxSummary.kpi.in_review }}
+            </p>
+            <p class="text-[11px] text-outline uppercase tracking-wider mt-1">Mid-review</p>
+          </button>
+
+          <button
+            type="button"
+            class="bg-surface-container-low p-5 rounded-xl border border-outline-variant/10 text-left hover:border-primary/30 transition-colors group"
+            @click="goToInboxFiltered('posted')"
+          >
+            <p class="text-3xl font-black text-green-400">
+              {{ inboxSummary.kpi.posted_this_week }}
+            </p>
+            <p class="text-[11px] text-outline uppercase tracking-wider mt-1">Verstuurd · 7 dagen</p>
+            <p
+              v-if="inboxSummary.kpi.posted_today"
+              class="text-[10px] text-green-400 mt-0.5"
+            >+{{ inboxSummary.kpi.posted_today }} vandaag</p>
+          </button>
+        </section>
+
+        <!-- Two-column: Next-up inbox preview + review-time / patterns -->
+        <section
+          v-if="authStore.isTeacher && inboxSummary"
+          class="grid grid-cols-1 lg:grid-cols-3 gap-6 mb-10"
+          data-testid="inbox-detail-row"
+        >
+          <!-- Next up (oldest drafted) -->
+          <div class="lg:col-span-2 bg-surface-container-low rounded-xl border border-outline-variant/10 overflow-hidden">
+            <div class="px-5 py-3 border-b border-outline-variant/10 flex items-center justify-between gap-2">
+              <div class="flex items-center gap-2">
+                <span class="material-symbols-outlined text-primary text-sm">rate_review</span>
+                <h3 class="text-sm font-bold">Next up</h3>
+              </div>
+              <button
+                @click="router.push('/grading')"
+                class="text-[11px] text-primary font-semibold hover:underline"
+              >
+                Open inbox →
+              </button>
+            </div>
+            <div v-if="inboxSummary.next_up.length === 0" class="p-8 text-center text-on-surface-variant text-sm">
+              <span class="material-symbols-outlined text-3xl text-outline mb-2 block">check_circle</span>
+              Geen openstaande PRs. Alles is bijgewerkt.
+            </div>
+            <ul v-else class="divide-y divide-outline-variant/10">
+              <li
+                v-for="row in inboxSummary.next_up"
+                :key="row.id"
+                class="px-5 py-3 flex items-center gap-3 cursor-pointer hover:bg-surface-container-lowest transition-colors group"
+                @click="goToSession(row.id)"
+                :data-testid="`next-up-${row.id}`"
+              >
+                <button
+                  type="button"
+                  class="w-8 h-8 rounded-full bg-surface-container-highest text-on-surface text-[11px] font-bold flex-shrink-0 inline-flex items-center justify-center hover:bg-primary/15 hover:text-primary transition-colors"
+                  :title="`Profiel van ${row.student_name}`"
+                  @click.stop="row.student_id && goToStudent(row.student_id)"
+                >
+                  {{ (row.student_name || '?').slice(0, 2).toUpperCase() }}
+                </button>
+                <div class="flex-1 min-w-0">
+                  <p class="text-sm font-semibold text-on-surface truncate">{{ row.pr_title || '(geen titel)' }}</p>
+                  <p class="text-xs text-on-surface-variant truncate">
+                    {{ row.student_name }}
+                    <span v-if="row.cohort_name"> · {{ row.cohort_name }}</span>
+                  </p>
+                </div>
+                <span
+                  class="text-[10px] font-bold px-2 py-0.5 rounded-full bg-surface-container text-on-surface-variant flex-shrink-0"
+                  :class="row.days_waiting >= 7 ? 'text-orange-400 bg-orange-500/10' : ''"
+                >
+                  {{ row.days_waiting }}d
+                </span>
+                <span class="material-symbols-outlined text-outline text-sm group-hover:text-primary transition-colors">chevron_right</span>
+              </li>
+            </ul>
+          </div>
+
+          <!-- Right: review time + recurring patterns -->
+          <div class="space-y-6">
+            <!-- Review time -->
+            <div class="bg-surface-container-low rounded-xl border border-outline-variant/10 p-5">
+              <div class="flex items-center gap-2 mb-3">
+                <span class="material-symbols-outlined text-primary text-sm">timer</span>
+                <h3 class="text-sm font-bold">Reviewtijd p50</h3>
+              </div>
+              <p
+                class="text-3xl font-black"
+                :class="reviewTimeStatus(inboxSummary.review_time).color"
+              >
+                {{ formatDuration(inboxSummary.review_time.p50_seconds) }}
+              </p>
+              <p class="text-[11px] text-outline mt-1">
+                doel ≤ {{ formatDuration(inboxSummary.review_time.target_seconds) }}
+                · {{ inboxSummary.review_time.samples }} sample{{ inboxSummary.review_time.samples === 1 ? '' : 's' }}
+                · {{ reviewTimeStatus(inboxSummary.review_time).label }}
+              </p>
+              <p
+                v-if="inboxSummary.review_time.p95_seconds != null"
+                class="text-[10px] text-on-surface-variant mt-2"
+              >
+                p95: {{ formatDuration(inboxSummary.review_time.p95_seconds) }}
+              </p>
+            </div>
+
+            <!-- Recurring patterns -->
+            <div class="bg-surface-container-low rounded-xl border border-outline-variant/10 p-5">
+              <div class="flex items-center gap-2 mb-3">
+                <span class="material-symbols-outlined text-tertiary text-sm">repeat</span>
+                <h3 class="text-sm font-bold">Terugkerende patronen</h3>
+              </div>
+              <ul
+                v-if="inboxSummary.recurring_patterns.length"
+                class="space-y-2"
+              >
+                <li
+                  v-for="p in inboxSummary.recurring_patterns"
+                  :key="p.pattern_key"
+                  class="flex items-center gap-2 text-xs"
+                >
+                  <span class="font-mono text-on-surface truncate flex-1" :title="p.pattern_key">
+                    {{ p.pattern_key }}
+                  </span>
+                  <span class="text-tertiary font-bold">{{ p.frequency }}×</span>
+                  <span class="text-outline">·</span>
+                  <span class="text-on-surface-variant">{{ p.students_affected }} stud</span>
+                </li>
+              </ul>
+              <p v-else class="text-sm text-on-surface-variant">Geen patronen.</p>
+            </div>
+          </div>
+        </section>
+
+        <!-- ── Team Health Row (legacy admin-team — hidden for teachers) ── -->
+        <section v-if="!authStore.isTeacher && adminTeam" class="grid grid-cols-2 md:grid-cols-5 gap-4 mb-8">
+          <div v-if="!authStore.isTeacher" class="bg-surface-container-low p-5 rounded-xl border border-outline-variant/10 text-center">
             <p class="text-3xl font-black" :class="adminTeam.teamAvgScore >= 60 ? 'text-green-400' : adminTeam.teamAvgScore >= 40 ? 'text-yellow-400' : 'text-red-400'">
               {{ adminTeam.teamAvgScore }}
             </p>
@@ -279,13 +729,13 @@ function scoreColor(score: number) {
           </div>
           <div class="bg-surface-container-low p-5 rounded-xl border border-outline-variant/10 text-center">
             <p class="text-3xl font-black text-primary">{{ adminTeam.totalDevelopers }}</p>
-            <p class="text-[10px] text-outline uppercase mt-1">Developers</p>
+            <p class="text-[10px] text-outline uppercase mt-1">{{ authStore.isTeacher ? 'Studenten' : 'Developers' }}</p>
           </div>
           <div class="bg-surface-container-low p-5 rounded-xl border border-outline-variant/10 text-center">
             <p class="text-3xl font-black text-tertiary">{{ adminTeam.totalFindings }}</p>
-            <p class="text-[10px] text-outline uppercase mt-1">Total Findings</p>
+            <p class="text-[10px] text-outline uppercase mt-1">{{ authStore.isTeacher ? 'Feedbackpunten' : 'Total Findings' }}</p>
           </div>
-          <div class="bg-surface-container-low p-5 rounded-xl border border-outline-variant/10 text-center">
+          <div v-if="!authStore.isTeacher" class="bg-surface-container-low p-5 rounded-xl border border-outline-variant/10 text-center">
             <p class="text-3xl font-black" :class="adminTeam.teamFixRate > 30 ? 'text-green-400' : 'text-red-400'">{{ adminTeam.teamFixRate }}%</p>
             <p class="text-[10px] text-outline uppercase mt-1">Fix Rate</p>
           </div>
@@ -303,8 +753,13 @@ function scoreColor(score: number) {
           </div>
         </section>
 
-        <!-- ── Two Column: Attention + Leaderboard ── -->
-        <section v-if="adminTeam" class="grid grid-cols-1 lg:grid-cols-2 gap-6 mb-8">
+        <!-- ── Two Column: Attention + Leaderboard ──
+             Hidden for teachers — legacy admin-team data uses the
+             pre-Nakijken per-commit pipeline scoring, which would
+             confuse the demo audience next to the rubric grades.
+             Stays for non-teacher admins (school admins / superusers)
+             since it's the only summary surface they have today. -->
+        <section v-if="!authStore.isTeacher && adminTeam" class="grid grid-cols-1 lg:grid-cols-2 gap-6 mb-8">
           <!-- Needs Attention -->
           <div class="bg-surface-container-low rounded-xl border border-outline-variant/10">
             <div class="px-5 py-3 border-b border-outline-variant/10 flex items-center gap-2">
@@ -354,83 +809,14 @@ function scoreColor(score: number) {
           </div>
         </section>
 
-        <!-- ── Team Patterns ── -->
-        <section v-if="adminTeam?.teamPatterns?.length" class="mb-8">
-          <div class="bg-surface-container-low rounded-xl border border-outline-variant/10 p-5">
-            <h3 class="text-sm font-bold mb-3">Top Team-Wide Patterns</h3>
-            <div class="flex flex-wrap gap-3">
-              <div v-for="p in adminTeam.teamPatterns" :key="p.type" class="flex items-center gap-2 px-3 py-2 bg-tertiary/5 rounded-lg border border-tertiary/20">
-                <span class="material-symbols-outlined text-tertiary text-sm">repeat</span>
-                <span class="text-sm">{{ p.type }}</span>
-                <span class="text-xs font-bold text-tertiary">{{ p.count }} devs</span>
-              </div>
-            </div>
-          </div>
-        </section>
+        <!-- Team Patterns and Skill Matrix removed — available in Skills and Journey views -->
 
-        <!-- ── Skill Matrix Heatmap ── -->
-        <section v-if="skillMatrix?.developers?.length" class="mb-8">
-          <div class="bg-surface-container-low rounded-xl border border-outline-variant/10 overflow-hidden">
-            <div class="px-5 py-3 border-b border-outline-variant/10 flex items-center justify-between">
-              <div class="flex items-center gap-2">
-                <span class="material-symbols-outlined text-primary text-sm">grid_view</span>
-                <h3 class="text-sm font-bold">Team Skill Matrix</h3>
-              </div>
-              <div class="flex items-center gap-3 text-[9px]">
-                <span class="flex items-center gap-1"><span class="w-3 h-2 rounded-sm bg-red-500/20"></span> &lt;40</span>
-                <span class="flex items-center gap-1"><span class="w-3 h-2 rounded-sm bg-orange-500/15"></span> 40-59</span>
-                <span class="flex items-center gap-1"><span class="w-3 h-2 rounded-sm bg-yellow-500/15"></span> 60-74</span>
-                <span class="flex items-center gap-1"><span class="w-3 h-2 rounded-sm bg-green-500/15"></span> 75-89</span>
-                <span class="flex items-center gap-1"><span class="w-3 h-2 rounded-sm bg-green-500/30"></span> 90+</span>
-              </div>
-            </div>
-            <div class="overflow-x-auto">
-              <table class="w-full text-xs">
-                <thead>
-                  <tr class="border-b border-outline-variant/10">
-                    <th class="px-3 py-2 text-left text-outline font-medium sticky left-0 bg-surface-container-low z-10">Developer</th>
-                    <th v-for="cat in skillMatrix.categories" :key="cat" class="px-2 py-2 text-center text-outline font-medium whitespace-nowrap">
-                      {{ cat.length > 12 ? cat.slice(0, 10) + '..' : cat }}
-                    </th>
-                  </tr>
-                </thead>
-                <tbody>
-                  <tr v-for="dev in skillMatrix.developers" :key="dev.id" class="border-b border-outline-variant/5 hover:bg-surface-container-lowest/40">
-                    <td class="px-3 py-2 font-medium sticky left-0 bg-surface-container-low z-10">{{ dev.name }}</td>
-                    <td v-for="cat in skillMatrix.categories" :key="cat" class="px-1 py-1 text-center">
-                      <span class="inline-block w-full py-1 rounded text-[10px] font-bold"
-                        :class="heatColor(dev.scores[cat])">
-                        {{ dev.scores[cat] != null ? dev.scores[cat] : '—' }}
-                      </span>
-                    </td>
-                  </tr>
-                  <!-- Team average row -->
-                  <tr class="border-t-2 border-outline-variant/20 font-bold">
-                    <td class="px-3 py-2 text-primary sticky left-0 bg-surface-container-low z-10">TEAM AVG</td>
-                    <td v-for="cat in skillMatrix.categories" :key="cat" class="px-1 py-1 text-center">
-                      <span class="inline-block w-full py-1 rounded text-[10px] font-bold"
-                        :class="heatColor(skillMatrix.teamAverages[cat])">
-                        {{ skillMatrix.teamAverages[cat] != null ? skillMatrix.teamAverages[cat] : '—' }}
-                      </span>
-                    </td>
-                  </tr>
-                </tbody>
-              </table>
-            </div>
-            <!-- Weakest categories callout -->
-            <div v-if="skillMatrix.weakestCategories?.length" class="px-5 py-3 border-t border-outline-variant/10 flex items-center gap-2">
-              <span class="material-symbols-outlined text-sm text-orange-400">priority_high</span>
-              <span class="text-xs text-outline">Team weakest areas:</span>
-              <span v-for="w in skillMatrix.weakestCategories" :key="w.name"
-                class="text-xs font-bold text-orange-400 bg-orange-500/10 px-2 py-0.5 rounded">
-                {{ w.name }} ({{ w.avg }}%)
-              </span>
-            </div>
-          </div>
-        </section>
-
-        <!-- ── Developer Cards (with enhanced data) ── -->
-        <section>
+        <!-- ── Developer Cards (with enhanced data) ──
+             Teachers reach the canonical Nakijken-aware student roster via
+             the sidebar "Studenten" link (/grading/students). Hiding this
+             pre-Nakijken grid for them avoids two scoring systems on one
+             screen. School admins / superusers still see it. -->
+        <section v-if="!authStore.isTeacher">
           <div class="flex items-center justify-between mb-4">
             <h3 class="text-sm font-bold">All Developers</h3>
             <div class="flex items-center gap-3">
@@ -549,7 +935,141 @@ function scoreColor(score: number) {
         <!-- Developer Overview (default view, no project filter) -->
         <template v-if="!devSelectedProject && devHome">
 
-          <!-- ── Top Metrics Row ── -->
+          <!-- ════════════════════════════════════════════════════════════
+               NAKIJKEN COPILOT — student front-door cards
+               (Path B: hero replace; legacy KPI row stays as auxiliary
+               stats below.)
+
+               Latest teacher feedback is the platform's promise — show it
+               first. Eindniveau on the rubric scale + Aanbevolen focus
+               give the student "where am I" + "what to fix next" using
+               the same numbers the teacher sees.
+          ════════════════════════════════════════════════════════════ -->
+          <section
+            v-if="studentLatestFeedback || eindniveau !== null"
+            class="grid grid-cols-1 lg:grid-cols-3 gap-4 mb-8"
+            data-testid="student-front-door"
+          >
+            <!-- Latest feedback card (spans 2 cols on lg) -->
+            <button
+              v-if="studentLatestFeedback"
+              type="button"
+              class="lg:col-span-2 primary-gradient rounded-xl p-5 text-left shadow-lg shadow-primary/15 hover:shadow-primary/30 transition-shadow group"
+              @click="goToLatestFeedback"
+              data-testid="latest-feedback-card"
+            >
+              <div class="flex items-start gap-3">
+                <span class="material-symbols-outlined text-on-primary text-xl mt-0.5">rate_review</span>
+                <div class="flex-1 min-w-0">
+                  <p class="text-[11px] uppercase tracking-[0.2em] text-on-primary/80 font-bold">
+                    Feedback van je docent
+                  </p>
+                  <h2 class="text-lg font-black text-on-primary mt-1 truncate">
+                    {{ studentLatestFeedback.pr_title || '(geen titel)' }}
+                  </h2>
+                  <p class="text-xs text-on-primary/85 mt-1">
+                    {{ studentLatestFeedback.comment_count }} comment{{ studentLatestFeedback.comment_count === 1 ? '' : 's' }}
+                    <span v-if="studentLatestFeedback.has_summary"> · samenvatting</span>
+                    <span v-if="studentLatestFeedback.course_name"> · {{ studentLatestFeedback.course_name }}</span>
+                    · {{ formatRelativeTime(studentLatestFeedback.posted_at) }}
+                  </p>
+                </div>
+                <span class="material-symbols-outlined text-on-primary group-hover:translate-x-1 transition-transform">arrow_forward</span>
+              </div>
+            </button>
+
+            <!-- Empty state when student has no posted feedback yet -->
+            <div
+              v-else
+              class="lg:col-span-2 bg-surface-container-low rounded-xl border border-outline-variant/10 p-5 flex items-center gap-3"
+            >
+              <span class="material-symbols-outlined text-outline text-xl">rate_review</span>
+              <div>
+                <p class="text-sm font-semibold text-on-surface">Nog geen feedback ontvangen</p>
+                <p class="text-xs text-on-surface-variant mt-0.5">
+                  Open een PR om feedback van je docent te krijgen.
+                </p>
+              </div>
+            </div>
+
+            <!-- Eindniveau bar -->
+            <div
+              v-if="eindniveau !== null"
+              class="bg-surface-container-low rounded-xl border border-outline-variant/10 p-5"
+              data-testid="eindniveau-card"
+            >
+              <div class="flex items-baseline justify-between gap-2 mb-2">
+                <p class="text-[11px] uppercase tracking-wider text-on-surface-variant font-semibold">
+                  Eindniveau
+                </p>
+                <span class="text-[10px] uppercase tracking-wider px-1.5 py-0.5 rounded font-bold" :class="eindniveauBand.pill">
+                  {{ eindniveauBand.label }}
+                </span>
+              </div>
+              <p class="text-3xl font-black text-on-surface">
+                {{ eindniveau.toFixed(1) }}<span class="text-base font-bold text-outline">/4</span>
+              </p>
+              <div class="mt-3 h-2 bg-surface-container rounded-full overflow-hidden">
+                <div
+                  class="h-full rounded-full transition-all"
+                  :class="eindniveauBand.bar"
+                  :style="{ width: Math.min(100, (eindniveau / 4) * 100) + '%' }"
+                ></div>
+              </div>
+              <p v-if="studentCohortName" class="text-[10px] text-outline mt-2">
+                {{ studentCohortName }}
+              </p>
+            </div>
+            <div
+              v-else
+              class="bg-surface-container-low rounded-xl border border-outline-variant/10 p-5"
+            >
+              <p class="text-[11px] uppercase tracking-wider text-on-surface-variant font-semibold">
+                Eindniveau
+              </p>
+              <p class="text-sm text-on-surface-variant mt-2">Nog geen rubric-data.</p>
+            </div>
+          </section>
+
+          <!-- Aanbevolen focus card -->
+          <section
+            v-if="focus"
+            class="mb-8 p-5 rounded-xl bg-tertiary/10 border border-tertiary/30 flex items-start gap-4"
+            data-testid="focus-card"
+          >
+            <span class="material-symbols-outlined text-tertiary text-xl mt-0.5">target</span>
+            <div class="flex-1 min-w-0">
+              <p class="text-[11px] uppercase tracking-wider text-tertiary font-bold">
+                Aanbevolen focus
+              </p>
+              <p class="text-base font-bold text-on-surface mt-1">
+                {{ focus.criterion }}
+                <span class="text-tertiary"> · {{ focus.score_of_4.toFixed(1) }}/4</span>
+              </p>
+              <p class="text-xs text-on-surface-variant mt-1">
+                Trend {{ focus.trend_label }} ·
+                {{ focus.observation_count }} observatie{{ focus.observation_count === 1 ? '' : 's' }} ·
+                gericht oefenen op dit criterium in je volgende PR.
+              </p>
+            </div>
+            <button
+              type="button"
+              class="bg-tertiary/15 text-tertiary hover:bg-tertiary/25 px-4 py-2 rounded-lg text-xs font-bold transition-colors flex-shrink-0"
+              @click="router.push('/skills')"
+            >
+              Open Skills →
+            </button>
+          </section>
+
+          <!-- ── Top Metrics Row (legacy auxiliary stats) ──
+               Pre-Nakijken AI-auto-review numbers from the per-commit
+               pipeline. Useful at a glance ("how active have I been")
+               but NOT the rubric grade — the new cards above own that.
+               Demoted by surrounding section header so the audience
+               doesn't conflate the two scoring systems. -->
+          <p class="text-[11px] uppercase tracking-wider text-outline font-semibold mb-2">
+            AI auto-review (over al je commits)
+          </p>
           <section class="grid grid-cols-2 md:grid-cols-5 gap-4 mb-8">
             <div class="bg-surface-container-low p-5 rounded-xl border border-outline-variant/10 text-center">
               <p class="text-4xl font-black" :class="devHome.avgScore >= 70 ? 'text-green-400' : devHome.avgScore >= 50 ? 'text-yellow-400' : 'text-red-400'">
@@ -670,19 +1190,6 @@ function scoreColor(score: number) {
                 </div>
               </div>
 
-              <!-- Active pattern alerts (text) -->
-              <div v-if="devHome.patterns?.length" class="space-y-2">
-                <div v-for="pat in devHome.patterns" :key="pat.key"
-                  class="flex items-center gap-3 p-3 rounded-lg bg-tertiary/5 border border-tertiary/20">
-                  <span class="material-symbols-outlined text-tertiary">repeat</span>
-                  <p class="text-sm flex-1">
-                    <span class="font-bold text-tertiary">{{ pat.type.replace('_', ' ') }}:</span>
-                    {{ pat.message }}.
-                  </p>
-                  <router-link to="/skills" class="text-xs text-primary font-semibold whitespace-nowrap">Fix it</router-link>
-                </div>
-              </div>
-
               <!-- Recent Commits -->
               <div class="bg-surface-container-low rounded-xl border border-outline-variant/10">
                 <div class="flex items-center justify-between p-4 border-b border-outline-variant/10">
@@ -712,21 +1219,6 @@ function scoreColor(score: number) {
                 </div>
               </div>
 
-              <!-- Top Issue Areas -->
-              <div v-if="devHome.topIssues?.length" class="bg-surface-container-low rounded-xl p-5 border border-outline-variant/10">
-                <h3 class="text-sm font-bold mb-4">Where you lose the most points</h3>
-                <div class="space-y-2">
-                  <div v-for="issue in devHome.topIssues" :key="issue.id"
-                    class="flex items-center gap-3 cursor-pointer hover:bg-surface-container-lowest rounded-lg p-1 -m-1 transition-colors"
-                    @click="issue.id && openSkillBreakdown(issue.id)">
-                    <span class="text-xs font-medium w-28 truncate">{{ issue.name }}</span>
-                    <div class="flex-1 bg-surface-container-lowest rounded-full h-3 overflow-hidden">
-                      <div class="h-full bg-tertiary rounded-full" :style="{ width: (issue.count / devHome.topIssues[0].count * 100) + '%' }"></div>
-                    </div>
-                    <span class="text-xs font-bold w-6 text-right">{{ issue.count }}</span>
-                  </div>
-                </div>
-              </div>
             </div>
 
             <!-- RIGHT: Visual Column (1/3 width) -->
@@ -738,34 +1230,6 @@ function scoreColor(score: number) {
                 <SkillRadarChart :data="devHome.radar" />
               </div>
 
-              <!-- Score Sparkline -->
-              <div v-if="devHome.sparkline?.length >= 2" class="bg-surface-container-low rounded-xl p-5 border border-outline-variant/10">
-                <h3 class="text-sm font-bold mb-1">Score Progression</h3>
-                <p class="text-[10px] text-outline mb-3">Last {{ devHome.sparkline.length }} commits</p>
-                <TrendChart title=""
-                  :points="devHome.sparkline.map((s: number, i: number) => ({ label: String(i + 1), value: s }))"
-                  :width="300" :height="120" />
-              </div>
-
-              <!-- Severity Breakdown -->
-              <div v-if="devHome.severity" class="bg-surface-container-low rounded-xl p-5 border border-outline-variant/10">
-                <h3 class="text-sm font-bold mb-3">Finding Severity</h3>
-                <div class="space-y-2">
-                  <div v-for="(count, sev) in devHome.severity" :key="sev" class="flex items-center gap-2">
-                    <span class="text-[10px] font-bold uppercase w-16"
-                      :class="{ 'text-red-400': sev === 'critical', 'text-orange-400': sev === 'warning', 'text-blue-400': sev === 'info', 'text-green-400': sev === 'suggestion' }">
-                      {{ sev }}
-                    </span>
-                    <div class="flex-1 bg-surface-container-lowest rounded-full h-2.5 overflow-hidden">
-                      <div class="h-full rounded-full"
-                        :class="{ 'bg-red-500': sev === 'critical', 'bg-orange-500': sev === 'warning', 'bg-blue-500': sev === 'info', 'bg-green-500': sev === 'suggestion' }"
-                        :style="{ width: devHome.findingCount ? (count / devHome.findingCount * 100) + '%' : '0%' }">
-                      </div>
-                    </div>
-                    <span class="text-xs font-bold w-5 text-right">{{ count }}</span>
-                  </div>
-                </div>
-              </div>
             </div>
           </section>
 

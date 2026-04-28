@@ -2,12 +2,48 @@ import { computed, ref } from 'vue';
 import { defineStore } from 'pinia';
 import { api, setSkipAuthRedirect } from '@/composables/useApi';
 
+/**
+ * Real role taxonomy from Django's User.Role enum.
+ *
+ * Before the grading app this store collapsed everything to ADMIN | INTERN,
+ * which made it impossible to distinguish a teacher (grader) from an admin
+ * (school owner) from a developer (student) from a platform superuser (us).
+ *
+ * Nakijken Copilot v1 needs four distinct navigation experiences:
+ *   - developer (student)       → skills, recommendations, journey, timeline
+ *   - teacher (docent)           → grading inbox + team, nothing dev-y
+ *   - admin (school owner)       → org dashboard + team + LLM usage
+ *   - is_superuser (platform ops)→ ops dashboard (cost across all schools, LLM config)
+ */
+export type UserRole = 'admin' | 'teacher' | 'developer' | 'viewer';
+
 export interface AuthUser {
   id: number;
   username: string;
   email: string;
-  role: 'ADMIN' | 'INTERN';
+  role: UserRole;
+  isSuperuser: boolean;
   devProfileCompleted: boolean;
+}
+
+function normalizeRole(raw: unknown): UserRole {
+  const s = String(raw ?? '').toLowerCase();
+  if (s === 'admin') return 'admin';
+  if (s === 'teacher' || s === 'docent') return 'teacher';
+  if (s === 'viewer') return 'viewer';
+  // Any legacy value (INTERN, empty, unknown) maps to developer — safest default.
+  return 'developer';
+}
+
+function mapUserData(userData: any): AuthUser {
+  return {
+    id: userData.id,
+    username: userData.username,
+    email: userData.email,
+    role: normalizeRole(userData.role),
+    isSuperuser: Boolean(userData.is_superuser),
+    devProfileCompleted: !!userData.dev_profile_completed,
+  };
 }
 
 export const useAuthStore = defineStore('auth', () => {
@@ -17,30 +53,35 @@ export const useAuthStore = defineStore('auth', () => {
   const initialized = ref(false);
 
   const isAuthenticated = computed(() => !!token.value && !!user.value);
-  const isAdmin = computed(() => user.value?.role === 'ADMIN');
+
+  // ── role predicates ────────────────────────────────────────────────
+  // Use these in components instead of string-matching role yourself.
+  const isStudent = computed(() => user.value?.role === 'developer');
+  const isTeacher = computed(() => user.value?.role === 'teacher');
+  const isSchoolAdmin = computed(() => user.value?.role === 'admin');
+  const isSuperuser = computed(() => user.value?.isSuperuser === true);
+
+  // Legacy compat: some components still check `isAdmin`. Keep it around but
+  // expand its meaning: admin OR teacher OR superuser (i.e. "not a student").
+  const isAdmin = computed(
+    () => isSchoolAdmin.value || isTeacher.value || isSuperuser.value,
+  );
+
+  // "Can see the ops dashboard" — strictly platform owners.
+  const isOps = computed(() => isSuperuser.value);
 
   async function login(email: string, password: string) {
     loading.value = true;
     try {
       const { data } = await api.auth.login(email, password);
-      // Django JWT returns { access, refresh }
-      const newToken = data.access || data.token; // Support both formats
+      const newToken = data.access || data.token;
       if (newToken) {
         token.value = newToken;
         localStorage.setItem('reviewhub_token', newToken);
       }
-      
-      // Fetch user profile separately
       const meResponse = await api.auth.me();
-      // Express returns { user: {...} }
       const userData = meResponse.data.user || meResponse.data;
-      user.value = {
-        id: userData.id,
-        username: userData.username,
-        email: userData.email,
-        role: mapRoleToFrontend(userData.role),
-        devProfileCompleted: !!userData.dev_profile_completed,
-      };
+      user.value = mapUserData(userData);
     } finally {
       loading.value = false;
     }
@@ -48,11 +89,9 @@ export const useAuthStore = defineStore('auth', () => {
 
   async function logout() {
     try {
-      if (token.value) {
-        await api.auth.logout();
-      }
+      if (token.value) await api.auth.logout();
     } catch {
-      // Ignore logout API errors and clear local session anyway.
+      // ignore logout API errors and clear local session anyway.
     }
     token.value = null;
     user.value = null;
@@ -64,21 +103,12 @@ export const useAuthStore = defineStore('auth', () => {
       initialized.value = true;
       return;
     }
-    // Skip auth redirect during bootstrap to prevent redirect loops
     setSkipAuthRedirect(true);
     try {
       const { data } = await api.auth.me();
-      // Express returns { user: {...} }
       const userData = data.user || data;
-      user.value = {
-        id: userData.id,
-        username: userData.username,
-        email: userData.email,
-        role: mapRoleToFrontend(userData.role),
-        devProfileCompleted: !!userData.dev_profile_completed,
-      };
+      user.value = mapUserData(userData);
     } catch {
-      // Token is invalid, clear it silently
       token.value = null;
       user.value = null;
       localStorage.removeItem('reviewhub_token');
@@ -86,14 +116,6 @@ export const useAuthStore = defineStore('auth', () => {
       setSkipAuthRedirect(false);
       initialized.value = true;
     }
-  }
-  
-  function mapRoleToFrontend(role: string): 'ADMIN' | 'INTERN' {
-    // Map roles to frontend format (Express uses ADMIN/INTERN directly)
-    if (role === 'ADMIN' || role === 'admin') {
-      return 'ADMIN';
-    }
-    return 'INTERN';
   }
 
   function setTokens(accessToken: string, refreshToken?: string) {
@@ -105,13 +127,7 @@ export const useAuthStore = defineStore('auth', () => {
   }
 
   function setUser(userData: any) {
-    user.value = {
-      id: userData.id,
-      username: userData.username,
-      email: userData.email,
-      role: mapRoleToFrontend(userData.role || 'INTERN'),
-      devProfileCompleted: !!userData.dev_profile_completed,
-    };
+    user.value = mapUserData(userData);
   }
 
   function markDevProfileCompleted() {
@@ -120,5 +136,13 @@ export const useAuthStore = defineStore('auth', () => {
     }
   }
 
-  return { token, user, loading, initialized, isAuthenticated, isAdmin, login, logout, bootstrap, setTokens, setUser, markDevProfileCompleted };
+  return {
+    token, user, loading, initialized,
+    isAuthenticated,
+    // role predicates
+    isStudent, isTeacher, isSchoolAdmin, isSuperuser, isOps,
+    // legacy compat
+    isAdmin,
+    login, logout, bootstrap, setTokens, setUser, markDevProfileCompleted,
+  };
 });

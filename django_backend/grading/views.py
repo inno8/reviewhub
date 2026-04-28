@@ -1,0 +1,1885 @@
+"""
+DRF ViewSets for the grading app.
+
+Security boundary:
+  - Every ViewSet's .get_queryset() starts from Model.objects.for_user(user).
+    That method filters by org via OrgScopedManager. It is the ONE place a
+    cross-org leak could happen, and it is covered by test_org_isolation.
+  - TEACHER role is required for CRUD actions. Students get read-only access
+    to their own rows only (handled by IsTeacherOrReadOnlyStudent).
+
+Custom actions on GradingSessionViewSet:
+  - POST .../generate_draft/  — kick off the rubric grader (state: pending/drafted → drafting → drafted).
+  - POST .../send/            — post approved comments to GitHub (state: drafted/reviewing → sending → posted/partial).
+  - POST .../resume/          — resume a partial send (state: partial → sending → posted).
+  - POST .../start_review/    — docent opens the session (state: drafted → reviewing; starts the stopwatch).
+
+Concurrency (eng-review bundle):
+  - generate_draft + send + resume all use select_for_update via
+    GradingSession.objects.select_for_update().
+  - state transitions go through GradingSession.can_transition_to() for
+    defense in depth.
+  - The actual GitHub posting (and its partial-post recovery) lives in
+    grading.services.github_poster (Day 7-8, not yet implemented).
+"""
+from __future__ import annotations
+
+import logging
+
+from django.db import transaction
+from django.db.models import Q
+from django.utils import timezone
+from rest_framework import mixins, status, viewsets
+from rest_framework.decorators import action
+from django.http import Http404
+from rest_framework.exceptions import NotFound, PermissionDenied, ValidationError
+from rest_framework.permissions import IsAuthenticated
+from rest_framework.response import Response
+
+from .models import (
+    Cohort,
+    CohortMembership,
+    CohortTeacher,
+    Course,
+    GradingSession,
+    LLMCostLog,
+    Project,
+    Rubric,
+    StudentProjectRepo,
+    Submission,
+)
+from .pagination import GradingPagination
+from .permissions import (
+    IsCohortVisible,
+    IsCourseOwnerOrAdmin,
+    IsOrgAdmin,
+    IsProjectCourseOwnerOrAdmin,
+    IsProjectStudentOrCourseOwner,
+    IsTeacher,
+    IsTeacherOrAdmin,
+    IsTeacherOrReadOnlyStudent,
+)
+from .serializers import (
+    CohortMembershipSerializer,
+    CohortSerializer,
+    CohortTeacherSerializer,
+    CourseSerializer,
+    GradingSessionDetailSerializer,
+    GradingSessionEditSerializer,
+    GradingSessionListSerializer,
+    LLMCostLogSerializer,
+    ProjectSerializer,
+    RubricSerializer,
+    StudentProjectRepoSerializer,
+    SubmissionSerializer,
+)
+
+log = logging.getLogger(__name__)
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Rubric
+# ─────────────────────────────────────────────────────────────────────────────
+class RubricViewSet(viewsets.ModelViewSet):
+    """
+    /api/grading/rubrics/
+    List/CRUD rubrics the requesting user can see:
+      - Templates (is_template=True): visible to everyone in the org.
+      - Org rubrics: visible to all teachers in the same org.
+
+    Students don't create or edit rubrics.
+    """
+
+    serializer_class = RubricSerializer
+    permission_classes = [IsAuthenticated, IsTeacher]
+
+    def get_queryset(self):
+        user = self.request.user
+        # for_user() filters by org; we also include global templates (org=null).
+        base = Rubric.objects.for_user(user)
+        # Union with templates:
+        templates = Rubric.objects.filter(is_template=True)
+        return (base | templates).distinct().order_by("-updated_at")
+
+    def perform_create(self, serializer):
+        user = self.request.user
+        serializer.save(org=user.organization, owner=user, is_template=False)
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Cohort (admin-managed, teachers + students read-scoped)
+# ─────────────────────────────────────────────────────────────────────────────
+def _role(user) -> str:
+    return getattr(user, "role", "") or ""
+
+
+def _is_admin(user) -> bool:
+    if getattr(user, "is_superuser", False):
+        return True
+    return _role(user) == "admin"
+
+
+def _is_teacher(user) -> bool:
+    return _role(user) == "teacher"
+
+
+class CohortViewSet(viewsets.ModelViewSet):
+    """
+    /api/grading/cohorts/
+
+    Admin write, teacher/student scoped read.
+
+    Visibility:
+      - admin / superuser: all cohorts in their org
+      - teacher: cohorts where they own (or secondary-teach) a course
+      - student: their own cohort (via CohortMembership)
+
+    Writes (POST, PATCH, archive, DELETE of membership rows) are admin-only.
+    Hard DELETE of a cohort is not exposed — use archive/ instead so grading
+    history stays queryable.
+    """
+
+    serializer_class = CohortSerializer
+
+    def get_permissions(self):
+        # Writes require admin; reads require any authenticated role that
+        # has a relationship to the cohort (enforced via queryset scoping).
+        if self.action in {"list", "retrieve"}:
+            return [IsAuthenticated()]
+        if self.action in {"members", "teachers"}:
+            # GET/POST/DELETE on members/teachers is permission-checked inside
+            # the action (GET open to all, POST/DELETE admin-only).
+            return [IsAuthenticated()]
+        # create, update, partial_update, destroy, archive
+        return [IsAuthenticated(), IsOrgAdmin()]
+
+    def get_queryset(self):
+        user = self.request.user
+        base = Cohort.objects.for_user(user).select_related("org")
+        include_archived = self.request.query_params.get("include_archived") == "true"
+        if not include_archived and self.action == "list":
+            base = base.filter(archived_at__isnull=True)
+
+        if _is_admin(user):
+            return base.order_by("-created_at")
+        if _is_teacher(user):
+            # Cohorts where the teacher is explicitly assigned, owns a course,
+            # or is secondary docent.
+            return (
+                base.filter(teacher_assignments__teacher=user)
+                | base.filter(courses__owner=user)
+                | base.filter(courses__secondary_docent=user)
+            ).distinct().order_by("-created_at")
+        # Student: their own cohort only
+        return base.filter(memberships__student=user, memberships__removed_at__isnull=True).distinct()
+
+    def perform_create(self, serializer):
+        user = self.request.user
+        serializer.save(org=user.organization)
+
+    def destroy(self, request, *args, **kwargs):
+        # Hard delete is disallowed — archive via dedicated action instead.
+        return Response(
+            {"error": "hard_delete_disabled", "message": "Use POST /archive/ instead."},
+            status=status.HTTP_405_METHOD_NOT_ALLOWED,
+        )
+
+    @action(detail=True, methods=["post"], url_path="archive")
+    def archive(self, request, pk=None):
+        """
+        Soft-archive a cohort. Admins only. Idempotent: re-archiving is a no-op.
+        """
+        cohort = self.get_object()  # 404 if not visible to this user
+        # Re-check admin (get_permissions already enforces; belt-and-braces)
+        if not _is_admin(request.user):
+            raise PermissionDenied("Admin role required.")
+        if cohort.archived_at is None:
+            cohort.archived_at = timezone.now()
+            cohort.save(update_fields=["archived_at", "updated_at"])
+        return Response(CohortSerializer(cohort).data)
+
+    @action(detail=True, methods=["get", "post"], url_path="members")
+    def members(self, request, pk=None):
+        """
+        GET   /cohorts/{id}/members/        list active members (admin, any
+                                            teacher in the cohort, or the
+                                            students themselves)
+        POST  /cohorts/{id}/members/        add student (admin only)
+                                            body: {student_id, student_repo_url?}
+        """
+        cohort = self.get_object()  # 404 if not visible to this user
+
+        if request.method == "GET":
+            qs = cohort.memberships.filter(removed_at__isnull=True).select_related("student").order_by("joined_at")
+            # context={"request": request} feeds CohortMembershipSerializer's
+            # PII-redaction logic. Without it, the serializer fails closed
+            # and returns null for every email — exactly the regression we
+            # don't want for staff callers.
+            return Response(
+                CohortMembershipSerializer(qs, many=True, context={"request": request}).data
+            )
+
+        # POST — admin only
+        if not _is_admin(request.user):
+            raise PermissionDenied("Admin role required to add members.")
+
+        student_id = request.data.get("student_id")
+        repo_url = request.data.get("student_repo_url", "") or ""
+        if not student_id:
+            raise ValidationError({"student_id": "required"})
+
+        from users.models import User
+        try:
+            student = User.objects.get(pk=student_id)
+        except User.DoesNotExist:
+            raise NotFound("student not found")
+        if (
+            not request.user.is_superuser
+            and student.organization_id != request.user.organization_id
+        ):
+            raise PermissionDenied("student is in a different organization")
+
+        existing = CohortMembership.objects.filter(
+            student=student, removed_at__isnull=True
+        ).select_related("cohort").first()
+        if existing and existing.cohort_id != cohort.id:
+            raise ValidationError(
+                {
+                    "student": (
+                        f"student already enrolled in cohort "
+                        f"{existing.cohort.name!r} (id={existing.cohort_id}) — "
+                        "remove from that cohort first or transfer explicitly."
+                    )
+                }
+            )
+
+        m, created = CohortMembership.objects.update_or_create(
+            student=student,
+            defaults={
+                "cohort": cohort,
+                "student_repo_url": repo_url,
+                "removed_at": None,
+            },
+        )
+        return Response(
+            CohortMembershipSerializer(m, context={"request": request}).data,
+            status=status.HTTP_201_CREATED if created else status.HTTP_200_OK,
+        )
+
+    @action(
+        detail=True,
+        methods=["delete"],
+        url_path=r"members/(?P<membership_id>[^/.]+)",
+    )
+    def remove_member(self, request, pk=None, membership_id=None):
+        """DELETE /cohorts/{id}/members/{membership_id}/  — admin only, soft-delete."""
+        cohort = self.get_object()
+        if not _is_admin(request.user):
+            raise PermissionDenied("Admin role required to remove members.")
+        try:
+            m = cohort.memberships.get(pk=membership_id)
+        except CohortMembership.DoesNotExist:
+            raise NotFound("membership not found")
+        if m.removed_at is None:
+            m.removed_at = timezone.now()
+            m.save(update_fields=["removed_at"])
+        return Response(status=status.HTTP_204_NO_CONTENT)
+
+    @action(detail=True, methods=["get", "post"], url_path="teachers")
+    def teachers(self, request, pk=None):
+        """
+        GET   /cohorts/{id}/teachers/   — list teachers assigned to this cohort.
+        POST  /cohorts/{id}/teachers/   — add a teacher (admin only).
+                                          body: {teacher_id}
+        """
+        cohort = self.get_object()
+
+        if request.method == "GET":
+            qs = cohort.teacher_assignments.select_related("teacher").order_by("added_at")
+            return Response(CohortTeacherSerializer(qs, many=True).data)
+
+        # POST — admin only
+        if not _is_admin(request.user):
+            raise PermissionDenied("Admin role required to add teachers.")
+
+        teacher_id = request.data.get("teacher_id")
+        if not teacher_id:
+            raise ValidationError({"teacher_id": "required"})
+
+        from users.models import User as _User
+        try:
+            teacher = _User.objects.get(pk=teacher_id)
+        except _User.DoesNotExist:
+            raise NotFound("teacher not found")
+
+        if (
+            not request.user.is_superuser
+            and teacher.organization_id != request.user.organization_id
+        ):
+            raise PermissionDenied("teacher is in a different organization")
+
+        if teacher.role not in ("teacher", "admin") and not teacher.is_superuser:
+            raise ValidationError({"teacher_id": "user does not have a teacher role"})
+
+        ct, created = CohortTeacher.objects.get_or_create(cohort=cohort, teacher=teacher)
+        return Response(
+            CohortTeacherSerializer(ct).data,
+            status=status.HTTP_201_CREATED if created else status.HTTP_200_OK,
+        )
+
+    @action(
+        detail=True,
+        methods=["delete"],
+        url_path=r"teachers/(?P<assignment_id>[^/.]+)",
+    )
+    def remove_teacher(self, request, pk=None, assignment_id=None):
+        """DELETE /cohorts/{id}/teachers/{assignment_id}/  — admin only."""
+        cohort = self.get_object()
+        if not _is_admin(request.user):
+            raise PermissionDenied("Admin role required to remove teachers.")
+        try:
+            ct = cohort.teacher_assignments.get(pk=assignment_id)
+        except CohortTeacher.DoesNotExist:
+            raise NotFound("teacher assignment not found")
+        ct.delete()
+        return Response(status=status.HTTP_204_NO_CONTENT)
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Course (was "Classroom")
+# ─────────────────────────────────────────────────────────────────────────────
+class CourseViewSet(viewsets.ModelViewSet):
+    """
+    /api/grading/courses/
+
+    Visibility (org-scoped first via OrgScopedManager):
+      - admin/superuser: every course in the org
+      - teacher: courses they own, secondary-teach, OR any course in a
+        cohort where they teach something (needed so co-teachers can see
+        each other's courses in the same klas)
+      - student: every course in their own cohort
+
+    Writes:
+      - create: admin (any cohort in org); teacher if they own the cohort
+        (teach some course in it) OR they are setting themselves as owner
+        in a cohort they teach
+      - update: admin (any); teacher only when they own the course
+      - reassign: admin-only — changes course.owner_id to new user in org
+      - archive: via PATCH on archived_at or via POST /archive/ (admin + owner)
+
+    Membership is also exposed here for v1 backward compatibility:
+    /courses/{id}/members/ — delegates to the course's cohort.
+    """
+
+    serializer_class = CourseSerializer
+
+    def get_permissions(self):
+        if self.action in {"list", "retrieve", "members"}:
+            return [IsAuthenticated()]
+        if self.action in {"create"}:
+            # Apr 28 2026: tightened from IsTeacherOrAdmin() to IsOrgAdmin().
+            # Per the v1 permission spec the school admin owns Course
+            # creation; teachers create *Projects* inside courses. The
+            # frontend already gates the create button to admins; this
+            # closes the matching backend leak where a teacher could
+            # POST /courses/ directly via API.
+            return [IsAuthenticated(), IsOrgAdmin()]
+        if self.action in {"reassign"}:
+            return [IsAuthenticated(), IsOrgAdmin()]
+        # update, partial_update, destroy, archive → owner-or-admin
+        return [IsAuthenticated(), IsTeacherOrAdmin(), IsCourseOwnerOrAdmin()]
+
+    def get_queryset(self):
+        user = self.request.user
+        base = Course.objects.for_user(user).select_related("cohort", "owner", "rubric")
+        include_archived = self.request.query_params.get("include_archived") == "true"
+        if not include_archived and self.action == "list":
+            base = base.filter(archived_at__isnull=True)
+
+        if _is_admin(user):
+            return base.order_by("-created_at")
+        if _is_teacher(user):
+            # Own + secondary + other courses in cohorts where I teach
+            own = base.filter(owner=user)
+            secondary = base.filter(secondary_docent=user)
+            cohort_siblings = base.filter(
+                cohort__courses__owner=user,
+            ) | base.filter(cohort__courses__secondary_docent=user)
+            return (own | secondary | cohort_siblings).distinct().order_by("-created_at")
+        # Student: courses in their own cohort
+        return base.filter(
+            cohort__memberships__student=user,
+            cohort__memberships__removed_at__isnull=True,
+        ).distinct()
+
+    def _resolve_create_payload(self, serializer):
+        """
+        Enforce create rules:
+          - admin: may set any owner in the org; cohort must belong to org
+          - teacher: may only create courses they will own themselves
+            (owner defaults to self). Cohort must be in the teacher's org AND
+            either empty of courses OR contain a course they already teach.
+        """
+        user = self.request.user
+        data = serializer.validated_data
+        cohort = data.get("cohort")
+        if cohort is not None and cohort.org_id != user.organization_id and not user.is_superuser:
+            raise PermissionDenied("cohort is in a different organization")
+
+        if _is_admin(user):
+            owner = data.get("owner") or user
+            return {"org": user.organization, "owner": owner, "cohort": cohort}
+
+        # Teacher path
+        # Teachers cannot assign ownership to someone else.
+        owner = data.get("owner")
+        if owner is not None and owner.id != user.id:
+            raise PermissionDenied("teachers can only create courses they own")
+        if cohort is not None:
+            already_teaching = (
+                cohort.courses.filter(owner=user).exists()
+                or cohort.courses.filter(secondary_docent=user).exists()
+            )
+            # If the cohort already has courses and the teacher teaches none
+            # of them, creating there is an admin operation.
+            if cohort.courses.exists() and not already_teaching:
+                raise PermissionDenied("you don't teach in this cohort")
+        return {"org": user.organization, "owner": user, "cohort": cohort}
+
+    def perform_create(self, serializer):
+        from django.db import IntegrityError
+        overrides = self._resolve_create_payload(serializer)
+        try:
+            serializer.save(**overrides)
+        except IntegrityError as exc:
+            if "uniq_course_cohort_owner" in str(exc):
+                raise ValidationError(
+                    {"non_field_errors": [
+                        "This teacher already owns an active course in this cohort. "
+                        "A teacher can only have one course per cohort."
+                    ]}
+                )
+            raise
+
+    def perform_update(self, serializer):
+        # Don't let non-admins mutate owner via plain PATCH.
+        if not _is_admin(self.request.user):
+            serializer.validated_data.pop("owner", None)
+        serializer.save()
+
+    def destroy(self, request, *args, **kwargs):
+        return Response(
+            {"error": "hard_delete_disabled", "message": "Use POST /archive/ instead."},
+            status=status.HTTP_405_METHOD_NOT_ALLOWED,
+        )
+
+    @action(detail=True, methods=["post"], url_path="archive")
+    def archive(self, request, pk=None):
+        """Soft-archive a course. Admin or the course owner."""
+        course = self.get_object()
+        self.check_object_permissions(request, course)
+        if course.archived_at is None:
+            course.archived_at = timezone.now()
+            course.save(update_fields=["archived_at", "updated_at"])
+        return Response(CourseSerializer(course).data)
+
+    @action(detail=True, methods=["post"], url_path="reassign")
+    def reassign(self, request, pk=None):
+        """
+        POST /courses/{id}/reassign/  body: {new_owner_id}
+        Admin-only. Changes course.owner (e.g., teacher leaves school).
+        """
+        course = self.get_object()
+        # IsOrgAdmin already enforced by get_permissions; keep defensive.
+        if not _is_admin(request.user):
+            raise PermissionDenied("Admin role required.")
+
+        new_owner_id = request.data.get("new_owner_id")
+        if not new_owner_id:
+            raise ValidationError({"new_owner_id": "required"})
+        from users.models import User
+        try:
+            new_owner = User.objects.get(pk=new_owner_id)
+        except User.DoesNotExist:
+            raise NotFound("new owner not found")
+        if (
+            not request.user.is_superuser
+            and new_owner.organization_id != request.user.organization_id
+        ):
+            raise ValidationError({"new_owner_id": "user is in a different organization"})
+        if _role(new_owner) not in {"teacher", "admin"}:
+            raise ValidationError(
+                {"new_owner_id": "new owner must have role=teacher or admin"}
+            )
+        course.owner = new_owner
+        course.save(update_fields=["owner", "updated_at"])
+        return Response(CourseSerializer(course).data)
+
+    @action(detail=True, methods=["get", "post", "delete"], url_path="members")
+    def members(self, request, pk=None):
+        """
+        GET    /courses/{id}/members/   → list (cohort memberships for this course's cohort)
+        POST   /courses/{id}/members/   → {student_id, student_repo_url} add to cohort
+        DELETE /courses/{id}/members/?student_id=X → remove from cohort
+
+        In v1 Scope B1 Workstream A, membership is at the cohort level but this
+        endpoint bridges the existing Classroom-era UI. A student added here
+        joins the course's cohort (and thus every course in that cohort).
+        """
+        course = self.get_object()
+        cohort = course.cohort
+
+        if request.method == "GET":
+            if cohort is None:
+                return Response([])
+            qs = cohort.memberships.select_related("student").order_by("joined_at")
+            return Response(
+                CohortMembershipSerializer(qs, many=True, context={"request": request}).data
+            )
+
+        if cohort is None:
+            raise ValidationError({"cohort": "course has no cohort; assign one before managing members"})
+
+        if request.method == "POST":
+            student_id = request.data.get("student_id")
+            repo_url = request.data.get("student_repo_url", "")
+            if not student_id:
+                raise ValidationError({"student_id": "required"})
+            # Validate the student exists in the same org before linking.
+            from users.models import User
+            try:
+                student = User.objects.get(pk=student_id)
+            except User.DoesNotExist:
+                raise NotFound("student not found")
+            if (
+                not request.user.is_superuser
+                and student.organization_id != request.user.organization_id
+            ):
+                raise PermissionDenied("student is in a different organization")
+            # OneToOne on student: one cohort per student. If the student is
+            # already in a DIFFERENT cohort, block the move — Workstream B+
+            # will add a proper "transfer student between cohorts" flow.
+            existing = CohortMembership.objects.filter(student=student).first()
+            if existing and existing.cohort_id != cohort.id:
+                raise ValidationError(
+                    {"student": f"student is already in cohort {existing.cohort_id}; transfer not supported in v1"}
+                )
+            m, created = CohortMembership.objects.update_or_create(
+                student=student,
+                defaults={"cohort": cohort, "student_repo_url": repo_url},
+            )
+            return Response(
+                CohortMembershipSerializer(m, context={"request": request}).data,
+                status=status.HTTP_201_CREATED if created else status.HTTP_200_OK,
+            )
+
+        # DELETE
+        student_id = request.query_params.get("student_id")
+        if not student_id:
+            raise ValidationError({"student_id": "required"})
+        deleted, _ = CohortMembership.objects.filter(
+            cohort=cohort, student_id=student_id
+        ).delete()
+        return Response({"deleted": deleted}, status=status.HTTP_200_OK)
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Submission (mostly read-only for v1)
+# ─────────────────────────────────────────────────────────────────────────────
+class SubmissionViewSet(
+    mixins.ListModelMixin,
+    mixins.RetrieveModelMixin,
+    mixins.UpdateModelMixin,
+    viewsets.GenericViewSet,
+):
+    """
+    /api/grading/submissions/
+    Submissions are usually created by the webhook ingest path, not via this
+    endpoint. Teachers list/retrieve; students see their own.
+    """
+
+    serializer_class = SubmissionSerializer
+    permission_classes = [IsAuthenticated, IsTeacherOrReadOnlyStudent]
+    # Honor ?page_size=N (clamped to 100). Same pagination class as the
+    # inbox, for the same reason: students with many PRs over a semester
+    # shouldn't get full 20-row pages on a phone screen.
+    pagination_class = GradingPagination
+
+    def get_queryset(self):
+        user = self.request.user
+        qs = Submission.objects.for_user(user).select_related(
+            "course", "student"
+        )
+        # Filter by course if provided. Accept both `course` and legacy
+        # `classroom` query params for v1 UI transition.
+        course_id = self.request.query_params.get("course") or self.request.query_params.get("classroom")
+        if course_id:
+            qs = qs.filter(course_id=course_id)
+        status_param = self.request.query_params.get("status")
+        if status_param:
+            qs = qs.filter(status=status_param)
+        # Students see only their own
+        role = getattr(user, "role", None)
+        if role not in {"teacher", "admin"}:
+            qs = qs.filter(student=user)
+        return qs.order_by("-created_at")
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# GradingSession — the grading inbox
+# ─────────────────────────────────────────────────────────────────────────────
+def _snapshot_final_from_ai_draft_if_empty(session: "GradingSession") -> list[str]:
+    """
+    Mirror ai_draft_* into final_* when the teacher accepted the draft as-is.
+
+    `github_poster.post_all_or_nothing` posts from `final_comments or
+    ai_draft_comments` (and same for scores). When the teacher made no edits,
+    final_* stays empty in the DB even after a successful POSTED transition,
+    which means:
+      - Reopening the session shows a blank summary editor (the comments and
+        scores still render via frontend fallbacks, but the data layer is
+        misleading).
+      - We cannot distinguish "teacher accepted as-is" from "no review yet"
+        purely from the row.
+      - The v1.1 "AI learns from teacher edits" loop has no diff to learn
+        from.
+
+    Convention: any session in POSTED has final_* = canonical "what landed on
+    GitHub." This helper is idempotent — only fills empties, never overwrites
+    teacher edits. Returns the list of fields it touched so the caller can
+    extend its `update_fields=[...]` list.
+    """
+    touched: list[str] = []
+    if not session.final_comments and session.ai_draft_comments:
+        # Defensive copy — JSONField stores list-of-dicts; we don't want a
+        # shared reference between final_* and ai_draft_* in case a later
+        # path mutates one of them.
+        import copy
+        session.final_comments = copy.deepcopy(session.ai_draft_comments)
+        touched.append("final_comments")
+    if not session.final_scores and session.ai_draft_scores:
+        import copy
+        session.final_scores = copy.deepcopy(session.ai_draft_scores)
+        touched.append("final_scores")
+    # final_summary has no AI counterpart (the rubric grader produces scores
+    # + per-comment evidence; the free-text summary is a teacher-only field).
+    # Leaving it empty is correct when the teacher didn't write one.
+    return touched
+
+
+class GradingSessionViewSet(
+    mixins.ListModelMixin,
+    mixins.RetrieveModelMixin,
+    mixins.UpdateModelMixin,
+    viewsets.GenericViewSet,
+):
+    """
+    /api/grading/sessions/
+    The grading inbox. Teachers list/retrieve/patch; custom actions for the
+    review lifecycle.
+    """
+
+    # Auth gate is per-action (see get_permissions). The default class-level
+    # gate is `IsAuthenticated`; teacher-only writes/state-flips opt in.
+    permission_classes = [IsAuthenticated]
+    # Inbox-specific pagination: honors ?page_size=N (clamped to 100).
+    # DRF default ignores the query param, forcing 20-row pages even on
+    # mobile-narrow screens.
+    pagination_class = GradingPagination
+
+    # Read actions (list, retrieve) are open to any authenticated user; the
+    # queryset further restricts students to their own sessions. Everything
+    # else (PATCH, generate_draft, send, resume, start_review, discard,
+    # start_new_iteration, ...) requires teacher/admin role.
+    _STUDENT_READABLE_ACTIONS = {"list", "retrieve"}
+
+    def get_permissions(self):
+        if self.action in self._STUDENT_READABLE_ACTIONS:
+            return [IsAuthenticated()]
+        return [IsAuthenticated(), IsTeacher()]
+
+    def get_serializer_class(self):
+        if self.action == "list":
+            return GradingSessionListSerializer
+        if self.action == "partial_update" or self.action == "update":
+            return GradingSessionEditSerializer
+        return GradingSessionDetailSerializer
+
+    def get_queryset(self):
+        user = self.request.user
+        qs = GradingSession.objects.for_user(user).select_related(
+            "submission",
+            "submission__course",
+            "submission__student",
+            "rubric",
+        ).prefetch_related("posted_comments")
+
+        # Accept both `course` and legacy `classroom` query params.
+        course_id = self.request.query_params.get("course") or self.request.query_params.get("classroom")
+        if course_id:
+            qs = qs.filter(submission__course_id=course_id)
+
+        state = self.request.query_params.get("state")
+        if state:
+            qs = qs.filter(state=state)
+
+        overdue_only = self.request.query_params.get("overdue") == "true"
+        if overdue_only:
+            qs = qs.filter(
+                submission__due_at__lt=timezone.now(),
+                state__in=[
+                    GradingSession.State.PENDING,
+                    GradingSession.State.DRAFTED,
+                    GradingSession.State.REVIEWING,
+                ],
+            )
+
+        # Student gate: students see only sessions they own (i.e. they are
+        # the submission's primary student). Cross-student access returns
+        # 404 via get_object → consistent with the org-isolation pattern.
+        # Contributors-on-shared-repos is a v1.1 surface (currently they
+        # see the session via the primary author's view if invited).
+        role = getattr(user, "role", None)
+        is_staff = role in {"teacher", "admin"} or getattr(user, "is_superuser", False)
+        if not is_staff:
+            qs = qs.filter(submission__student=user)
+
+        return qs.order_by("submission__due_at", "-created_at")
+
+    # ── custom actions ───────────────────────────────────────────────────
+
+    @action(detail=False, methods=["get"], url_path="inbox-summary")
+    def inbox_summary(self, request):
+        """
+        Aggregate stats for the teacher dashboard front door.
+
+        Returns one round-trip with everything the dashboard needs:
+          - kpi: counts by state (needs_draft, needs_review, in_review,
+                 posted_today, posted_this_week)
+          - next_up: top 5 oldest drafted sessions with student/PR/cohort
+                     context, ordered by due_at asc then created_at asc
+          - review_time: p50/p95 of docent_review_time_seconds over the
+                         last 30d of posted sessions, with the v1 target
+          - recurring_patterns: top 3 unresolved patterns across the
+                                teacher's cohorts
+
+        Scoped to cohorts the teacher actually has standing in (course
+        owner, secondary docent, or explicit teacher assignment). Org
+        admins / superusers see the whole org.
+
+        Endpoint is teacher-only via get_permissions() (action is not in
+        _STUDENT_READABLE_ACTIONS).
+        """
+        from datetime import timedelta
+        from django.db.models import Avg, Count, Q
+        from .models import CohortTeacher
+        from evaluations.models import Pattern
+
+        user = request.user
+        role = getattr(user, "role", None)
+        is_admin = role == "admin" or getattr(user, "is_superuser", False)
+
+        # ── Scope: which sessions does this teacher see in the inbox? ──
+        base = GradingSession.objects.for_user(user).select_related(
+            "submission", "submission__course", "submission__course__cohort",
+            "submission__student",
+        )
+        if is_admin:
+            scoped = base
+        else:
+            # Teacher: cohorts where they own a course, co-teach a course,
+            # or are explicitly assigned. Mirrors CohortViewSet.get_queryset.
+            scoped = base.filter(
+                Q(submission__course__owner=user)
+                | Q(submission__course__secondary_docent=user)
+                | Q(
+                    submission__course__cohort__teacher_assignments__teacher=user
+                )
+            ).distinct()
+
+        # ── KPI counts (single aggregation, one query) ────────────────────
+        now = timezone.now()
+        week_ago = now - timedelta(days=7)
+        day_ago = now - timedelta(hours=24)
+        State = GradingSession.State
+        kpi_agg = scoped.aggregate(
+            needs_draft=Count(
+                "id",
+                filter=Q(state__in=[State.PENDING, State.DRAFTING]),
+            ),
+            needs_review=Count("id", filter=Q(state=State.DRAFTED)),
+            in_review=Count("id", filter=Q(state=State.REVIEWING)),
+            posted_this_week=Count(
+                "id",
+                filter=Q(state=State.POSTED, posted_at__gte=week_ago),
+            ),
+            posted_today=Count(
+                "id",
+                filter=Q(state=State.POSTED, posted_at__gte=day_ago),
+            ),
+        )
+
+        # ── Next up (oldest drafted, 5) ───────────────────────────────────
+        next_up_qs = (
+            scoped.filter(state=State.DRAFTED)
+            .order_by("submission__due_at", "created_at")[:5]
+        )
+        next_up = []
+        for s in next_up_qs:
+            submission = s.submission
+            student = submission.student
+            course = submission.course
+            cohort = getattr(course, "cohort", None) if course else None
+            age_days = (now - s.created_at).days
+            next_up.append({
+                "id": s.id,
+                "pr_title": submission.pr_title or "",
+                "pr_url": submission.pr_url or "",
+                "student_id": student.id if student else None,
+                "student_name": (
+                    getattr(student, "display_name", None)
+                    or getattr(student, "first_name", None)
+                    or (student.email.split("@")[0] if student and student.email else "")
+                ) if student else "",
+                "course_name": course.name if course else None,
+                "cohort_id": cohort.id if cohort else None,
+                "cohort_name": cohort.name if cohort else None,
+                "iteration_number": s.iteration_number,
+                "days_waiting": max(0, age_days),
+                "state": s.state,
+                "due_at": submission.due_at.isoformat() if submission.due_at else None,
+            })
+
+        # ── Review time (p50/p95 over last 30d posted sessions) ───────────
+        thirty_days_ago = now - timedelta(days=30)
+        review_seconds = list(
+            scoped.filter(
+                state=State.POSTED,
+                posted_at__gte=thirty_days_ago,
+                docent_review_time_seconds__isnull=False,
+                docent_review_time_seconds__gt=0,
+            ).values_list("docent_review_time_seconds", flat=True)
+        )
+        review_time = {
+            "p50_seconds": None,
+            "p95_seconds": None,
+            "samples": len(review_seconds),
+            "target_seconds": 300,  # v1 success metric: p50 ≤ 5 min
+        }
+        if review_seconds:
+            review_seconds.sort()
+            n = len(review_seconds)
+            p50_idx = max(0, (n // 2) - (1 if n % 2 == 0 else 0))
+            p95_idx = max(0, min(n - 1, int(n * 0.95)))
+            review_time["p50_seconds"] = int(review_seconds[p50_idx])
+            review_time["p95_seconds"] = int(review_seconds[p95_idx])
+
+        # ── Recurring patterns (top 3 across teacher's cohorts) ───────────
+        # Scoped to students who appear in the teacher's session set, not
+        # to all org students — keeps a teacher who shares an org with
+        # other teachers from seeing those teachers' students' patterns.
+        student_ids = scoped.values_list(
+            "submission__student_id", flat=True
+        ).distinct()
+        pattern_qs = (
+            Pattern.objects.filter(
+                user_id__in=student_ids,
+                is_resolved=False,
+            )
+            .values("pattern_key", "pattern_type")
+            .annotate(
+                frequency=Count("id"),
+                students_affected=Count("user_id", distinct=True),
+            )
+            .order_by("-frequency", "-students_affected")[:3]
+        )
+        recurring_patterns = [
+            {
+                "pattern_key": p["pattern_key"],
+                "pattern_type": p["pattern_type"],
+                "frequency": p["frequency"],
+                "students_affected": p["students_affected"],
+            }
+            for p in pattern_qs
+        ]
+
+        return Response({
+            "kpi": kpi_agg,
+            "next_up": next_up,
+            "review_time": review_time,
+            "recurring_patterns": recurring_patterns,
+        })
+
+    @action(detail=True, methods=["post"], url_path="start_review")
+    def start_review(self, request, pk=None):
+        """
+        Docent clicks into the grading session. Transition drafted → reviewing
+        and start the stopwatch. Idempotent: if already reviewing, no-op.
+        """
+        try:
+            with transaction.atomic():
+                session = (
+                    GradingSession.objects.for_user(request.user)
+                    .select_for_update()
+                    .get(pk=pk)
+                )
+                if session.state == GradingSession.State.REVIEWING:
+                    return Response(GradingSessionDetailSerializer(session).data)
+                if not session.can_transition_to(GradingSession.State.REVIEWING):
+                    raise ValidationError(
+                        {"state": f"cannot transition from {session.state} to reviewing"}
+                    )
+                session.state = GradingSession.State.REVIEWING
+                if not session.docent_review_started_at:
+                    session.docent_review_started_at = timezone.now()
+                session.save(update_fields=["state", "docent_review_started_at", "updated_at"])
+        except GradingSession.DoesNotExist:
+            raise Http404
+
+        return Response(GradingSessionDetailSerializer(session).data)
+
+    @action(detail=True, methods=["post"], url_path="generate_draft")
+    def generate_draft(self, request, pk=None):
+        """
+        Kick off the rubric grader. For v1 this is synchronous; v1.1 moves it
+        to a Celery/RQ worker when p95 > 8s starts biting.
+        """
+        from .services import rubric_grader
+        from .services.pii_redaction import StudentIdentity
+        from .exceptions import (
+            DiffTooLargeError,
+            EmptyDiffError,
+            LLMCeilingExceeded,
+            LLMError,
+        )
+
+        try:
+            with transaction.atomic():
+                session = (
+                    GradingSession.objects.for_user(request.user)
+                    .select_for_update()
+                    .select_related("submission", "submission__student", "rubric")
+                    .get(pk=pk)
+                )
+                if not session.can_transition_to(GradingSession.State.DRAFTING):
+                    raise ValidationError(
+                        {"state": f"cannot generate_draft from state={session.state}"}
+                    )
+                session.state = GradingSession.State.DRAFTING
+                session.save(update_fields=["state", "updated_at"])
+        except GradingSession.DoesNotExist:
+            raise Http404
+
+        # Release the lock before the long LLM call so other requests can
+        # read the session state. We'll re-lock to write the result back.
+        submission = session.submission
+        student = submission.student
+
+        # Fetch the PR diff LIVE from GitHub at grade-time so the teacher
+        # sees the current state, not a stale push-evaluation snapshot.
+        # Intentionally decouples grading from the push-evaluation chain
+        # (see grading/services/github_fetcher.py docstring).
+        from .services import github_fetcher
+        from .exceptions import GitHubAuthExpired, GitHubError, PRClosedError
+
+        combined_diff = ""
+        commit_messages: list[str] = []
+        pr_body_text: str = ""
+        try:
+            owner, repo = submission.repo_full_name.split("/", 1)
+            teacher_pat = getattr(request.user, "github_personal_access_token", None)
+
+            # Three sequential GET /pulls/{n}/... round-trips were eating
+            # ~600-900ms before the LLM even started. They're independent
+            # (different endpoints / different Accept headers), so we fan
+            # them out across a small thread pool and join. requests is
+            # thread-safe per-Session and we don't share Sessions here.
+            #
+            # Hard failures on the diff fetch (PRClosedError / auth / 5xx)
+            # must still propagate so the caller's except blocks below can
+            # set FAILED state. The other two are best-effort by contract
+            # (commit_messages / pr_body return []/"" on internal failures).
+            from concurrent.futures import ThreadPoolExecutor
+
+            with ThreadPoolExecutor(max_workers=3, thread_name_prefix="gh-fetch") as pool:
+                fut_diff = pool.submit(
+                    github_fetcher.fetch_pr_diff,
+                    owner=owner,
+                    repo=repo,
+                    pr_number=submission.pr_number,
+                    token=teacher_pat,
+                )
+                fut_msgs = pool.submit(
+                    github_fetcher.fetch_pr_commit_messages,
+                    owner=owner,
+                    repo=repo,
+                    pr_number=submission.pr_number,
+                    token=teacher_pat,
+                )
+                fut_body = pool.submit(
+                    github_fetcher.fetch_pr_body,
+                    owner=owner,
+                    repo=repo,
+                    pr_number=submission.pr_number,
+                    token=teacher_pat,
+                )
+                # .result() re-raises the first exception from the diff
+                # call. The other two never raise (they return []/"" on
+                # failure), so they're safe to .result() unconditionally.
+                combined_diff = fut_diff.result()
+                commit_messages = fut_msgs.result()
+                pr_body_text = fut_body.result()
+        except PRClosedError as e:
+            with transaction.atomic():
+                s = GradingSession.objects.select_for_update().get(pk=session.id)
+                s.state = GradingSession.State.FAILED
+                s.partial_post_error = {
+                    "stage": "drafting",
+                    "error_class": "PRClosedError",
+                    "message": str(e)[:500],
+                }
+                s.save(update_fields=["state", "partial_post_error", "updated_at"])
+            return Response(
+                {"error": "pr_closed", "message": str(e)},
+                status=status.HTTP_409_CONFLICT,
+            )
+        except (GitHubAuthExpired, GitHubError, ValueError) as e:
+            # Fallback: if we can't fetch from GitHub, try stored evaluations.
+            log.warning("generate_draft: live fetch failed, falling back: %s", e)
+            for se in session.session_evaluations.select_related("evaluation").all():
+                ev = se.evaluation
+                combined_diff += (getattr(ev, "diff", "") or "") + "\n"
+
+        # Resolve the org's LLM configuration from the DB so the AI engine
+        # uses the school's own API key and model, not the engine env-var
+        # fallback. Returns None if no config is found (engine falls back).
+        from users.org_llm import get_org_llm_config
+        llm_config = get_org_llm_config(request.user)
+
+        input_ = rubric_grader.GraderInput(
+            diff=combined_diff,
+            rubric_criteria=session.rubric.criteria,
+            rubric_calibration=session.rubric.calibration or {},
+            student=StudentIdentity(
+                student_id=student.id,
+                display_name=student.display_name,
+                first_name=student.first_name,
+                email=student.email,
+                github_handle=(
+                    student.git_connections.filter(provider="github").values_list(
+                        "username", flat=True
+                    ).first()
+                    or ""
+                ),
+                gitlab_handle=(
+                    student.git_connections.filter(provider="gitlab").values_list(
+                        "username", flat=True
+                    ).first()
+                    or ""
+                ),
+            ),
+            context={},  # v1.1: fill with recurring-error summary etc.
+            tier="premium",
+            docent_id=request.user.id,
+            llm_config=llm_config,
+            commit_messages=commit_messages,
+            pr_title=submission.pr_title or "",
+            pr_body=pr_body_text,
+        )
+
+        try:
+            result = rubric_grader.generate_draft(
+                org_id=session.org_id,
+                grading_session_id=session.id,
+                input_=input_,
+            )
+        except EmptyDiffError:
+            # Go to FAILED (retryable), not DISCARDED. Empty diffs happen
+            # for transient reasons too: webhook race before the first
+            # commit lands, GitHub fetch returning empty during a brief
+            # API hiccup, or seed data pointing at a non-existent repo.
+            # DISCARDED is terminal — bricks the session on the very
+            # first click and the only recovery is a brand-new iteration.
+            # FAILED leaves "Concept opnieuw opstellen" available so the
+            # teacher can retry once the underlying cause clears.
+            with transaction.atomic():
+                s = GradingSession.objects.select_for_update().get(pk=session.id)
+                s.state = GradingSession.State.FAILED
+                s.partial_post_error = {
+                    "stage": "drafting",
+                    "error_class": "EmptyDiffError",
+                    "message": "Submission has no code to grade (empty diff).",
+                }
+                s.save(update_fields=["state", "partial_post_error", "updated_at"])
+            return Response(
+                {"error": "empty_diff", "message": "Submission has no code to grade"},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+        except LLMCeilingExceeded as e:
+            with transaction.atomic():
+                s = GradingSession.objects.select_for_update().get(pk=session.id)
+                s.state = GradingSession.State.FAILED
+                s.partial_post_error = {
+                    "stage": "drafting",
+                    "error_class": "LLMCeilingExceeded",
+                    "message": str(e)[:500] or "Daily LLM budget reached.",
+                }
+                s.save(update_fields=["state", "partial_post_error", "updated_at"])
+            log.warning("generate_draft: ceiling exceeded for session=%s: %s", session.id, e)
+            return Response(
+                {"error": "ceiling_exceeded", "message": "Daily budget reached, try again tomorrow"},
+                status=status.HTTP_429_TOO_MANY_REQUESTS,
+            )
+        except (LLMError, DiffTooLargeError) as e:
+            with transaction.atomic():
+                s = GradingSession.objects.select_for_update().get(pk=session.id)
+                s.state = GradingSession.State.FAILED
+                s.partial_post_error = {
+                    "stage": "drafting",
+                    "error_class": type(e).__name__,
+                    "message": str(e)[:500],
+                }
+                s.save(update_fields=["state", "partial_post_error", "updated_at"])
+            log.warning("generate_draft failed session=%s: %s", session.id, e)
+            return Response(
+                {"error": "llm_failed", "message": str(e)},
+                status=status.HTTP_502_BAD_GATEWAY,
+            )
+        except Exception as e:
+            # Defensive catch-all: without this, an unexpected exception during
+            # rubric_grader.generate_draft (network blip mid-stream, JSON parse
+            # error from a degraded model, etc.) would leave the session stuck
+            # in DRAFTING forever. Mirror the send()/resume() pattern: flip to
+            # FAILED with the error class so the teacher sees something
+            # actionable instead of a spinner that never resolves.
+            log.exception("generate_draft: unexpected exception session=%s", session.id)
+            with transaction.atomic():
+                s = GradingSession.objects.select_for_update().get(pk=session.id)
+                s.state = GradingSession.State.FAILED
+                s.partial_post_error = {
+                    "stage": "drafting",
+                    "error_class": type(e).__name__,
+                    "message": str(e)[:500] or repr(e)[:500],
+                    "unexpected": True,
+                }
+                s.save(update_fields=["state", "partial_post_error", "updated_at"])
+            return Response(
+                {"error": "draft_failed", "message": str(e) or type(e).__name__},
+                status=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            )
+
+        # Persist the draft.
+        with transaction.atomic():
+            s = (
+                GradingSession.objects.for_user(request.user)
+                .select_for_update()
+                .get(pk=session.id)
+            )
+            s.ai_draft_scores = result.scores
+            s.ai_draft_comments = result.comments
+            s.ai_draft_model = result.model_name
+            s.ai_draft_generated_at = timezone.now()
+            s.ai_draft_truncated = result.truncated
+            s.state = GradingSession.State.DRAFTED
+            s.save(
+                update_fields=[
+                    "ai_draft_scores",
+                    "ai_draft_comments",
+                    "ai_draft_model",
+                    "ai_draft_generated_at",
+                    "ai_draft_truncated",
+                    "state",
+                    "updated_at",
+                ]
+            )
+
+        # Bind rubric scores to per-skill SkillObservation rows so the
+        # student trajectory view has data. Wrapped in try/except: a skill-
+        # binding failure must never fail the grading flow itself.
+        try:
+            from .services.skill_binding import bind_rubric_to_observations
+            obs_count = bind_rubric_to_observations(s)
+            log.info(
+                "bound %d skill observations for session=%s", obs_count, s.id,
+            )
+        except Exception as e:  # defensive — never break grading on skill bind
+            log.warning(
+                "skill binding failed for session=%s: %s", s.id, e,
+                exc_info=True,
+            )
+
+        return Response(
+            {
+                **GradingSessionDetailSerializer(s).data,
+                "warnings": result.warnings,
+            }
+        )
+
+    @action(detail=True, methods=["post"], url_path="send")
+    def send(self, request, pk=None):
+        """
+        Post approved comments to GitHub. Real implementation (Day 7-8):
+        transitions state → SENDING under select_for_update, calls
+        github_poster.post_all_or_nothing() OUTSIDE the transaction
+        (network I/O under row-lock is the anti-pattern), and writes the
+        final state back in a short closing transaction.
+
+        Idempotency:
+          - State is SENDING before the I/O → a concurrent click sees
+            SENDING and returns 202 without re-posting.
+          - Each comment's client_mutation_id is checked against
+            PostedComment → duplicates skip silently.
+        """
+        try:
+            with transaction.atomic():
+                session = (
+                    GradingSession.objects.for_user(request.user)
+                    .select_for_update()
+                    .get(pk=pk)
+                )
+                if session.state == GradingSession.State.SENDING:
+                    # idempotent double-click guard: first click already in flight
+                    return Response(
+                        GradingSessionDetailSerializer(session).data,
+                        status=status.HTTP_202_ACCEPTED,
+                    )
+                if not session.can_transition_to(GradingSession.State.SENDING):
+                    raise ValidationError(
+                        {"state": f"cannot send from state={session.state}"}
+                    )
+                session.state = GradingSession.State.SENDING
+                session.sending_started_at = timezone.now()
+                if session.docent_review_started_at and not session.docent_review_time_seconds:
+                    delta = timezone.now() - session.docent_review_started_at
+                    session.docent_review_time_seconds = int(delta.total_seconds())
+                session.save(
+                    update_fields=[
+                        "state",
+                        "sending_started_at",
+                        "docent_review_time_seconds",
+                        "updated_at",
+                    ]
+                )
+        except GradingSession.DoesNotExist:
+            raise Http404
+
+        # Network I/O happens OUTSIDE the transaction. The state flip above
+        # already serves as the concurrency lock (SENDING → other tabs see
+        # SENDING and bail). Each PostedComment row is written in its own
+        # short tx inside post_all_or_nothing.
+        from .services import github_poster
+        from .exceptions import (
+            GitHubAuthExpired,
+            GitHubError,
+            PartialPostError,
+            PRClosedError,
+        )
+
+        teacher_pat = getattr(request.user, "github_personal_access_token", None)
+        try:
+            result = github_poster.post_all_or_nothing(session, teacher_pat=teacher_pat)
+        except PartialPostError as e:
+            with transaction.atomic():
+                s = GradingSession.objects.select_for_update().get(pk=session.id)
+                s.state = GradingSession.State.PARTIAL
+                s.partial_post_error = {
+                    "stage": "sending",
+                    "error_class": type(e.inner).__name__,
+                    "message": str(e.inner)[:500],
+                    "failed_at_comment_idx": e.failed_at,
+                    "posted_ids_so_far": e.posted_ids,
+                }
+                s.save(update_fields=["state", "partial_post_error", "updated_at"])
+            return Response(
+                {
+                    "error": "partial_post",
+                    "state": s.state,
+                    "failed_at_comment_idx": e.failed_at,
+                    "posted_so_far": len(e.posted_ids),
+                    "message": "Some comments posted; click Resume to continue.",
+                },
+                status=status.HTTP_207_MULTI_STATUS,
+            )
+        except PRClosedError as e:
+            with transaction.atomic():
+                s = GradingSession.objects.select_for_update().get(pk=session.id)
+                s.state = GradingSession.State.FAILED
+                s.partial_post_error = {
+                    "stage": "sending",
+                    "error_class": "PRClosedError",
+                    "message": str(e)[:500],
+                }
+                s.save(update_fields=["state", "partial_post_error", "updated_at"])
+            return Response(
+                {"error": "pr_closed", "message": str(e)},
+                status=status.HTTP_409_CONFLICT,
+            )
+        except GitHubAuthExpired as e:
+            with transaction.atomic():
+                s = GradingSession.objects.select_for_update().get(pk=session.id)
+                s.state = GradingSession.State.DRAFTED
+                s.partial_post_error = {
+                    "stage": "sending",
+                    "error_class": "GitHubAuthExpired",
+                    "message": str(e)[:500],
+                }
+                s.save(update_fields=["state", "partial_post_error", "updated_at"])
+            return Response(
+                {"error": "github_auth", "message": "Re-authorize GitHub in Settings"},
+                status=status.HTTP_401_UNAUTHORIZED,
+            )
+        except GitHubError as e:
+            with transaction.atomic():
+                s = GradingSession.objects.select_for_update().get(pk=session.id)
+                s.state = GradingSession.State.FAILED
+                s.partial_post_error = {
+                    "stage": "sending",
+                    "error_class": "GitHubError",
+                    "message": str(e)[:500],
+                }
+                s.save(update_fields=["state", "partial_post_error", "updated_at"])
+            return Response(
+                {"error": "github_failed", "message": str(e)},
+                status=status.HTTP_502_BAD_GATEWAY,
+            )
+        except Exception as e:
+            # Defensive catch-all: any non-grading exception during post_all_or_nothing
+            # would otherwise leave the session stuck in SENDING forever (no
+            # partial_post_error recorded, no state flip). Check how many
+            # PostedComment rows actually landed on GitHub — if it equals the
+            # count of comments-to-post, treat it as POSTED (the crash happened
+            # in summary rendering or a post-loop step); otherwise PARTIAL so
+            # the teacher can Resume.
+            import logging
+            log = logging.getLogger(__name__)
+            log.exception("send: unexpected exception session=%s", session.id)
+            from .models import PostedComment
+            posted_count = PostedComment.objects.filter(grading_session=session).count()
+            expected = len([c for c in (session.final_comments or session.ai_draft_comments or [])])
+            all_inline_posted = posted_count >= expected and expected > 0
+            with transaction.atomic():
+                s = GradingSession.objects.select_for_update().get(pk=session.id)
+                if all_inline_posted:
+                    s.state = GradingSession.State.POSTED
+                    s.posted_at = timezone.now()
+                    s.partial_post_error = {
+                        "stage": "sending",
+                        "error_class": type(e).__name__,
+                        "message": f"Comments posted successfully; summary step raised: {str(e)[:300]}",
+                        "recovered": True,
+                    }
+                    mirrored = _snapshot_final_from_ai_draft_if_empty(s)
+                    s.save(update_fields=[
+                        "state", "posted_at", "partial_post_error", "updated_at",
+                        *mirrored,
+                    ])
+                    return Response(
+                        {
+                            "state": s.state,
+                            "posted_count": posted_count,
+                            "skipped_duplicate_count": 0,
+                            "summary_comment_id": None,
+                            "warning": "Summary comment step failed after all inline comments posted — recovered.",
+                        },
+                        status=status.HTTP_200_OK,
+                    )
+                s.state = GradingSession.State.PARTIAL
+                s.partial_post_error = {
+                    "stage": "sending",
+                    "error_class": type(e).__name__,
+                    "message": str(e)[:500],
+                    "posted_so_far": posted_count,
+                }
+                s.save(update_fields=["state", "partial_post_error", "updated_at"])
+            return Response(
+                {
+                    "error": "partial_post",
+                    "state": s.state,
+                    "posted_so_far": posted_count,
+                    "message": "Some comments posted; click Resume to continue.",
+                },
+                status=status.HTTP_207_MULTI_STATUS,
+            )
+
+        # All comments (and summary) posted cleanly.
+        with transaction.atomic():
+            s = GradingSession.objects.select_for_update().get(pk=session.id)
+            s.state = GradingSession.State.POSTED
+            s.posted_at = timezone.now()
+            s.partial_post_error = None
+            mirrored = _snapshot_final_from_ai_draft_if_empty(s)
+            s.save(update_fields=[
+                "state", "posted_at", "partial_post_error", "updated_at",
+                *mirrored,
+            ])
+
+        return Response(
+            {
+                "state": s.state,
+                "posted_count": result.posted_count,
+                "skipped_duplicate_count": result.skipped_duplicate_count,
+                "summary_comment_id": result.summary_comment_id,
+            },
+            status=status.HTTP_200_OK,
+        )
+
+    @action(detail=True, methods=["post"], url_path="start_new_iteration")
+    def start_new_iteration(self, request, pk=None):
+        """
+        Manual teacher override: spawn a new iteration when the event-driven
+        triggers didn't fire (student pushed but didn't re-request review,
+        didn't submit a review, etc.). Guards:
+          - PR must not be merged (Submission.status != GRADED)
+          - Current session must be in a terminal state
+          - Caller must be a teacher on this cohort (IsTeacher + queryset)
+        """
+        from .webhooks import create_next_iteration
+        from .models import Submission
+
+        TERMINAL = {
+            GradingSession.State.POSTED,
+            GradingSession.State.PARTIAL,
+            GradingSession.State.FAILED,
+            GradingSession.State.DISCARDED,
+        }
+        try:
+            session = (
+                GradingSession.objects.for_user(request.user)
+                .select_related("submission", "rubric")
+                .get(pk=pk)
+            )
+        except GradingSession.DoesNotExist:
+            raise Http404
+
+        if session.submission.status == Submission.Status.GRADED:
+            raise ValidationError(
+                {"pr": "Deze PR is al gemerged; nieuwe iteraties niet mogelijk."}
+            )
+        if session.state not in TERMINAL:
+            raise ValidationError(
+                {"state": f"huidige iteratie is nog actief (state={session.state})"}
+            )
+        if session.superseded_by_id is not None:
+            # There's a newer iteration already — return that instead.
+            newer = GradingSession.objects.filter(
+                submission=session.submission, superseded_by__isnull=True,
+            ).order_by("-iteration_number").first()
+            if newer:
+                return Response(
+                    {"session_id": newer.id, "iteration_number": newer.iteration_number},
+                    status=status.HTTP_200_OK,
+                )
+
+        new_session = create_next_iteration(session)
+        if new_session is None:
+            raise ValidationError({"state": "kon geen nieuwe iteratie aanmaken"})
+        return Response(
+            {
+                "session_id": new_session.id,
+                "iteration_number": new_session.iteration_number,
+            },
+            status=status.HTTP_201_CREATED,
+        )
+
+    @action(detail=True, methods=["post"], url_path="resume")
+    def resume(self, request, pk=None):
+        """
+        Resume a partial post. Thin wrapper over the same Send path:
+        github_poster's duplicate-skip IS the resume logic.
+        """
+        try:
+            with transaction.atomic():
+                session = (
+                    GradingSession.objects.for_user(request.user)
+                    .select_for_update()
+                    .get(pk=pk)
+                )
+                if not session.can_transition_to(GradingSession.State.SENDING):
+                    raise ValidationError(
+                        {"state": f"cannot resume from state={session.state}"}
+                    )
+                session.state = GradingSession.State.SENDING
+                session.save(update_fields=["state", "updated_at"])
+        except GradingSession.DoesNotExist:
+            raise Http404
+
+        from .services import github_poster
+        from .exceptions import (
+            GitHubAuthExpired,
+            GitHubError,
+            PartialPostError,
+            PRClosedError,
+        )
+
+        teacher_pat = getattr(request.user, "github_personal_access_token", None)
+
+        # Reconciliation helper: counts actual PostedComment rows vs expected
+        # comments-to-post. Used to detect "false PARTIAL" — every inline
+        # comment is already on GitHub from a prior attempt and only the
+        # summary keeps failing. Without this, a teacher clicking Resume
+        # repeatedly stays stuck in PARTIAL with posted_so_far=0 forever
+        # because dupe-skips return [] from posted_ids.
+        from .models import PostedComment
+
+        def _all_inline_already_posted() -> tuple[bool, int, int]:
+            posted = PostedComment.objects.filter(grading_session=session).count()
+            expected_list = session.final_comments or session.ai_draft_comments or []
+            expected = len([
+                c for c in expected_list
+                if (c.get("file") or c.get("path"))
+                and int(c.get("line") or 0) > 0
+                and (c.get("body") or "").strip()
+            ])
+            return (posted >= expected and expected > 0, posted, expected)
+
+        try:
+            result = github_poster.resume_partial(session, teacher_pat=teacher_pat)
+        except PartialPostError as e:
+            # If all inline comments were already on GitHub on a prior
+            # attempt and only the summary kept failing, this PartialPostError
+            # arrives with posted_ids=[] (every inline was dupe-skipped) and
+            # failed_at past the inline list. Recover to POSTED with a
+            # warning rather than leaving the teacher stuck.
+            inline_done, posted_count, expected = _all_inline_already_posted()
+            comments_to_post = session.final_comments or session.ai_draft_comments or []
+            summary_step = e.failed_at >= len(comments_to_post)
+            if inline_done and summary_step:
+                with transaction.atomic():
+                    s = GradingSession.objects.select_for_update().get(pk=session.id)
+                    s.state = GradingSession.State.POSTED
+                    s.posted_at = timezone.now()
+                    s.partial_post_error = {
+                        "stage": "sending",
+                        "error_class": type(e.inner).__name__,
+                        "message": (
+                            f"All {expected} inline comments posted; summary "
+                            f"step failed: {str(e.inner)[:300]}"
+                        ),
+                        "recovered": True,
+                    }
+                    mirrored = _snapshot_final_from_ai_draft_if_empty(s)
+                    s.save(update_fields=[
+                        "state", "posted_at", "partial_post_error", "updated_at",
+                        *mirrored,
+                    ])
+                return Response(
+                    {
+                        "state": s.state,
+                        "posted_count": posted_count,
+                        "skipped_duplicate_count": posted_count,
+                        "warning": "Inline comments already on PR; summary step failed but recovered.",
+                    },
+                    status=status.HTTP_200_OK,
+                )
+            with transaction.atomic():
+                s = GradingSession.objects.select_for_update().get(pk=session.id)
+                s.state = GradingSession.State.PARTIAL
+                s.partial_post_error = {
+                    "stage": "sending",
+                    "error_class": type(e.inner).__name__,
+                    "message": str(e.inner)[:500],
+                    "failed_at_comment_idx": e.failed_at,
+                    "posted_ids_so_far": e.posted_ids,
+                    # `posted_total` is the truth from the ledger (includes
+                    # comments posted in earlier attempts that this resume
+                    # dupe-skipped). Surfacing it stops the UI from showing
+                    # "0 posted" when in reality N are on the PR.
+                    "posted_total": posted_count,
+                    "expected_total": expected,
+                }
+                s.save(update_fields=["state", "partial_post_error", "updated_at"])
+            return Response(
+                {
+                    "error": "partial_post",
+                    "state": s.state,
+                    "posted_so_far": posted_count,
+                },
+                status=status.HTTP_207_MULTI_STATUS,
+            )
+        except (PRClosedError, GitHubAuthExpired, GitHubError) as e:
+            with transaction.atomic():
+                s = GradingSession.objects.select_for_update().get(pk=session.id)
+                s.state = GradingSession.State.FAILED
+                s.partial_post_error = {
+                    "stage": "sending",
+                    "error_class": type(e).__name__,
+                    "message": str(e)[:500],
+                }
+                s.save(update_fields=["state", "partial_post_error", "updated_at"])
+            return Response(
+                {"error": type(e).__name__, "message": str(e)},
+                status=status.HTTP_502_BAD_GATEWAY,
+            )
+        except Exception as e:
+            # Mirror send()'s defensive catch-all. Without this, an unexpected
+            # exception during resume_partial would leave the session stuck
+            # in SENDING forever — no state flip, no error recorded. Same
+            # ledger-based reconciliation as send().
+            log.exception("resume: unexpected exception session=%s", session.id)
+            inline_done, posted_count, expected = _all_inline_already_posted()
+            with transaction.atomic():
+                s = GradingSession.objects.select_for_update().get(pk=session.id)
+                if inline_done:
+                    s.state = GradingSession.State.POSTED
+                    s.posted_at = timezone.now()
+                    s.partial_post_error = {
+                        "stage": "sending",
+                        "error_class": type(e).__name__,
+                        "message": f"Comments posted; summary step raised: {str(e)[:300]}",
+                        "recovered": True,
+                    }
+                    mirrored = _snapshot_final_from_ai_draft_if_empty(s)
+                    s.save(update_fields=[
+                        "state", "posted_at", "partial_post_error", "updated_at",
+                        *mirrored,
+                    ])
+                    return Response(
+                        {
+                            "state": s.state,
+                            "posted_count": posted_count,
+                            "skipped_duplicate_count": posted_count,
+                            "warning": "Summary step failed after all inline comments posted — recovered.",
+                        },
+                        status=status.HTTP_200_OK,
+                    )
+                s.state = GradingSession.State.PARTIAL
+                s.partial_post_error = {
+                    "stage": "sending",
+                    "error_class": type(e).__name__,
+                    "message": str(e)[:500],
+                    "posted_so_far": posted_count,
+                }
+                s.save(update_fields=["state", "partial_post_error", "updated_at"])
+            return Response(
+                {
+                    "error": "partial_post",
+                    "state": s.state,
+                    "posted_so_far": posted_count,
+                    "message": "Unexpected error during resume; click Resume to retry.",
+                },
+                status=status.HTTP_207_MULTI_STATUS,
+            )
+
+        with transaction.atomic():
+            s = GradingSession.objects.select_for_update().get(pk=session.id)
+            s.state = GradingSession.State.POSTED
+            s.posted_at = timezone.now()
+            s.partial_post_error = None
+            mirrored = _snapshot_final_from_ai_draft_if_empty(s)
+            s.save(update_fields=[
+                "state", "posted_at", "partial_post_error", "updated_at",
+                *mirrored,
+            ])
+
+        return Response(
+            {
+                "state": s.state,
+                "posted_count": result.posted_count,
+                "skipped_duplicate_count": result.skipped_duplicate_count,
+            },
+            status=status.HTTP_200_OK,
+        )
+
+        return Response(
+            {
+                "state": session.state,
+                "message": "Resume initiated (github_poster stub; Day 7-8).",
+            },
+            status=status.HTTP_202_ACCEPTED,
+        )
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# LLMCostLog — admin-internal read-only
+# ─────────────────────────────────────────────────────────────────────────────
+class LLMCostLogViewSet(
+    mixins.ListModelMixin,
+    viewsets.GenericViewSet,
+):
+    """
+    /api/grading/cost-logs/
+    Admin-only read view. Teachers should not see raw cost data (privacy +
+    UX: we expose an aggregate dashboard instead).
+    """
+
+    serializer_class = LLMCostLogSerializer
+    permission_classes = [IsAuthenticated]
+
+    def get_queryset(self):
+        user = self.request.user
+        if not user.is_superuser and getattr(user, "role", None) != "admin":
+            return LLMCostLog.objects.none()
+        qs = LLMCostLog.objects.for_user(user).select_related("docent", "course")
+        docent_id = self.request.query_params.get("docent")
+        if docent_id:
+            qs = qs.filter(docent_id=docent_id)
+        tier = self.request.query_params.get("tier")
+        if tier:
+            qs = qs.filter(tier=tier)
+        return qs.order_by("-occurred_at")
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Project — assignment layer (Apr 28 2026)
+# ─────────────────────────────────────────────────────────────────────────────
+class ProjectViewSet(viewsets.ModelViewSet):
+    """
+    /api/grading/projects/
+
+    Project = an assignment within a Course (Cohort → Course → Project).
+
+    Permissions:
+      - LIST / RETRIEVE: any authenticated user, scoped via OrgScopedManager.
+        Students see projects in their cohort; teachers see projects in
+        cohorts where they own a course; admins see everything in their org.
+      - CREATE: the parent course's owner (teacher) — NOT school admin.
+        Verified in `perform_create`. Admin can override (escape hatch).
+      - UPDATE / PARTIAL_UPDATE / DESTROY: course owner or admin
+        (object-level via IsProjectCourseOwnerOrAdmin).
+
+    DESTROY soft-archives by setting `archived_at`; a hard DELETE on the row
+    is intentionally not exposed (grading history must remain queryable).
+
+    Query params:
+      - `course=<id>`: filter to one course's projects
+      - `include_archived=true`: include archived projects in list output
+    """
+
+    serializer_class = ProjectSerializer
+
+    def get_permissions(self):
+        if self.action in {"list", "retrieve"}:
+            return [IsAuthenticated()]
+        if self.action == "create":
+            return [IsAuthenticated(), IsTeacherOrAdmin()]
+        # update / partial_update / destroy
+        return [
+            IsAuthenticated(),
+            IsTeacherOrAdmin(),
+            IsProjectCourseOwnerOrAdmin(),
+        ]
+
+    def get_queryset(self):
+        user = self.request.user
+        base = (
+            Project.objects.for_user(user)
+            .select_related("course", "course__cohort", "rubric", "created_by")
+        )
+        # Filter by ?course=<id>
+        course_id = self.request.query_params.get("course")
+        if course_id:
+            base = base.filter(course_id=course_id)
+        # Hide archived by default on list
+        include_archived = self.request.query_params.get("include_archived") == "true"
+        if not include_archived and self.action == "list":
+            base = base.filter(archived_at__isnull=True)
+        return base
+
+    def perform_create(self, serializer):
+        """
+        Enforce: only the parent course's owner (or an admin in the same org)
+        may create a project under that course. The IsTeacherOrAdmin gate at
+        the action level lets teachers in, but they need to own the *specific*
+        course they're attaching the project to.
+        """
+        user = self.request.user
+        course = serializer.validated_data["course"]
+        # Cross-org: belt-and-braces (OrgScopedManager would already 404, but
+        # serializer validation accepts any FK by default).
+        if course.org_id != getattr(user, "organization_id", None) and not user.is_superuser:
+            raise PermissionDenied("Course is not in your organization.")
+        is_admin = user.is_superuser or getattr(user, "role", None) == "admin"
+        is_owner = course.owner_id == user.id or course.secondary_docent_id == user.id
+        if not (is_admin or is_owner):
+            raise PermissionDenied(
+                "Only the owner of the parent course (or an admin) may create a project under it."
+            )
+        serializer.save(
+            org=course.org,
+            created_by=user,
+        )
+
+    def perform_destroy(self, instance):
+        """Soft-archive instead of hard DELETE."""
+        if instance.archived_at is None:
+            instance.archived_at = timezone.now()
+            instance.save(update_fields=["archived_at", "updated_at"])
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# StudentProjectRepo — student-managed repo URL per project (Apr 28 2026)
+# ─────────────────────────────────────────────────────────────────────────────
+class StudentProjectRepoViewSet(viewsets.ModelViewSet):
+    """
+    /api/grading/student-project-repos/
+
+    A student's repo URL for a Project they're enrolled in. Self-service.
+
+    Permissions:
+      - LIST: a student sees only their own rows; a teacher sees rows for
+        projects whose course they own; admin sees everything in org.
+      - CREATE: a student creates a row for themselves. The view layer fixes
+        `student = request.user` regardless of what's in the request body
+        (so a student can't impersonate a peer by passing a different
+        `student` field). Admin override is allowed for support cases.
+      - UPDATE / DESTROY: own row only (student) or admin.
+
+    Query params:
+      - `project=<id>`: filter to one project's repos.
+    """
+
+    serializer_class = StudentProjectRepoSerializer
+
+    def get_permissions(self):
+        if self.action in {"list", "retrieve"}:
+            return [IsAuthenticated()]
+        # create / update / partial_update / destroy
+        return [IsAuthenticated(), IsProjectStudentOrCourseOwner()]
+
+    def get_queryset(self):
+        user = self.request.user
+        base = (
+            StudentProjectRepo.objects.for_user(user)
+            .select_related("project", "project__course", "student")
+        )
+        # Filter by ?project=<id>
+        project_id = self.request.query_params.get("project")
+        if project_id:
+            base = base.filter(project_id=project_id)
+        # Role-based scoping inside the org:
+        if user.is_superuser or getattr(user, "role", None) == "admin":
+            return base
+        if getattr(user, "role", None) == "teacher":
+            # Teachers see rows for projects whose course they own
+            # (primary or secondary docent).
+            return base.filter(
+                Q(project__course__owner_id=user.id)
+                | Q(project__course__secondary_docent_id=user.id)
+            )
+        # Student: own rows only
+        return base.filter(student_id=user.id)
+
+    def perform_create(self, serializer):
+        """
+        Force `student = request.user` for non-admins. Admins can pass an
+        explicit student for support cases.
+        """
+        user = self.request.user
+        is_admin = user.is_superuser or getattr(user, "role", None) == "admin"
+        project = serializer.validated_data["project"]
+        # Cross-org guard
+        if project.org_id != getattr(user, "organization_id", None) and not user.is_superuser:
+            raise PermissionDenied("Project is not in your organization.")
+        # Student gets locked to self regardless of request body
+        if not is_admin:
+            serializer.save(
+                student=user,
+                org=project.org,
+            )
+        else:
+            # Admin path: respect explicit `student` if provided, else default to caller
+            student = serializer.validated_data.get("student") or user
+            serializer.save(
+                student=student,
+                org=project.org,
+            )

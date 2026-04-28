@@ -4,6 +4,7 @@ Skills API Views
 from collections import defaultdict
 
 from rest_framework import generics, permissions, status
+from rest_framework.exceptions import PermissionDenied
 from rest_framework.response import Response
 from rest_framework.views import APIView
 from django.db.models import Q, Count
@@ -180,8 +181,10 @@ class PerformanceStatsView(APIView):
         from evaluations.models import Evaluation, Finding
         from django.db.models import Avg
 
-        # Admins may query any user; developers can only query themselves.
-        if not (request.user.id == user_id or request.user.role == 'admin' or request.user.is_staff):
+        is_admin = getattr(request.user, 'role', None) in ('admin', 'teacher') or getattr(request.user, 'is_staff', False)
+
+        # Admins may query users within their org; developers can only query themselves.
+        if not (request.user.id == user_id or is_admin):
             return Response({'error': 'Forbidden'}, status=403)
 
         from users.models import User
@@ -190,6 +193,11 @@ class PerformanceStatsView(APIView):
             subject = User.objects.get(pk=user_id)
         except User.DoesNotExist:
             return Response({'error': 'User not found'}, status=status.HTTP_404_NOT_FOUND)
+
+        # Org isolation: admins can only view users in their own org
+        if is_admin and request.user.organization_id:
+            if subject.organization_id != request.user.organization_id:
+                return Response({'error': 'Forbidden'}, status=403)
 
         project_id = request.query_params.get('project')
 
@@ -331,7 +339,9 @@ class PerformanceTrendsView(APIView):
         from datetime import datetime, timedelta
         from collections import defaultdict
 
-        if not (request.user.id == user_id or request.user.role == 'admin' or request.user.is_staff):
+        is_admin = getattr(request.user, 'role', None) in ('admin', 'teacher') or getattr(request.user, 'is_staff', False)
+
+        if not (request.user.id == user_id or is_admin):
             return Response({'error': 'Forbidden'}, status=403)
 
         from users.models import User
@@ -340,6 +350,11 @@ class PerformanceTrendsView(APIView):
             subject = User.objects.get(pk=user_id)
         except User.DoesNotExist:
             return Response({'error': 'User not found'}, status=status.HTTP_404_NOT_FOUND)
+
+        # Org isolation: admins can only view users in their own org
+        if is_admin and request.user.organization_id:
+            if subject.organization_id != request.user.organization_id:
+                return Response({'error': 'Forbidden'}, status=403)
 
         project_id = request.query_params.get('project')
         granularity = request.query_params.get('granularity', 'daily')
@@ -402,7 +417,9 @@ class SkillBreakdownView(APIView):
         from django.db.models import Avg
         from datetime import datetime, timedelta
 
-        if not (request.user.id == user_id or request.user.role == 'admin' or request.user.is_staff):
+        is_admin = getattr(request.user, 'role', None) in ('admin', 'teacher') or getattr(request.user, 'is_staff', False)
+
+        if not (request.user.id == user_id or is_admin):
             return Response({'error': 'Forbidden'}, status=403)
 
         from users.models import User
@@ -412,6 +429,11 @@ class SkillBreakdownView(APIView):
             subject = User.objects.get(pk=user_id)
         except User.DoesNotExist:
             return Response({'error': 'User not found'}, status=status.HTTP_404_NOT_FOUND)
+
+        # Org isolation: admins can only view users in their own org
+        if is_admin and request.user.organization_id:
+            if subject.organization_id != request.user.organization_id:
+                return Response({'error': 'Forbidden'}, status=403)
 
         project_id = request.query_params.get('project')
 
@@ -535,12 +557,15 @@ class DashboardOverviewView(APIView):
 
         project_id = request.query_params.get('project')
 
-        # Admin can view any user's data via ?user=<id>
+        # Admin can view any user's data via ?user=<id>, scoped to their org
         target_user = request.user
         user_id_param = request.query_params.get('user')
-        if user_id_param and (request.user.role == 'admin' or request.user.is_staff):
+        if user_id_param and (request.user.role in ('admin', 'teacher') or request.user.is_staff):
             try:
-                target_user = User.objects.get(pk=user_id_param)
+                candidate = User.objects.get(pk=user_id_param)
+                # Org isolation: only allow if target is in the same org
+                if not request.user.organization_id or candidate.organization_id == request.user.organization_id:
+                    target_user = candidate
             except User.DoesNotExist:
                 pass
 
@@ -643,70 +668,106 @@ class DashboardOverviewView(APIView):
 
 
 def _resolve_target_user(request):
-    """Admin can view any user's data via ?user=<id>."""
+    """Admin can view any user's data via ?user=<id>, scoped to their org.
+
+    Raises PermissionDenied when a cross-org target is requested instead of
+    silently falling back to request.user (which masked ACL bugs).
+    """
     from users.models import User
     user_id = request.query_params.get('user')
-    if user_id and (request.user.role == 'admin' or request.user.is_staff):
+    if user_id and (request.user.role in ('admin', 'teacher') or request.user.is_staff):
         try:
-            return User.objects.get(pk=user_id)
+            target = User.objects.get(pk=user_id)
         except User.DoesNotExist:
-            pass
+            raise PermissionDenied('Target user not found or not accessible.')
+        # Org isolation: only allow if target is in the same org
+        if request.user.organization_id and target.organization_id != request.user.organization_id:
+            raise PermissionDenied('Cross-organization access is not allowed.')
+        return target
     return request.user
 
 
 class DashboardSkillsView(APIView):
     """
-    Get skill scores grouped by category for radar chart.
-    Returns: categories with avg scores.
+    Get skill scores grouped by category for the dashboard radar chart.
+
+    Honest scoring (Apr 28 2026):
+      - Use `bayesian_score` (evidence-weighted, starts at 50, converges
+        with observations) instead of the legacy `.score` field. The
+        legacy score defaulted to 100 — anything we hadn't seen showed
+        as "perfect" which is a misread of the actual signal.
+      - Aggregate per-category confidence (mean across the category's
+        metrics) and emit `is_preliminary = mean_confidence < 0.15`.
+        The frontend SkillRadarChart fades the whole spoke / dataset
+        when this flag is true so a teacher can tell the difference
+        between "real 50%" and "we have no idea, defaulted to 50%".
+      - Mirrors the pattern already in UserSkillsView and the grading
+        student-intelligence radar (single source of truth on scoring).
     """
 
     permission_classes = [permissions.IsAuthenticated]
 
     def get(self, request):
-        from django.db.models import Avg
+        from skills.models import CONFIDENCE_PRELIMINARY
 
         project_id = request.query_params.get('project')
         target_user = _resolve_target_user(request)
 
-        # Get user's metrics grouped by category
         metrics = SkillMetric.objects.filter(
             user=target_user
         ).select_related('skill', 'skill__category')
-        
+
         if project_id:
             metrics = metrics.filter(project_id=project_id)
-        
-        # Group by category and calculate averages
-        categories = {}
+
+        # Group by category — collect Bayesian scores + confidences.
+        categories: dict = {}
         for metric in metrics:
             cat_name = metric.skill.category.name
             if cat_name not in categories:
                 categories[cat_name] = {
-                    'name': cat_name,
                     'scores': [],
-                    'color': metric.skill.category.color
+                    'confidences': [],
+                    'color': metric.skill.category.color,
                 }
-            categories[cat_name]['scores'].append(metric.score)
-        
-        # Calculate averages
+            # Use Bayesian score once we have any observation; fall back
+            # to the legacy seed score for the zero-observation case so
+            # we still render a spoke for the category (the is_preliminary
+            # flag will mark it as untrusted).
+            if metric.observation_count > 0:
+                categories[cat_name]['scores'].append(metric.bayesian_score)
+            else:
+                categories[cat_name]['scores'].append(metric.score)
+            categories[cat_name]['confidences'].append(metric.confidence)
+
         result = []
         for cat_name, data in categories.items():
-            avg_score = sum(data['scores']) / len(data['scores']) if data['scores'] else 0
+            scores = data['scores']
+            confs = data['confidences']
+            avg_score = sum(scores) / len(scores) if scores else 0.0
+            avg_conf = sum(confs) / len(confs) if confs else 0.0
             result.append({
                 'category': cat_name,
                 'score': round(avg_score, 1),
-                'color': data['color']
+                'confidence': round(avg_conf, 3),
+                'is_preliminary': avg_conf < CONFIDENCE_PRELIMINARY,
+                'color': data['color'],
             })
 
         if not result:
-            # No SkillMetric rows (e.g. author was null at ingest); approximate from FindingSkill
+            # No SkillMetric rows (e.g. author was null at ingest);
+            # approximate from FindingSkill. These pseudo-scores are
+            # always preliminary — a teacher should see them as a
+            # rough hint, not a verdict.
             from evaluations.models import Evaluation, FindingSkill
 
             evals = Evaluation.objects.for_user(request.user)
             if project_id:
                 evals = evals.filter(project_id=project_id)
             cat_map: dict = {}
-            for row in FindingSkill.objects.filter(finding__evaluation__in=evals).select_related('skill__category'):
+            for row in FindingSkill.objects.filter(
+                finding__evaluation__in=evals
+            ).select_related('skill__category'):
                 c = row.skill.category
                 name = c.name
                 if name not in cat_map:
@@ -714,8 +775,14 @@ class DashboardSkillsView(APIView):
                 cat_map[name]['issues'] += 1
             for cat_name, data in cat_map.items():
                 pseudo = max(5.0, 100.0 - min(data['issues'] * 6.0, 85.0))
-                result.append({'category': cat_name, 'score': round(pseudo, 1), 'color': data['color']})
-        
+                result.append({
+                    'category': cat_name,
+                    'score': round(pseudo, 1),
+                    'confidence': 0.0,
+                    'is_preliminary': True,
+                    'color': data['color'],
+                })
+
         return Response(result)
 
 
@@ -838,7 +905,13 @@ class UserSkillsView(APIView):
     
     def get(self, request, user_id):
         from users.models import User
-        
+
+        is_admin = getattr(request.user, 'role', None) in ('admin', 'teacher') or getattr(request.user, 'is_staff', False)
+
+        # Permission check: devs see only themselves, admins see their org
+        if not (request.user.id == user_id or is_admin):
+            return Response({'error': 'Forbidden'}, status=403)
+
         # Verify user exists
         try:
             user = User.objects.get(id=user_id)
@@ -847,7 +920,12 @@ class UserSkillsView(APIView):
                 {'error': 'User not found'},
                 status=status.HTTP_404_NOT_FOUND
             )
-        
+
+        # Org isolation: admins can only view users in their own org
+        if is_admin and request.user.organization_id:
+            if user.organization_id != request.user.organization_id:
+                return Response({'error': 'Forbidden'}, status=403)
+
         # Get project filter
         project_id = request.query_params.get('project')
         
@@ -882,16 +960,30 @@ class UserSkillsView(APIView):
             
             for skill in category.skills.all().order_by('order'):
                 metric = metrics_map.get(skill.id)
-                score = metric.score if metric else 0
-                # Derive a simple 0-5 level from score (no DB field)
+                if metric and metric.observation_count > 0:
+                    score = metric.bayesian_score
+                elif metric:
+                    score = metric.score  # legacy fallback
+                else:
+                    score = 0
+                confidence = metric.confidence if metric else 0.0
+                confidence_label = metric.confidence_label if metric else 'insufficient'
+                level_label = metric.level_label if metric else None
+                # Derive a simple 0-5 level from score for backward compat
                 level = min(5, int(score / 20)) if score else 0
                 cat_data['skills'].append({
                     'id': skill.id,
                     'displayName': skill.name,
-                    'score': score,
+                    'score': round(score, 1),
                     'level': level,
+                    'confidence': round(confidence, 2),
+                    'confidenceLabel': confidence_label,
+                    'levelLabel': level_label,
+                    'observationCount': metric.observation_count if metric else 0,
+                    'provenConcepts': metric.proven_concepts if metric else 0,
+                    'relapsedConcepts': metric.relapsed_concepts if metric else 0,
                 })
-            
+
             result['categories'].append(cat_data)
 
         return Response(result)
@@ -1108,8 +1200,8 @@ class AdminTeamOverviewView(APIView):
     permission_classes = [permissions.IsAuthenticated]
 
     def get(self, request):
-        if request.user.role != 'admin' and not request.user.is_staff:
-            return Response({'error': 'Admin only'}, status=403)
+        if request.user.role not in ('admin', 'teacher') and not request.user.is_staff:
+            return Response({'error': 'Admin or teacher only'}, status=403)
 
         from evaluations.models import Evaluation, Finding, Pattern
         from users.models import User
@@ -1118,6 +1210,8 @@ class AdminTeamOverviewView(APIView):
         from collections import Counter
 
         developers = User.objects.filter(role='developer')
+        if request.user.organization_id:
+            developers = developers.filter(organization=request.user.organization)
 
         # Per-developer data
         dev_data = []
@@ -1263,13 +1357,15 @@ class AdminSkillMatrixView(APIView):
     permission_classes = [permissions.IsAuthenticated]
 
     def get(self, request):
-        if request.user.role != 'admin' and not request.user.is_staff:
-            return Response({'error': 'Admin only'}, status=403)
+        if request.user.role not in ('admin', 'teacher') and not request.user.is_staff:
+            return Response({'error': 'Admin or teacher only'}, status=403)
 
         from users.models import User
         from collections import defaultdict
 
         developers = User.objects.filter(role='developer')
+        if request.user.organization_id:
+            developers = developers.filter(organization=request.user.organization)
         categories = SkillCategory.objects.prefetch_related('skills').order_by('order')
 
         # Build category list
@@ -1341,8 +1437,8 @@ class OrgDashboardView(APIView):
 
         if not user.organization:
             return Response({'error': 'You must belong to an organization.'}, status=400)
-        if user.role not in ('admin',):
-            return Response({'error': 'Only org admins can access the dashboard.'}, status=403)
+        if user.role not in ('admin', 'teacher'):
+            return Response({'error': 'Only admins and teachers can access the dashboard.'}, status=403)
 
         org = user.organization
         students = User.objects.filter(
@@ -1421,8 +1517,8 @@ class OrgStudentDetailView(APIView):
 
         if not user.organization:
             return Response({'error': 'You must belong to an organization.'}, status=400)
-        if user.role not in ('admin',):
-            return Response({'error': 'Only org admins can access student details.'}, status=403)
+        if user.role not in ('admin', 'teacher'):
+            return Response({'error': 'Only admins and teachers can access student details.'}, status=403)
 
         try:
             student = User.objects.get(id=student_id, organization=user.organization)
@@ -1485,4 +1581,192 @@ class OrgStudentDetailView(APIView):
             'weaknesses': list(set(weaknesses)),
             'evaluation_history': eval_history,
             'score_history': profile.score_history if profile else [],
+        })
+
+
+# ─── Developer Journey ───────────────────────────────────────────────────
+
+class DeveloperJourneyView(APIView):
+    """
+    Aggregated developer journey data: timeline of growth, skill evolution,
+    learning milestones, and current state.
+    """
+
+    permission_classes = [permissions.IsAuthenticated]
+
+    def get(self, request, user_id):
+        from users.models import User
+        from evaluations.models import Evaluation
+        from .models import SkillObservation, LearningProof, GrowthSnapshot
+        from .level_calculator import compute_level_for_user
+        from datetime import timedelta
+
+        is_admin = getattr(request.user, 'role', None) in ('admin', 'teacher') or getattr(request.user, 'is_staff', False)
+        if not (request.user.id == user_id or is_admin):
+            return Response({'error': 'Forbidden'}, status=403)
+
+        try:
+            user = User.objects.get(id=user_id)
+        except User.DoesNotExist:
+            return Response({'error': 'User not found'}, status=status.HTTP_404_NOT_FOUND)
+
+        project_id = request.query_params.get('project')
+
+        # ── 1. Evaluation timeline ─────────────────────────────────────
+        eval_qs = Evaluation.objects.for_user(user).annotate(
+            finding_count=Count('findings'),
+        ).order_by('created_at')
+        if project_id:
+            eval_qs = eval_qs.filter(project_id=project_id)
+
+        timeline = []
+        for i, ev in enumerate(eval_qs):
+            timeline.append({
+                'date': ev.created_at.isoformat(),
+                'commitSha': ev.commit_sha[:7] if ev.commit_sha else '',
+                'message': (ev.commit_message or '')[:80],
+                'score': round(ev.overall_score, 1) if ev.overall_score else None,
+                'findingCount': ev.finding_count,
+                'filesChanged': ev.files_changed or 0,
+                'index': i + 1,
+            })
+
+        # ── 2. Skill evolution (score over time per category) ──────────
+        obs_qs = SkillObservation.objects.filter(user=user).select_related(
+            'skill__category'
+        ).order_by('created_at')
+        if project_id:
+            obs_qs = obs_qs.filter(project_id=project_id)
+
+        # Aggregate by category + date
+        category_evolution = defaultdict(list)
+        for obs in obs_qs:
+            cat_name = obs.skill.category.name
+            category_evolution[cat_name].append({
+                'date': obs.created_at.strftime('%Y-%m-%d'),
+                'score': round(obs.weighted_score, 1),
+                'skill': obs.skill.name,
+                'complexity': obs.complexity_weight,
+            })
+
+        # Build per-category score averages per date
+        skill_evolution = []
+        for cat_name, entries in category_evolution.items():
+            by_date = defaultdict(list)
+            for e in entries:
+                by_date[e['date']].append(e['score'])
+            data_points = [
+                {'date': d, 'avgScore': round(sum(scores) / len(scores), 1)}
+                for d, scores in sorted(by_date.items())
+            ]
+            skill_evolution.append({
+                'category': cat_name,
+                'dataPoints': data_points,
+            })
+
+        # ── 3. Learning milestones (proofs) ────────────────────────────
+        proof_qs = LearningProof.objects.filter(user=user).select_related(
+            'skill'
+        ).order_by('created_at')
+
+        milestones = []
+        for proof in proof_qs:
+            milestone = {
+                'type': proof.status,
+                'skill': proof.skill.name,
+                'issueType': proof.issue_type,
+                'conceptSummary': proof.concept_summary[:120] if proof.concept_summary else '',
+                'understandingLevel': proof.understanding_level,
+                'taughtAt': proof.taught_at.isoformat() if proof.taught_at else None,
+            }
+            if proof.status == 'proven':
+                milestone['provenAt'] = proof.proven_at.isoformat() if proof.proven_at else None
+                milestone['proofCommit'] = proof.proof_commit[:7] if proof.proof_commit else ''
+            elif proof.status == 'relapsed':
+                milestone['relapsedAt'] = proof.relapsed_at.isoformat() if proof.relapsed_at else None
+                milestone['relapseCommit'] = proof.relapse_commit[:7] if proof.relapse_commit else ''
+            milestones.append(milestone)
+
+        # ── 4. Current skill snapshot ──────────────────────────────────
+        metrics_qs = SkillMetric.objects.filter(user=user).select_related('skill__category')
+        if project_id:
+            metrics_qs = metrics_qs.filter(project_id=project_id)
+
+        categories_summary = defaultdict(lambda: {'skills': [], 'totalScore': 0, 'count': 0})
+        for m in metrics_qs:
+            score = m.bayesian_score if m.observation_count > 0 else m.score
+            if score <= 0:
+                continue
+            cat = m.skill.category.name
+            categories_summary[cat]['skills'].append({
+                'name': m.skill.name,
+                'score': round(score, 1),
+                'confidence': round(m.confidence, 2),
+                'confidenceLabel': m.confidence_label,
+                'levelLabel': m.level_label,
+                'observationCount': m.observation_count,
+                'provenConcepts': m.proven_concepts,
+                'relapsedConcepts': m.relapsed_concepts,
+                'trend': m.trend,
+            })
+            categories_summary[cat]['totalScore'] += score
+            categories_summary[cat]['count'] += 1
+
+        current_skills = []
+        for cat_name, data in sorted(categories_summary.items()):
+            avg = round(data['totalScore'] / data['count'], 1) if data['count'] else 0
+            current_skills.append({
+                'category': cat_name,
+                'avgScore': avg,
+                'skills': sorted(data['skills'], key=lambda s: -s['score']),
+            })
+
+        # ── 5. Overall stats ───────────────────────────────────────────
+        total_evaluations = eval_qs.count()
+        total_findings = sum(t['findingCount'] for t in timeline)
+
+        # Score trajectory (first vs last 5 evals)
+        scores = [t['score'] for t in timeline if t['score'] is not None]
+        first_avg = round(sum(scores[:5]) / len(scores[:5]), 1) if len(scores) >= 5 else (round(sum(scores) / len(scores), 1) if scores else 0)
+        last_avg = round(sum(scores[-5:]) / len(scores[-5:]), 1) if len(scores) >= 5 else first_avg
+
+        # Level
+        level_data = compute_level_for_user(user, project_id)
+
+        # Proof stats
+        proof_total = proof_qs.count()
+        proof_proven = proof_qs.filter(status='proven').count()
+        proof_reinforced = proof_qs.filter(status='reinforced').count()
+        proof_relapsed = proof_qs.filter(status='relapsed').count()
+        proof_pending = proof_qs.filter(status='pending').count()
+
+        # First and last evaluation dates
+        first_eval = timeline[0]['date'] if timeline else None
+        last_eval = timeline[-1]['date'] if timeline else None
+
+        return Response({
+            'userId': user_id,
+            'userName': user.display_name,
+            'stats': {
+                'totalEvaluations': total_evaluations,
+                'totalFindings': total_findings,
+                'firstEvaluation': first_eval,
+                'lastEvaluation': last_eval,
+                'firstAvgScore': first_avg,
+                'lastAvgScore': last_avg,
+                'scoreGrowth': round(last_avg - first_avg, 1),
+                'level': level_data.get('level', 'Beginner'),
+                'compositeScore': level_data.get('composite_score', 0),
+            },
+            'proofStats': {
+                'total': proof_total,
+                'proven': proof_proven,
+                'reinforced': proof_reinforced,
+                'relapsed': proof_relapsed,
+                'pending': proof_pending,
+            },
+            'timeline': timeline,
+            'skillEvolution': skill_evolution,
+            'milestones': milestones,
+            'currentSkills': current_skills,
         })

@@ -27,16 +27,22 @@ class SkillCategorySerializer(serializers.ModelSerializer):
 
 class SkillMetricSerializer(serializers.ModelSerializer):
     """Skill metric serializer."""
-    
+
     skill = SkillSerializer(read_only=True)
     fix_rate = serializers.ReadOnlyField()
-    
+    display_score = serializers.ReadOnlyField()
+    confidence_label = serializers.ReadOnlyField()
+    level_label = serializers.ReadOnlyField()
+
     class Meta:
         model = SkillMetric
         fields = [
-            'id', 'skill', 'score', 'issue_count', 'fixed_count',
+            'id', 'skill', 'score', 'bayesian_score', 'confidence',
+            'display_score', 'confidence_label', 'level_label',
+            'observation_count', 'proven_concepts', 'relapsed_concepts',
+            'issue_count', 'fixed_count',
             'fix_rate', 'trend', 'previous_score',
-            'first_evaluated_at', 'last_evaluated_at'
+            'first_evaluated_at', 'last_evaluated_at',
         ]
 
 

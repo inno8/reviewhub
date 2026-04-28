@@ -65,12 +65,23 @@ class FindingSchema(BaseModel):
     suggested_code: str = ""
     explanation: str = ""
     skills_affected: list[str] = Field(default_factory=list)
+    decision_quality: str = "appropriate"  # appropriate | suboptimal | poor
+
+
+class DecisionObservation(BaseModel):
+    """Approach-level design decision observation."""
+    observation: str
+    quality: str = "appropriate"  # appropriate | suboptimal | poor
+    better_approach: str = ""
+    category: str = ""
+    skills_affected: list[str] = Field(default_factory=list)
 
 
 class EvaluationResult(BaseModel):
     """Result from LLM evaluation."""
     overall_score: float = Field(ge=0, le=100)
     findings: list[FindingSchema] = Field(default_factory=list)
+    decision_observations: list[DecisionObservation] = Field(default_factory=list)
     skill_scores: dict[str, float] = Field(default_factory=dict)
     summary: str = ""
     llm_model: str = ""

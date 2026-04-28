@@ -19,7 +19,19 @@ class Settings(BaseSettings):
     # LLM Configuration
     LLM_PROVIDER: Optional[str] = None  # openai, anthropic, or None for OpenClaw
     LLM_API_KEY: Optional[str] = None
-    LLM_MODEL: str = "gpt-4-turbo"
+    LLM_MODEL: str = "gpt-4-turbo"  # backward-compat fallback
+
+    # Two-tier LLM routing
+    # PR_LLM_MODEL     → PR grading (teacher rubric draft)      — best available
+    # COMMIT_LLM_MODEL → push/commit events (student feedback)  — cheap, quick
+    # Legacy names (kept for backward-compat; newer PR_/COMMIT_ take priority):
+    #   LLM_MODEL_FAST    ≡ COMMIT_LLM_MODEL
+    #   LLM_MODEL_QUALITY ≡ PR_LLM_MODEL
+    # All four fall back to LLM_MODEL when unset.
+    PR_LLM_MODEL: Optional[str] = None
+    COMMIT_LLM_MODEL: Optional[str] = None
+    LLM_MODEL_FAST: Optional[str] = None
+    LLM_MODEL_QUALITY: Optional[str] = None
     
     # OpenClaw Fallback
     OPENCLAW_ENABLED: bool = True

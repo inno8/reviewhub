@@ -3,12 +3,18 @@ Evaluation API URLs
 """
 from django.urls import path
 from . import views
+from .views_deterministic import InternalDeterministicFindingCreateView
 
 urlpatterns = [
     path('', views.EvaluationListView.as_view(), name='evaluation-list'),
     path('chart/', views.EvaluationChartView.as_view(), name='evaluation-chart'),
     path('<int:pk>/', views.EvaluationDetailView.as_view(), name='evaluation-detail'),
     path('internal/', views.InternalEvaluationCreateView.as_view(), name='evaluation-internal-create'),
+    path(
+        'internal/deterministic-findings/',
+        InternalDeterministicFindingCreateView.as_view(),
+        name='evaluation-internal-deterministic-findings',
+    ),
     
     # Findings
     path('findings/', views.FindingListView.as_view(), name='finding-list'),

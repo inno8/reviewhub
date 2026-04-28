@@ -107,6 +107,7 @@ class User(AbstractUser):
 
     class Role(models.TextChoices):
         ADMIN = 'admin', 'Admin'
+        TEACHER = 'teacher', 'Teacher'
         DEVELOPER = 'developer', 'Developer'
         VIEWER = 'viewer', 'Viewer'
 

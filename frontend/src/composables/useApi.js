@@ -27,7 +27,7 @@ export function setSkipAuthRedirect(skip) {
 client.interceptors.response.use((response) => response, (error) => {
     if (error?.response?.status === 401) {
         // Don't redirect if we're on a public page or during bootstrap
-        const publicPaths = ['/login', '/onboard'];
+        const publicPaths = ['/login', '/onboard', '/org-signup', '/accept-invite'];
         const isPublicPage = publicPaths.some(p => window.location.pathname.startsWith(p));
         if (!isPublicPage && !skipAuthRedirect) {
             localStorage.removeItem('reviewhub_token');
@@ -95,7 +95,7 @@ export const api = {
         getContent: (projectId, branch, filePath) => client.get(`/files/${projectId}/${encodeURIComponent(branch)}/${encodeURIComponent(filePath)}`),
     },
     users: {
-        list: () => client.get('/users/'),
+        list: (params = {}) => client.get('/users/', { params }),
         me: () => client.get('/users/me/'),
         updateMe: (data) => client.patch('/users/me/', data),
         create: (data) => client.post('/users/', data),
@@ -145,6 +145,9 @@ export const api = {
         breakdown: (userId, skillId, projectId) => client.get(`/skills/user/${userId}/breakdown/${skillId}/`, { params: { project: projectId } }),
         recalculate: (userId, projectId) => Promise.resolve({ data: { success: true } }),
         recommendations: (projectId) => client.get('/skills/recommendations/', { params: { project: projectId } }),
+        journey: (userId, projectId) => client.get(`/skills/journey/${userId}/`, {
+            params: projectId != null ? { project: projectId } : {},
+        }),
     },
     dashboard: {
         overview: (projectId, userId) => client.get('/skills/dashboard/overview/', { params: { project: projectId, user: userId } }),
@@ -197,6 +200,136 @@ export const api = {
         getJobEvaluations: (id) => client.get(`/batch/jobs/${id}/evaluations/`),
         getProfile: () => client.get('/batch/profile/'),
         getStats: () => client.get('/batch/stats/'),
+    },
+    org: {
+        signup: (data) => client.post('/users/org-signup/', data),
+        acceptInvite: (data) => client.post('/users/accept-invite/', data),
+        invite: (data) => client.post('/users/invite/', data),
+        members: () => client.get('/users/org/members/'),
+        invitations: () => client.get('/users/org/invitations/'),
+        dashboard: () => client.get('/skills/org-dashboard/'),
+        studentDetail: (studentId) => client.get(`/skills/org-dashboard/students/${studentId}/`),
+    },
+    // Nakijken Copilot — teacher grading copilot
+    grading: {
+        rubrics: {
+            list: () => client.get('/grading/rubrics/'),
+            get: (id) => client.get(`/grading/rubrics/${id}/`),
+            create: (data) => client.post('/grading/rubrics/', data),
+            update: (id, data) => client.patch(`/grading/rubrics/${id}/`, data),
+            delete: (id) => client.delete(`/grading/rubrics/${id}/`),
+        },
+        cohorts: {
+            list: (params = {}) => client.get('/grading/cohorts/', { params }),
+            get: (id) => client.get(`/grading/cohorts/${id}/`),
+            create: (data) => client.post('/grading/cohorts/', data),
+            update: (id, data) => client.patch(`/grading/cohorts/${id}/`, data),
+            archive: (id) => client.post(`/grading/cohorts/${id}/archive/`, {}),
+            members: (id) => client.get(`/grading/cohorts/${id}/members/`),
+            addMember: (id, studentId, repoUrl) => client.post(
+                `/grading/cohorts/${id}/members/`,
+                { student_id: studentId, student_repo_url: repoUrl || '' }
+            ),
+            removeMember: (id, membershipId) => client.delete(
+                `/grading/cohorts/${id}/members/${membershipId}/`,
+            ),
+            teachers: (id) => client.get(`/grading/cohorts/${id}/teachers/`),
+            addTeacher: (id, teacherId) => client.post(
+                `/grading/cohorts/${id}/teachers/`,
+                { teacher_id: teacherId }
+            ),
+            removeTeacher: (id, assignmentId) => client.delete(
+                `/grading/cohorts/${id}/teachers/${assignmentId}/`,
+            ),
+            recurringErrors: (id) => client.get(`/grading/cohorts/${id}/recurring-errors/`),
+            overview: (id) => client.get(`/grading/cohorts/${id}/overview/`),
+        },
+        courses: {
+            list: (params = {}) => client.get('/grading/courses/', { params }),
+            get: (id) => client.get(`/grading/courses/${id}/`),
+            create: (data) => client.post('/grading/courses/', data),
+            update: (id, data) => client.patch(`/grading/courses/${id}/`, data),
+            delete: (id) => client.delete(`/grading/courses/${id}/`),
+            archive: (id) => client.post(`/grading/courses/${id}/archive/`, {}),
+            reassign: (id, newOwnerId) => client.post(`/grading/courses/${id}/reassign/`, { new_owner_id: newOwnerId }),
+            members: (id) => client.get(`/grading/courses/${id}/members/`),
+            addMember: (id, studentId, repoUrl) => client.post(
+                `/grading/courses/${id}/members/`,
+                { student_id: studentId, student_repo_url: repoUrl || '' }
+            ),
+            removeMember: (id, studentId) => client.delete(
+                `/grading/courses/${id}/members/`,
+                { params: { student_id: studentId } }
+            ),
+        },
+        // Project = assignment within a Course (Apr 28 2026 — assignment layer).
+        // CRUD: only the course owner (teacher) can create/update/archive
+        // projects under their own courses. Admin override allowed.
+        projects: {
+            list: (params = {}) => client.get('/grading/projects/', { params }),
+            byCourse: (courseId) => client.get('/grading/projects/', {
+                params: { course: courseId },
+            }),
+            get: (id) => client.get(`/grading/projects/${id}/`),
+            create: (data) => client.post('/grading/projects/', data),
+            update: (id, data) => client.patch(`/grading/projects/${id}/`, data),
+            archive: (id) => client.delete(`/grading/projects/${id}/`),
+        },
+        // StudentProjectRepo = a student's repo URL for one specific Project.
+        // Self-service: students write their OWN row only.
+        studentProjectRepos: {
+            list: (params = {}) => client.get('/grading/student-project-repos/', { params }),
+            byProject: (projectId) => client.get('/grading/student-project-repos/', {
+                params: { project: projectId },
+            }),
+            create: (data) => client.post('/grading/student-project-repos/', data),
+            update: (id, data) => client.patch(`/grading/student-project-repos/${id}/`, data),
+            delete: (id) => client.delete(`/grading/student-project-repos/${id}/`),
+        },
+        students: {
+            list: (params = {}) => client.get('/grading/students/', { params }),
+            snapshot: (studentId) => client.get(`/grading/students/${studentId}/snapshot/`),
+            trajectory: (studentId, weeks, opts = {}) => {
+                const params = {};
+                if (weeks) params.weeks = weeks;
+                if (opts.granularity) params.granularity = opts.granularity;
+                if (opts.includeCohortMean) params.include_cohort_mean = 'true';
+                return client.get(`/grading/students/${studentId}/trajectory/`, { params });
+            },
+            prHistory: (studentId, limit) => client.get(`/grading/students/${studentId}/pr-history/`, { params: limit ? { limit } : {} }),
+        },
+        submissions: {
+            list: (params = {}) => client.get('/grading/submissions/', { params }),
+            get: (id) => client.get(`/grading/submissions/${id}/`),
+        },
+        sessions: {
+            list: (params = {}) => client.get('/grading/sessions/', { params }),
+            get: (id) => client.get(`/grading/sessions/${id}/`),
+            update: (id, data) => client.patch(`/grading/sessions/${id}/`, data),
+            startReview: (id) => client.post(`/grading/sessions/${id}/start_review/`, {}),
+            generateDraft: (id) => client.post(`/grading/sessions/${id}/generate_draft/`, {}),
+            send: (id) => client.post(`/grading/sessions/${id}/send/`, {}),
+            resume: (id) => client.post(`/grading/sessions/${id}/resume/`, {}),
+            startNewIteration: (id) => client.post(`/grading/sessions/${id}/start_new_iteration/`, {}),
+            // Teacher dashboard front-door aggregate. Returns one
+            // round-trip of: kpi (state counts), next_up (oldest drafted),
+            // review_time (p50/p95 over last 30d), recurring_patterns.
+            inboxSummary: () => client.get('/grading/sessions/inbox-summary/'),
+        },
+        costLogs: {
+            list: (params = {}) => client.get('/grading/cost-logs/', { params }),
+        },
+        // Ops dashboard — superuser only
+        ops: {
+            summary: () => client.get('/grading/ops/summary/'),
+            orgs: () => client.get('/grading/ops/orgs/'),
+            courses: (params = {}) => client.get('/grading/ops/courses/', { params }),
+            teachers: () => client.get('/grading/ops/teachers/'),
+            llmLog: (params = {}) => client.get('/grading/ops/llm-log/', { params }),
+            metrics: {
+                weekly: (params = {}) => client.get('/grading/ops/metrics/weekly/', { params }),
+            },
+        },
     },
 };
 export function useApi() {
