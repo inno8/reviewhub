@@ -57,9 +57,11 @@ function scrollTo(id: string) {
         <a href="#top" class="flex items-center gap-3">
           <img src="/logo/leera-wordmark-primary.svg" alt="LEERA" class="h-7" />
         </a>
-        <nav class="hidden md:flex items-center gap-8 text-sm text-on-surface-variant">
+        <nav class="hidden lg:flex items-center gap-7 text-sm text-on-surface-variant">
           <button @click="scrollTo('how')" class="hover:text-on-surface transition-colors">Zo werkt het</button>
           <button @click="scrollTo('features')" class="hover:text-on-surface transition-colors">Functies</button>
+          <button @click="scrollTo('approach')" class="hover:text-on-surface transition-colors">Aanpak</button>
+          <button @click="scrollTo('languages')" class="hover:text-on-surface transition-colors">Talen</button>
           <button @click="scrollTo('built-for')" class="hover:text-on-surface transition-colors">Voor wie</button>
           <button @click="scrollTo('pricing')" class="hover:text-on-surface transition-colors">Prijzen</button>
         </nav>
@@ -349,6 +351,133 @@ function scrollTo(id: string) {
             <p class="text-sm text-on-surface-variant leading-relaxed">{{ f.body }}</p>
           </article>
         </div>
+      </div>
+    </section>
+
+    <!-- ────────────────────────── REVIEW APPROACH ────────────────────────── -->
+    <!-- The pedagogical differentiator: LEERA is not a "pure AI grading"
+         tool. Every comment passes through the teacher before it reaches
+         a student. This is the section that separates us from raw
+         ChatGPT / Copilot review tools. -->
+    <section id="approach" class="relative px-6 lg:px-10 py-24">
+      <div class="max-w-6xl mx-auto">
+        <div class="text-center mb-14">
+          <p class="text-xs uppercase tracking-widest text-outline mb-4 font-bold">Onze aanpak</p>
+          <h2 class="text-3xl md:text-4xl font-bold leading-tight text-on-surface mb-5">
+            AI is een assistent.
+            <span class="block text-primary">Jij bent de docent.</span>
+          </h2>
+          <p class="text-lg text-on-surface-variant max-w-2xl mx-auto leading-relaxed">
+            We laten AI niet rechtstreeks naar je studenten schrijven.
+            Iedere comment, ieder cijfer, iedere terugkoppeling passeert eerst jou.
+            Pedagogie boven automatisering — altijd.
+          </p>
+        </div>
+
+        <!-- Wat we wel doen / wat we niet doen — side by side -->
+        <div class="grid md:grid-cols-2 gap-6 mb-12">
+          <!-- What we don't do -->
+          <div class="bg-surface-container-lowest rounded-2xl border border-error/20 p-7 relative">
+            <div class="flex items-center gap-3 mb-5">
+              <div class="w-10 h-10 rounded-lg bg-error/15 flex items-center justify-center">
+                <span class="material-symbols-outlined text-error text-xl">block</span>
+              </div>
+              <h3 class="text-lg font-bold text-on-surface">Wat we níét doen</h3>
+            </div>
+            <ul class="space-y-3 text-sm text-on-surface-variant">
+              <li v-for="point in [
+                'AI-comments rechtstreeks op de PR plaatsen zonder jouw blik',
+                'Eén universele stem voor alle docenten — generic ChatGPT-tone',
+                'Cijfers vergeven die niet uit jouw rubric komen',
+                'De student doen geloven dat een algoritme hem beoordeelt',
+              ]" :key="point" class="flex items-start gap-3">
+                <span class="material-symbols-outlined text-error/80 text-base mt-0.5 shrink-0">close</span>
+                <span>{{ point }}</span>
+              </li>
+            </ul>
+          </div>
+
+          <!-- What we do -->
+          <div class="bg-surface-container-low rounded-2xl border border-primary/30 p-7 relative shadow-xl shadow-primary/5">
+            <div class="flex items-center gap-3 mb-5">
+              <div class="w-10 h-10 rounded-lg bg-primary/15 flex items-center justify-center">
+                <span class="material-symbols-outlined text-primary text-xl">verified</span>
+              </div>
+              <h3 class="text-lg font-bold text-on-surface">Wat we wél doen</h3>
+            </div>
+            <ul class="space-y-3 text-sm text-on-surface-variant">
+              <li v-for="point in [
+                'AI schrijft een concept in jouw stem — jij accepteert, bijstuurt of schrapt',
+                'Comments verschijnen pas op de PR nadat jij Verstuur klikt',
+                'Rubric blijft van jou; AI scoort tegen jouw criteria, niet zijn eigen',
+                'Hoe jij de drafts bewerkt, calibreert toekomstige concepten',
+              ]" :key="point" class="flex items-start gap-3">
+                <span class="material-symbols-outlined text-primary text-base mt-0.5 shrink-0">check</span>
+                <span>{{ point }}</span>
+              </li>
+            </ul>
+          </div>
+        </div>
+
+        <!-- Reinforcement callout -->
+        <div class="max-w-3xl mx-auto bg-gradient-to-br from-primary/10 to-primary-container/5 rounded-2xl border border-primary/20 p-6 md:p-8 text-center">
+          <p class="text-base md:text-lg text-on-surface leading-relaxed">
+            <span class="font-bold">Iedere comment die de student krijgt, draagt jouw oordeel.</span>
+            <span class="text-on-surface-variant block mt-2">
+              Niet dat van een model dat morgen anders denkt. Niet dat van een prompt
+              die niemand meer kan reproduceren. Jouw beoordeling — alleen sneller geschreven.
+            </span>
+          </p>
+        </div>
+      </div>
+    </section>
+
+    <!-- ────────────────────────── LANGUAGES ────────────────────────── -->
+    <section id="languages" class="relative px-6 lg:px-10 py-24 bg-surface-container-lowest/50 border-y border-outline-variant/10">
+      <div class="max-w-6xl mx-auto">
+        <div class="text-center mb-12">
+          <p class="text-xs uppercase tracking-widest text-outline mb-4 font-bold">Talen</p>
+          <h2 class="text-3xl md:text-4xl font-bold leading-tight text-on-surface mb-5">
+            Werkt met
+            <span class="text-primary">je curriculum.</span>
+          </h2>
+          <p class="text-lg text-on-surface-variant max-w-2xl mx-auto leading-relaxed">
+            De talen die je studenten leren — Python tot SQL tot CSS — krijgen
+            rubric-bewuste feedback. Niet één generieke prompt voor alles.
+          </p>
+        </div>
+
+        <!-- Language grid -->
+        <div class="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 gap-3 mb-8">
+          <div
+            v-for="lang in [
+              { name: 'Python',     dot: '#3776ab' },
+              { name: 'JavaScript', dot: '#f7df1e' },
+              { name: 'TypeScript', dot: '#3178c6' },
+              { name: 'Java',       dot: '#f89820' },
+              { name: 'C#',         dot: '#239120' },
+              { name: 'PHP',        dot: '#777bb4' },
+              { name: 'HTML',       dot: '#e34f26' },
+              { name: 'CSS',        dot: '#1572b6' },
+              { name: 'SQL',        dot: '#cc3534' },
+              { name: 'Bash',       dot: '#4eaa25' },
+            ]"
+            :key="lang.name"
+            class="flex items-center gap-3 px-4 py-3 bg-surface-container-low rounded-xl border border-outline-variant/10 hover:border-primary/30 transition-colors"
+          >
+            <span class="w-2.5 h-2.5 rounded-full shrink-0" :style="{ backgroundColor: lang.dot }"></span>
+            <span class="text-sm font-semibold text-on-surface">{{ lang.name }}</span>
+          </div>
+        </div>
+
+        <!-- Note -->
+        <p class="text-center text-sm text-on-surface-variant">
+          Mis je een taal die je klas gebruikt?
+          <a href="mailto:hallo@leera.app?subject=Taalverzoek" class="text-primary font-semibold hover:underline">
+            Stuur ons een mail
+          </a>
+          — nieuwe talen ondersteunen we op aanvraag.
+        </p>
       </div>
     </section>
 
