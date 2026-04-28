@@ -23,6 +23,16 @@ import { useRouter } from 'vue-router';
 const router = useRouter();
 
 // ─────────────────────────────────────────────────────────────────────
+// Mobile hamburger menu state
+// Declared at the top because the watch() and onResize() handlers
+// below reference it; declaring it later would put it in the temporal
+// dead zone at script-setup eval time and throw a runtime
+// ReferenceError in production builds.
+// ─────────────────────────────────────────────────────────────────────
+const mobileNavOpen = ref(false);
+function toggleMobileNav() { mobileNavOpen.value = !mobileNavOpen.value; }
+
+// ─────────────────────────────────────────────────────────────────────
 // Sticky-nav scroll backdrop opacity
 // ─────────────────────────────────────────────────────────────────────
 const scrolled = ref(false);
@@ -161,11 +171,6 @@ function scrollTo(id: string) {
   if (el) el.scrollIntoView({ behavior: 'smooth', block: 'start' });
 }
 
-// ─────────────────────────────────────────────────────────────────────
-// Mobile hamburger menu
-// ─────────────────────────────────────────────────────────────────────
-const mobileNavOpen = ref(false);
-function toggleMobileNav() { mobileNavOpen.value = !mobileNavOpen.value; }
 </script>
 
 <template>
