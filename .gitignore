@@ -1,5 +1,12 @@
-# Claude Code
+# Claude Code — local-only IDE / agent state, never committed
 .claude/worktrees/
+.claude/launch.json
+.claude/settings.local.json
+.claude/scheduled-tasks/
+# gstack — local agent cache + slug state
+.gstack/
+# Local scratch / cached external pulls (e.g. yt-dlp reference frames)
+tmp/
 
 # Python
 __pycache__/
