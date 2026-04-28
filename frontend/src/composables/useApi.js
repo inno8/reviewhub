@@ -262,6 +262,30 @@ export const api = {
                 { params: { student_id: studentId } }
             ),
         },
+        // Project = assignment within a Course (Apr 28 2026 — assignment layer).
+        // CRUD: only the course owner (teacher) can create/update/archive
+        // projects under their own courses. Admin override allowed.
+        projects: {
+            list: (params = {}) => client.get('/grading/projects/', { params }),
+            byCourse: (courseId) => client.get('/grading/projects/', {
+                params: { course: courseId },
+            }),
+            get: (id) => client.get(`/grading/projects/${id}/`),
+            create: (data) => client.post('/grading/projects/', data),
+            update: (id, data) => client.patch(`/grading/projects/${id}/`, data),
+            archive: (id) => client.delete(`/grading/projects/${id}/`),
+        },
+        // StudentProjectRepo = a student's repo URL for one specific Project.
+        // Self-service: students write their OWN row only.
+        studentProjectRepos: {
+            list: (params = {}) => client.get('/grading/student-project-repos/', { params }),
+            byProject: (projectId) => client.get('/grading/student-project-repos/', {
+                params: { project: projectId },
+            }),
+            create: (data) => client.post('/grading/student-project-repos/', data),
+            update: (id, data) => client.patch(`/grading/student-project-repos/${id}/`, data),
+            delete: (id) => client.delete(`/grading/student-project-repos/${id}/`),
+        },
         students: {
             list: (params = {}) => client.get('/grading/students/', { params }),
             snapshot: (studentId) => client.get(`/grading/students/${studentId}/snapshot/`),

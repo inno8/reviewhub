@@ -53,6 +53,17 @@ interface TeacherAssignment {
   teacher_email: string;
   teacher_name: string;
 }
+interface Project {
+  id: number;
+  course: number;
+  name: string;
+  description: string;
+  rubric: number | null;
+  rubric_name: string | null;
+  archived_at: string | null;
+  student_repo_count: number;
+  created_at: string;
+}
 
 const route = useRoute();
 const router = useRouter();
@@ -62,8 +73,24 @@ const id = computed(() => Number(route.params.id));
 const course = ref<Course | null>(null);
 const students = ref<Member[]>([]);
 const cohortTeachers = ref<TeacherAssignment[]>([]);
+const projects = ref<Project[]>([]);
 const loading = ref(false);
 const error = ref<string | null>(null);
+
+// Project create modal
+const showProjectModal = ref(false);
+const newProjectName = ref('');
+const newProjectDescription = ref('');
+const projectBusy = ref(false);
+const projectError = ref<string | null>(null);
+
+// Whether the current user can create / archive projects under this course.
+// Per the v1 spec: only the course owner (teacher) — and admin override.
+const canManageProjects = computed(() => {
+  if (!course.value) return false;
+  if (auth.isSchoolAdmin || auth.isSuperuser) return true;
+  return auth.user?.id === course.value.owner;
+});
 
 // Edit form
 const saveBusy = ref(false);
@@ -105,6 +132,9 @@ async function load() {
         ? teachersRes.data
         : (teachersRes.data.results || []);
     }
+
+    // Projects (assignments) under this course
+    await loadProjects();
   } catch (err: any) {
     error.value = err?.response?.data?.detail || err?.message || 'Failed to load course';
   } finally {
@@ -153,6 +183,61 @@ function goToCohort() {
     router.push({ name: 'cohort-detail', params: { id: course.value.cohort } });
   } else {
     router.push({ name: 'org-cohorts' });
+  }
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Project management (Apr 28 2026 — assignment layer)
+// ─────────────────────────────────────────────────────────────────────────────
+async function loadProjects() {
+  try {
+    const { data } = await api.grading.projects.byCourse(id.value);
+    projects.value = Array.isArray(data) ? data : (data.results || []);
+  } catch (err) {
+    // Don't kill the page — projects are an optional layer for now.
+    projects.value = [];
+  }
+}
+
+function openProjectModal() {
+  newProjectName.value = '';
+  newProjectDescription.value = '';
+  projectError.value = null;
+  showProjectModal.value = true;
+}
+
+async function createProject() {
+  if (!newProjectName.value.trim()) {
+    projectError.value = 'Naam is verplicht.';
+    return;
+  }
+  projectBusy.value = true;
+  projectError.value = null;
+  try {
+    await api.grading.projects.create({
+      course: id.value,
+      name: newProjectName.value.trim(),
+      description: newProjectDescription.value.trim(),
+    });
+    showProjectModal.value = false;
+    await loadProjects();
+  } catch (err: any) {
+    projectError.value =
+      err?.response?.data?.detail ||
+      err?.response?.data?.name?.[0] ||
+      'Kon project niet aanmaken.';
+  } finally {
+    projectBusy.value = false;
+  }
+}
+
+async function archiveProject(p: Project) {
+  if (!window.confirm(`Project "${p.name}" archiveren?`)) return;
+  try {
+    await api.grading.projects.archive(p.id);
+    await loadProjects();
+  } catch (err: any) {
+    window.alert(err?.response?.data?.detail || 'Kon project niet archiveren.');
   }
 }
 
@@ -224,6 +309,58 @@ watch(id, load);
               <dt class="font-bold uppercase tracking-widest text-[10px] text-outline self-center">Created</dt>
               <dd class="m-0 text-on-surface">{{ new Date(course.created_at).toLocaleDateString() }}</dd>
             </dl>
+          </section>
+
+          <!-- ─── Projects card (assignments under this course) ─── -->
+          <section class="bg-surface-container-low rounded-xl border border-outline-variant/10 overflow-hidden">
+            <div class="flex justify-between items-center px-6 py-4 border-b border-outline-variant/10">
+              <h2 class="text-base font-bold text-on-surface m-0">
+                Projecten
+                <span class="ml-2 text-sm font-normal text-outline">({{ projects.length }})</span>
+              </h2>
+              <button
+                v-if="!course.archived_at && canManageProjects"
+                class="primary-gradient text-on-primary px-3 py-1.5 rounded-lg font-bold text-sm flex items-center gap-1.5 active:scale-95 transition-all"
+                @click="openProjectModal"
+              >
+                <span class="material-symbols-outlined text-sm">add</span>
+                Nieuw project
+              </button>
+            </div>
+            <div v-if="!projects.length" class="px-6 py-8 text-center text-outline">
+              <p class="text-sm">Nog geen projecten in dit vak.</p>
+              <p class="text-xs mt-1" v-if="canManageProjects">
+                Maak een project (opdracht) zodat studenten een repo kunnen koppelen.
+              </p>
+            </div>
+            <ul v-else class="divide-y divide-outline-variant/10">
+              <li
+                v-for="p in projects" :key="p.id"
+                class="px-6 py-4 flex items-start justify-between gap-4"
+                :class="p.archived_at ? 'opacity-60' : ''"
+              >
+                <div class="min-w-0 flex-1">
+                  <p class="text-sm font-semibold text-on-surface flex items-center gap-2">
+                    {{ p.name }}
+                    <span v-if="p.archived_at" class="text-[10px] font-bold uppercase tracking-widest text-outline bg-outline-variant/20 px-2 py-0.5 rounded-md">
+                      Gearchiveerd
+                    </span>
+                  </p>
+                  <p v-if="p.description" class="text-xs text-on-surface-variant mt-1 line-clamp-2">{{ p.description }}</p>
+                  <p class="text-[11px] text-outline mt-2">
+                    {{ p.student_repo_count }} student{{ p.student_repo_count === 1 ? '' : 'en' }} hebben een repo gekoppeld
+                    · {{ p.rubric_name ? `Rubric: ${p.rubric_name}` : 'Erft rubric van vak' }}
+                  </p>
+                </div>
+                <button
+                  v-if="!p.archived_at && canManageProjects"
+                  class="text-xs text-error hover:text-error/80 font-semibold transition-colors shrink-0"
+                  @click="archiveProject(p)"
+                >
+                  Archiveer
+                </button>
+              </li>
+            </ul>
           </section>
 
           <!-- ─── Students card ─── -->
@@ -364,6 +501,64 @@ watch(id, load);
           </section>
 
         </div>
+      </div>
+    </div>
+
+    <!-- ─── Create project modal ─── -->
+    <div
+      v-if="showProjectModal"
+      class="fixed inset-0 z-[100] flex items-center justify-center p-6 bg-background/80 backdrop-blur-sm"
+      @click.self="showProjectModal = false"
+    >
+      <div class="bg-surface-container-low rounded-2xl border border-outline-variant/20 shadow-2xl shadow-black/40 w-full max-w-md p-6">
+        <div class="flex items-center justify-between mb-4">
+          <h3 class="text-lg font-bold text-on-surface">Nieuw project</h3>
+          <button class="text-outline hover:text-on-surface" @click="showProjectModal = false">
+            <span class="material-symbols-outlined">close</span>
+          </button>
+        </div>
+        <p class="text-sm text-on-surface-variant mb-4">
+          Een project is een opdracht binnen dit vak. Studenten koppelen er hun eigen repo aan.
+        </p>
+        <form @submit.prevent="createProject" class="space-y-4">
+          <div>
+            <label class="text-xs font-bold uppercase tracking-widest text-outline block mb-1.5">Naam</label>
+            <input
+              v-model="newProjectName"
+              type="text"
+              required
+              autofocus
+              placeholder="bv. REST API bouwen"
+              class="w-full bg-surface-container-lowest border border-outline-variant/30 rounded-lg text-on-surface text-sm focus:ring-1 focus:ring-primary/50 px-4 py-2.5"
+            />
+          </div>
+          <div>
+            <label class="text-xs font-bold uppercase tracking-widest text-outline block mb-1.5">Omschrijving</label>
+            <textarea
+              v-model="newProjectDescription"
+              rows="3"
+              placeholder="Wat moeten studenten bouwen?"
+              class="w-full bg-surface-container-lowest border border-outline-variant/30 rounded-lg text-on-surface text-sm focus:ring-1 focus:ring-primary/50 px-4 py-2.5 resize-none"
+            ></textarea>
+          </div>
+          <p v-if="projectError" class="text-xs text-error">{{ projectError }}</p>
+          <div class="flex justify-end gap-2 pt-2">
+            <button
+              type="button"
+              class="text-sm font-semibold text-on-surface-variant hover:text-on-surface px-4 py-2"
+              @click="showProjectModal = false"
+            >
+              Annuleer
+            </button>
+            <button
+              type="submit"
+              :disabled="projectBusy"
+              class="primary-gradient text-on-primary px-4 py-2 rounded-lg font-bold text-sm disabled:opacity-50"
+            >
+              {{ projectBusy ? 'Bezig…' : 'Aanmaken' }}
+            </button>
+          </div>
+        </form>
       </div>
     </div>
   </AppShell>
