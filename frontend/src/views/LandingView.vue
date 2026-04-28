@@ -858,12 +858,86 @@ function scrollTo(id: string) {
           </div>
         </div>
 
-        <div class="reveal" style="text-align:center;margin-top:8px">
-          <p style="font-size:13px;color:var(--outline)">
-            Werkt ook met de gangbare frameworks:
-            <span style="color:var(--on-surface-variant);font-weight:500">Laravel, Django, Vue, React</span>
-            en meer.
+        <!-- Frameworks subsection — same card grid pattern, brand-color logos. -->
+        <div class="reveal" style="text-align:center;margin-top:48px;margin-bottom:32px">
+          <div style="font-size:10px;letter-spacing:.2em;text-transform:uppercase;color:var(--outline);font-weight:700;margin-bottom:8px">Frameworks</div>
+          <p style="font-size:14px;color:var(--on-surface-variant);max-width:520px;margin:0 auto">
+            En de frameworks die je studenten gebruiken op MBO-4 niveau.
           </p>
+        </div>
+
+        <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(140px,1fr));gap:16px;max-width:900px;margin:0 auto">
+          <!-- Laravel — most common in MBO-4 -->
+          <div class="reveal lang-card">
+            <svg width="20" height="20" viewBox="0 0 50 52" fill="none">
+              <path d="M49.626 11.564a.815.815 0 0 1 .028.209v10.972a.812.812 0 0 1-.405.703l-9.21 5.302v10.508c0 .288-.154.554-.403.7L20.42 51.115a.92.92 0 0 1-.144.058l-.054.016a.815.815 0 0 1-.413 0l-.061-.018a.794.794 0 0 1-.137-.056L.42 39.96a.812.812 0 0 1-.404-.703V6.342c0-.072.01-.142.028-.21a.756.756 0 0 1 .015-.05.793.793 0 0 1 .037-.087.798.798 0 0 1 .04-.069.8.8 0 0 1 .054-.072.736.736 0 0 1 .052-.06.83.83 0 0 1 .069-.058.752.752 0 0 1 .063-.05h.001L10.027.122a.811.811 0 0 1 .81 0l9.65 5.563h.002a.736.736 0 0 1 .063.05.789.789 0 0 1 .067.058.821.821 0 0 1 .054.06.78.78 0 0 1 .054.072.706.706 0 0 1 .04.069.806.806 0 0 1 .037.087.745.745 0 0 1 .015.05.81.81 0 0 1 .029.21v20.566l8.004-4.609v-10.51c0-.07.01-.141.028-.21a.694.694 0 0 1 .015-.05.847.847 0 0 1 .037-.086.825.825 0 0 1 .04-.069.781.781 0 0 1 .054-.073.694.694 0 0 1 .052-.06.852.852 0 0 1 .07-.057.722.722 0 0 1 .062-.05l9.65-5.564a.811.811 0 0 1 .811 0l9.65 5.563a.732.732 0 0 1 .064.05.835.835 0 0 1 .067.057.789.789 0 0 1 .054.061.741.741 0 0 1 .054.072.726.726 0 0 1 .04.069c.014.028.027.057.037.086a.732.732 0 0 1 .015.05Z" fill="#FF2D20"/>
+            </svg>
+            <span>Laravel</span>
+          </div>
+
+          <!-- Django -->
+          <div class="reveal lang-card" style="animation-delay:.05s">
+            <svg width="20" height="20" viewBox="0 0 256 256" fill="none">
+              <rect width="256" height="256" rx="20" fill="#092E20"/>
+              <path d="M48 56h32v144c-12 4-22 6-32 6-26 0-44-15-44-50 0-32 18-50 44-50zm0 76c-8 0-12 6-12 24 0 18 4 24 12 24 4 0 8-1 12-2v-44c-4-1-8-2-12-2zM112 96h32v104h-32V96zm0-40h32v24h-32V56zM168 96h32v8c8-6 16-10 24-10 24 0 36 14 36 40v66h-32v-60c0-12-6-18-16-18-4 0-8 2-12 4v74h-32V96z" fill="#FFF"/>
+            </svg>
+            <span>Django</span>
+          </div>
+
+          <!-- Vue -->
+          <div class="reveal lang-card" style="animation-delay:.1s">
+            <svg width="20" height="20" viewBox="0 0 256 220" fill="none">
+              <path d="M204.8 0h-37.94L128 67.498 89.18 0H0L128 220 256 0h-51.2z" fill="#41B883"/>
+              <path d="M167.1 0L128 67.498 89.18 0H51.2L128 132 204.8 0h-37.7z" fill="#34495E"/>
+            </svg>
+            <span>Vue</span>
+          </div>
+
+          <!-- React -->
+          <div class="reveal lang-card" style="animation-delay:.15s">
+            <svg width="20" height="20" viewBox="0 0 256 228" fill="none">
+              <circle cx="128" cy="113.5" r="12" fill="#61DAFB"/>
+              <ellipse cx="128" cy="113.5" rx="124" ry="48" stroke="#61DAFB" stroke-width="8" fill="none"/>
+              <ellipse cx="128" cy="113.5" rx="124" ry="48" stroke="#61DAFB" stroke-width="8" fill="none" transform="rotate(60 128 113.5)"/>
+              <ellipse cx="128" cy="113.5" rx="124" ry="48" stroke="#61DAFB" stroke-width="8" fill="none" transform="rotate(120 128 113.5)"/>
+            </svg>
+            <span>React</span>
+          </div>
+
+          <!-- Next.js -->
+          <div class="reveal lang-card" style="animation-delay:.2s">
+            <svg width="20" height="20" viewBox="0 0 256 256" fill="none">
+              <circle cx="128" cy="128" r="128" fill="#000"/>
+              <path d="M82 76v104h12V96l112 144 14-8L98 80c-2-3-6-4-10-4h-6zm74 0v60l12 16V76h-12z" fill="#FFF"/>
+            </svg>
+            <span>Next.js</span>
+          </div>
+
+          <!-- Spring Boot -->
+          <div class="reveal lang-card" style="animation-delay:.25s">
+            <svg width="20" height="20" viewBox="0 0 256 256" fill="none">
+              <circle cx="128" cy="128" r="128" fill="#6DB33F"/>
+              <path d="M180 60c-12 24-36 36-64 40-44 6-66 28-66 64 0 36 26 56 64 56 44 0 70-28 70-72 0-32-4-58-4-88zM84 192c-2-6-4-12-4-20 0-26 18-40 50-44 24-3 42-12 54-26-2 24-4 50-4 70 0 30-18 48-50 48-22 0-40-10-46-28zM196 44c-2-2-6-2-8 0L168 64l8 8 20-20c2-2 2-6 0-8z" fill="#FFF"/>
+            </svg>
+            <span>Spring Boot</span>
+          </div>
+
+          <!-- ASP.NET -->
+          <div class="reveal lang-card" style="animation-delay:.3s">
+            <svg width="20" height="20" viewBox="0 0 256 256" fill="none">
+              <rect width="256" height="256" rx="20" fill="#512BD4"/>
+              <text x="128" y="170" font-family="Inter,sans-serif" font-size="100" font-weight="700" fill="#FFF" text-anchor="middle">.NET</text>
+            </svg>
+            <span>ASP.NET</span>
+          </div>
+
+          <!-- Tailwind CSS -->
+          <div class="reveal lang-card" style="animation-delay:.35s">
+            <svg width="20" height="20" viewBox="0 0 256 154" fill="none">
+              <path d="M128 0C93.867 0 72.533 17.067 64 51.2 76.8 34.133 91.733 27.733 108.8 32c9.737 2.434 16.697 9.499 24.401 17.318C145.751 62.057 160.275 76.8 192 76.8c34.133 0 55.467-17.067 64-51.2-12.8 17.067-27.733 23.467-44.8 19.2-9.737-2.434-16.697-9.499-24.401-17.318C174.249 14.743 159.725 0 128 0ZM64 76.8C29.867 76.8 8.533 93.867 0 128c12.8-17.067 27.733-23.467 44.8-19.2 9.737 2.434 16.697 9.499 24.401 17.318C81.751 138.857 96.275 153.6 128 153.6c34.133 0 55.467-17.067 64-51.2-12.8 17.067-27.733 23.467-44.8 19.2-9.737-2.434-16.697-9.499-24.401-17.318C110.249 91.543 95.725 76.8 64 76.8Z" fill="#06B6D4"/>
+            </svg>
+            <span>Tailwind</span>
+          </div>
         </div>
       </div>
     </section>
