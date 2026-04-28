@@ -231,24 +231,57 @@ function scrollTo(id: string) {
 
     <!-- ────────────────────────── PROBLEM ────────────────────────── -->
     <section class="relative px-6 lg:px-10 py-20 border-y border-outline-variant/10 bg-surface-container-lowest/50">
-      <div class="max-w-5xl mx-auto text-center">
-        <p class="text-xs uppercase tracking-widest text-outline mb-4 font-bold">Het probleem</p>
-        <h2 class="text-3xl md:text-4xl font-bold leading-tight text-on-surface mb-6">
-          Code nakijken duurt langer dan
-          <span class="text-tertiary">code lesgeven.</span>
-        </h2>
-        <div class="grid md:grid-cols-3 gap-6 mt-10 text-left">
+      <div class="max-w-5xl mx-auto">
+        <div class="text-center mb-12">
+          <p class="text-xs uppercase tracking-widest text-outline mb-4 font-bold">Het probleem</p>
+          <h2 class="text-3xl md:text-4xl font-bold leading-tight text-on-surface mb-5">
+            Het zit dieper dan
+            <span class="text-tertiary">tijd.</span>
+          </h2>
+          <p class="text-lg text-on-surface-variant max-w-2xl mx-auto leading-relaxed">
+            Een docent verzuipt in PR's. Een student leert tussen commits in stilte.
+            En aan het eind van het semester is groei een vermoeden, geen bewijs.
+          </p>
+        </div>
+
+        <div class="grid md:grid-cols-3 gap-6 text-left">
+          <!-- Card 1 — Volume -->
           <div class="p-6 bg-surface-container-low rounded-xl border border-outline-variant/10">
-            <p class="text-3xl font-bold text-tertiary mb-2">20<span class="text-base text-outline ml-1">min</span></p>
-            <p class="text-sm text-on-surface-variant">Per PR. Diff lezen, rubric scoren, comment in jouw stem schrijven.</p>
+            <div class="w-10 h-10 rounded-lg bg-tertiary/15 flex items-center justify-center mb-4">
+              <span class="material-symbols-outlined text-tertiary text-xl">schedule</span>
+            </div>
+            <p class="text-xl font-bold text-tertiary mb-1">10 uur per week</p>
+            <p class="text-sm font-semibold text-on-surface mb-2">Verzuipen in volume.</p>
+            <p class="text-sm text-on-surface-variant leading-relaxed">
+              Per PR twintig minuten, maal dertig studenten, week na week.
+              Tijd die niet naar lesgeven of één-op-één coaching gaat.
+            </p>
           </div>
+
+          <!-- Card 2 — Latency -->
           <div class="p-6 bg-surface-container-low rounded-xl border border-outline-variant/10">
-            <p class="text-3xl font-bold text-tertiary mb-2">×30<span class="text-base text-outline ml-1">studenten</span></p>
-            <p class="text-sm text-on-surface-variant">Elke klas. Elke week opnieuw. Zondagavonden nakijken werd standaard.</p>
+            <div class="w-10 h-10 rounded-lg bg-tertiary/15 flex items-center justify-center mb-4">
+              <span class="material-symbols-outlined text-tertiary text-xl">history_toggle_off</span>
+            </div>
+            <p class="text-xl font-bold text-tertiary mb-1">+5 dagen vertraging</p>
+            <p class="text-sm font-semibold text-on-surface mb-2">Feedback komt te laat.</p>
+            <p class="text-sm text-on-surface-variant leading-relaxed">
+              Studenten leren wanneer ze schrijven, niet wanneer jij dagen later reviewt.
+              De bug van maandag is op vrijdag al onderdeel van het volgende probleem.
+            </p>
           </div>
+
+          <!-- Card 3 — Evidence -->
           <div class="p-6 bg-surface-container-low rounded-xl border border-outline-variant/10">
-            <p class="text-3xl font-bold text-tertiary mb-2">10<span class="text-base text-outline ml-1">u/wk</span></p>
-            <p class="text-sm text-on-surface-variant">Tijd die niet naar lesgeven, één-op-één coaching of curriculum gaat.</p>
+            <div class="w-10 h-10 rounded-lg bg-tertiary/15 flex items-center justify-center mb-4">
+              <span class="material-symbols-outlined text-tertiary text-xl">help</span>
+            </div>
+            <p class="text-xl font-bold text-tertiary mb-1">Onderbuik, geen bewijs</p>
+            <p class="text-sm font-semibold text-on-surface mb-2">Groei is onzichtbaar.</p>
+            <p class="text-sm text-on-surface-variant leading-relaxed">
+              Wie verbetert écht? Wie zit al weken vast op dezelfde fout?
+              Zonder rubric-data per criterium beoordeel je op impressie. Coaching wordt gokwerk.
+            </p>
           </div>
         </div>
       </div>
