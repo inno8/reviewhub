@@ -37,7 +37,7 @@ const lastUpdated = '28 april 2026';
       <section>
         <h2>1. Wie zijn wij</h2>
         <p>
-          LEERA wordt geleverd door <strong>Inno8</strong>, een Nederlandse
+          LEERA wordt geleverd door <strong>itec</strong>, een Nederlandse
           onderneming gevestigd in Nederland. We zijn de
           verwerkingsverantwoordelijke voor het LEERA-platform, behalve waar
           we expliciet als verwerker optreden voor een onderwijsinstelling
@@ -273,7 +273,7 @@ const lastUpdated = '28 april 2026';
       <section>
         <h2>15. Contact</h2>
         <p>
-          <strong>Inno8 — LEERA</strong><br />
+          <strong>itec — LEERA</strong><br />
           Privacy contact: <a href="mailto:inno8techs@gmail.com">inno8techs@gmail.com</a>
         </p>
       </section>

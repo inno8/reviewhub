@@ -49,11 +49,11 @@ const lastUpdated = '28 april 2026';
         <h2>1. Partijen en rolverdeling</h2>
         <ul>
           <li><strong>Verwerkingsverantwoordelijke:</strong> de onderwijsinstelling (school, MBO, bootcamp) die LEERA gebruikt.</li>
-          <li><strong>Verwerker:</strong> Inno8 (LEERA-platform).</li>
+          <li><strong>Verwerker:</strong> itec (LEERA-platform).</li>
         </ul>
         <p>
           De verwerkingsverantwoordelijke bepaalt het doel en de middelen
-          van de verwerking. Inno8 verwerkt persoonsgegevens uitsluitend
+          van de verwerking. itec verwerkt persoonsgegevens uitsluitend
           op basis van schriftelijke instructies van de instelling, zoals
           vastgelegd in de overeenkomst en deze DPA.
         </p>
@@ -102,7 +102,7 @@ const lastUpdated = '28 april 2026';
       </section>
 
       <section>
-        <h2>5. Verplichtingen van Inno8 als verwerker</h2>
+        <h2>5. Verplichtingen van itec als verwerker</h2>
         <ul>
           <li>Persoonsgegevens uitsluitend verwerken op schriftelijke instructie van de instelling</li>
           <li>Geheimhoudingsplicht opleggen aan medewerkers en onderaannemers</li>
@@ -117,7 +117,7 @@ const lastUpdated = '28 april 2026';
       <section>
         <h2>6. Sub-verwerkers (sub-processors)</h2>
         <p>
-          De instelling geeft Inno8 algemene toestemming om de volgende
+          De instelling geeft itec algemene toestemming om de volgende
           sub-verwerkers in te schakelen voor het leveren van de Dienst:
         </p>
         <table class="processors">
@@ -164,7 +164,7 @@ const lastUpdated = '28 april 2026';
           op API-data, korte logbewaring bij Anthropic).
         </p>
         <p>
-          Inno8 werkt aan migratie naar een EU-residente LLM-route
+          itec werkt aan migratie naar een EU-residente LLM-route
           (AWS Bedrock, eu-central-1) in v1.1. Tot dat moment kan een
           instelling AI-feedback voor specifieke cohorten uitschakelen.
         </p>
@@ -176,7 +176,7 @@ const lastUpdated = '28 april 2026';
           De instelling heeft het recht om eens per 12 maanden, op eigen
           kosten en met inachtneming van een redelijke voorbereidingstijd,
           een audit te (laten) uitvoeren op de naleving van deze DPA. In
-          plaats van een eigen audit kan Inno8 audit-rapportages of
+          plaats van een eigen audit kan itec audit-rapportages of
           beveiligingscertificeringen aanleveren wanneer beschikbaar.
         </p>
       </section>
@@ -184,7 +184,7 @@ const lastUpdated = '28 april 2026';
       <section>
         <h2>10. Datalekken</h2>
         <p>
-          Inno8 meldt vermoedelijke datalekken die persoonsgegevens van
+          itec meldt vermoedelijke datalekken die persoonsgegevens van
           de instelling raken zo snel mogelijk, en in elk geval binnen
           48 uur na detectie, schriftelijk aan de schoolbeheerder. De
           melding bevat de aard van de inbreuk, de getroffen categorieën
@@ -196,8 +196,8 @@ const lastUpdated = '28 april 2026';
       <section>
         <h2>11. Verzoeken van betrokkenen</h2>
         <p>
-          Wanneer een betrokkene zich rechtstreeks tot Inno8 wendt met een
-          verzoek (inzage, rectificatie, verwijdering), stuurt Inno8 het
+          Wanneer een betrokkene zich rechtstreeks tot itec wendt met een
+          verzoek (inzage, rectificatie, verwijdering), stuurt itec het
           verzoek door aan de instelling en helpt waar nodig met de
           uitvoering. De instelling beslist op het verzoek.
         </p>
@@ -206,7 +206,7 @@ const lastUpdated = '28 april 2026';
       <section>
         <h2>12. Beëindiging en teruggave / verwijdering</h2>
         <p>
-          Bij beëindiging van de overeenkomst geeft Inno8 de
+          Bij beëindiging van de overeenkomst geeft itec de
           persoonsgegevens, naar keuze van de instelling, terug of
           verwijdert deze, behoudens wettelijke bewaarplicht. De
           standaardroute is: 1 jaar gearchiveerd bewaren, daarna

@@ -24,7 +24,7 @@ const lastUpdated = '28 april 2026';
       <div class="legal-eyebrow">Algemene Voorwaarden</div>
       <h1>Voorwaarden voor het gebruik van LEERA</h1>
       <p class="lede">
-        Deze voorwaarden gelden tussen <strong>Inno8</strong> (LEERA) en de
+        Deze voorwaarden gelden tussen <strong>itec</strong> (LEERA) en de
         onderwijsinstelling, opleidingsorganisatie of individuele gebruiker
         ("Klant", "jij") die zich op het LEERA-platform registreert. Door
         LEERA te gebruiken ga je akkoord met deze voorwaarden.
@@ -38,14 +38,14 @@ const lastUpdated = '28 april 2026';
           <li><strong>Klant:</strong> de organisatie (school, MBO, bootcamp) of natuurlijke persoon die een account heeft.</li>
           <li><strong>Eindgebruiker:</strong> docent, student of beheerder die namens een Klant inlogt.</li>
           <li><strong>Cohort:</strong> een klas die als licentie-eenheid wordt beheerd.</li>
-          <li><strong>Inno8:</strong> de aanbieder van LEERA.</li>
+          <li><strong>itec:</strong> de aanbieder van LEERA.</li>
         </ul>
       </section>
 
       <section>
         <h2>2. Toegang en gebruik</h2>
         <p>
-          Inno8 verleent de Klant een niet-exclusief, niet-overdraagbaar
+          itec verleent de Klant een niet-exclusief, niet-overdraagbaar
           recht om de Dienst te gebruiken voor de duur van de overeenkomst,
           binnen de afgenomen cohorten.
         </p>
@@ -69,7 +69,7 @@ const lastUpdated = '28 april 2026';
         <p>
           Pilotperiodes en proefcohorten kunnen kosteloos of tegen een
           aangepast tarief worden aangeboden; afspraken daarover staan in
-          de pilot-overeenkomst tussen Inno8 en de Klant.
+          de pilot-overeenkomst tussen itec en de Klant.
         </p>
         <p>
           Facturatie is per maand, vooraf, op basis van het aantal actieve
@@ -82,26 +82,26 @@ const lastUpdated = '28 april 2026';
         <p>
           De broncode, PR's, commits en feedback die Eindgebruikers in
           LEERA plaatsen blijven <strong>eigendom van de Klant
-          en/of de student</strong>. Inno8 heeft alleen het recht om deze
+          en/of de student</strong>. itec heeft alleen het recht om deze
           content te verwerken voor zover nodig om de Dienst te leveren.
         </p>
         <p>
           AI-gegenereerde feedback-concepten zijn werkproducten van de
           Dienst; de docent die de feedback definitief vrijgeeft is de
-          inhoudelijk verantwoordelijke. Inno8 doet geen claim op de
+          inhoudelijk verantwoordelijke. itec doet geen claim op de
           uiteindelijk verzonden feedback.
         </p>
         <p>
           De LEERA-software, het ontwerp, de rubriek-engine, het
           skill-model en alle achterliggende technologie blijven eigendom
-          van Inno8.
+          van itec.
         </p>
       </section>
 
       <section>
         <h2>5. Beschikbaarheid (SLA)</h2>
         <p>
-          Inno8 spant zich naar beste vermogen in om de Dienst beschikbaar
+          itec spant zich naar beste vermogen in om de Dienst beschikbaar
           te houden tijdens reguliere kantooruren in Nederland. Voor de
           pilotfase en v1.0 geldt <strong>geen formele SLA</strong>; we
           streven naar een typische beschikbaarheid van 99% per maand,
@@ -123,25 +123,25 @@ const lastUpdated = '28 april 2026';
       <section>
         <h2>6. Aansprakelijkheid</h2>
         <p>
-          Inno8 is alleen aansprakelijk voor directe schade die rechtstreeks
-          en aantoonbaar door Inno8 is veroorzaakt. De totale
-          aansprakelijkheid van Inno8 onder deze overeenkomst is in alle
+          itec is alleen aansprakelijk voor directe schade die rechtstreeks
+          en aantoonbaar door itec is veroorzaakt. De totale
+          aansprakelijkheid van itec onder deze overeenkomst is in alle
           gevallen <strong>beperkt tot het bedrag dat de Klant in de maand
-          voorafgaand aan de schadeveroorzakende gebeurtenis aan Inno8
+          voorafgaand aan de schadeveroorzakende gebeurtenis aan itec
           heeft betaald</strong>.
         </p>
         <p>
-          Inno8 is niet aansprakelijk voor:
+          itec is niet aansprakelijk voor:
         </p>
         <ul>
           <li>Indirecte schade, gevolgschade, gederfde winst of verlies van data</li>
           <li>Schade door foutieve invoer, foutief gebruik of onbevoegd gebruik door Eindgebruikers</li>
-          <li>Schade door storingen bij verwerkers (LLM-leveranciers, hostingpartij, GitHub, e-mailprovider) buiten redelijke controle van Inno8</li>
+          <li>Schade door storingen bij verwerkers (LLM-leveranciers, hostingpartij, GitHub, e-mailprovider) buiten redelijke controle van itec</li>
           <li>Inhoudelijke beoordelingsfouten in feedback die de docent zonder eigen review heeft doorgestuurd; LEERA is een Copilot, geen vervanger van de docent</li>
         </ul>
         <p>
           Bovenstaande uitsluitingen gelden niet bij opzet of bewuste
-          roekeloosheid van Inno8.
+          roekeloosheid van itec.
         </p>
       </section>
 
@@ -152,7 +152,7 @@ const lastUpdated = '28 april 2026';
           inachtneming van een <strong>opzegtermijn van 30 dagen</strong>.
           Opzegging gaat per e-mail aan
           <a href="mailto:inno8techs@gmail.com">inno8techs@gmail.com</a>
-          (of, voor opzegging door Inno8, per e-mail aan de schoolbeheerder).
+          (of, voor opzegging door itec, per e-mail aan de schoolbeheerder).
         </p>
         <p>
           Bij beëindiging blijven gegevens nog 1 jaar gearchiveerd
@@ -160,7 +160,7 @@ const lastUpdated = '28 april 2026';
           op verzoek is mogelijk.
         </p>
         <p>
-          Inno8 kan de overeenkomst per direct beëindigen bij ernstige
+          itec kan de overeenkomst per direct beëindigen bij ernstige
           schending van deze voorwaarden door de Klant, zoals
           niet-betaling na ingebrekestelling, misbruik van de Dienst, of
           inbreuk op de beveiliging.
@@ -170,7 +170,7 @@ const lastUpdated = '28 april 2026';
       <section>
         <h2>8. Wijzigingen</h2>
         <p>
-          Inno8 kan deze voorwaarden van tijd tot tijd aanpassen. Materiële
+          itec kan deze voorwaarden van tijd tot tijd aanpassen. Materiële
           wijzigingen worden minimaal 30 dagen van tevoren per e-mail
           gemeld aan de schoolbeheerder. De Klant kan in dat geval binnen
           30 dagen de overeenkomst kosteloos opzeggen als de wijzigingen
@@ -191,7 +191,7 @@ const lastUpdated = '28 april 2026';
       <section>
         <h2>10. Overige bepalingen</h2>
         <ul>
-          <li>Inno8 mag rechten en verplichtingen overdragen aan een opvolger; de Klant kan dat niet zonder schriftelijke toestemming.</li>
+          <li>itec mag rechten en verplichtingen overdragen aan een opvolger; de Klant kan dat niet zonder schriftelijke toestemming.</li>
           <li>Als een bepaling van deze voorwaarden niet rechtsgeldig blijkt, blijven de overige bepalingen onverkort van kracht.</li>
           <li>Afwijkende afspraken zijn alleen geldig als ze schriftelijk zijn vastgelegd en door beide partijen zijn ondertekend.</li>
         </ul>
@@ -200,7 +200,7 @@ const lastUpdated = '28 april 2026';
       <section>
         <h2>11. Contact</h2>
         <p>
-          <strong>Inno8 — LEERA</strong><br />
+          <strong>itec — LEERA</strong><br />
           Contact: <a href="mailto:inno8techs@gmail.com">inno8techs@gmail.com</a>
         </p>
       </section>
