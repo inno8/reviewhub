@@ -355,77 +355,121 @@ function scrollTo(id: string) {
     </section>
 
     <!-- ────────────────────────── REVIEW APPROACH ────────────────────────── -->
-    <!-- The pedagogical differentiator: LEERA is not a "pure AI grading"
-         tool. Every comment passes through the teacher before it reaches
-         a student. This is the section that separates us from raw
-         ChatGPT / Copilot review tools. -->
+    <!-- The technical moat: LEERA is not "ChatGPT for grading". A
+         multi-stage pipeline (deterministic tools → student context →
+         custom prompt → teacher review) is what makes the feedback
+         tailored, defensible, and cheap. This is the section that
+         separates us from "just call OpenAI" competitors. -->
     <section id="approach" class="relative px-6 lg:px-10 py-24">
       <div class="max-w-6xl mx-auto">
-        <div class="text-center mb-14">
+        <div class="text-center mb-16">
           <p class="text-xs uppercase tracking-widest text-outline mb-4 font-bold">Onze aanpak</p>
           <h2 class="text-3xl md:text-4xl font-bold leading-tight text-on-surface mb-5">
-            AI is een assistent.
-            <span class="block text-primary">Jij bent de docent.</span>
+            Niet één AI-call.
+            <span class="block text-primary">Een pijplijn die jouw student kent.</span>
           </h2>
-          <p class="text-lg text-on-surface-variant max-w-2xl mx-auto leading-relaxed">
-            We laten AI niet rechtstreeks naar je studenten schrijven.
-            Iedere comment, ieder cijfer, iedere terugkoppeling passeert eerst jou.
-            Pedagogie boven automatisering — altijd.
+          <p class="text-lg text-on-surface-variant max-w-3xl mx-auto leading-relaxed">
+            Andere tools gooien elke PR in ChatGPT en hopen op het beste.
+            Wij draaien eerst gevestigde tools, laden dan de student-historie in,
+            en bouwen pas dán een unieke prompt — afgestemd op deze student,
+            deze commit, jouw rubric.
           </p>
         </div>
 
-        <!-- Wat we wel doen / wat we niet doen — side by side -->
-        <div class="grid md:grid-cols-2 gap-6 mb-12">
-          <!-- What we don't do -->
-          <div class="bg-surface-container-lowest rounded-2xl border border-error/20 p-7 relative">
-            <div class="flex items-center gap-3 mb-5">
-              <div class="w-10 h-10 rounded-lg bg-error/15 flex items-center justify-center">
-                <span class="material-symbols-outlined text-error text-xl">block</span>
-              </div>
-              <h3 class="text-lg font-bold text-on-surface">Wat we níét doen</h3>
+        <!-- Pipeline — 4 stages -->
+        <div class="grid md:grid-cols-2 lg:grid-cols-4 gap-5 mb-12 relative">
+          <!-- Subtle connector line behind cards on desktop -->
+          <div class="hidden lg:block absolute top-14 left-[12.5%] right-[12.5%] h-px bg-gradient-to-r from-transparent via-primary/20 to-transparent"></div>
+
+          <!-- Stage 1 — Deterministic tools -->
+          <div class="relative bg-surface-container-low rounded-2xl border border-outline-variant/10 p-6 hover:border-primary/30 transition-colors">
+            <div class="absolute top-4 right-4 text-xs font-bold text-outline-variant/40 tracking-widest">01</div>
+            <div class="w-11 h-11 rounded-xl bg-primary/15 flex items-center justify-center mb-4">
+              <span class="material-symbols-outlined text-primary text-xl">build</span>
             </div>
-            <ul class="space-y-3 text-sm text-on-surface-variant">
-              <li v-for="point in [
-                'AI-comments rechtstreeks op de PR plaatsen zonder jouw blik',
-                'Eén universele stem voor alle docenten — generic ChatGPT-tone',
-                'Cijfers vergeven die niet uit jouw rubric komen',
-                'De student doen geloven dat een algoritme hem beoordeelt',
-              ]" :key="point" class="flex items-start gap-3">
-                <span class="material-symbols-outlined text-error/80 text-base mt-0.5 shrink-0">close</span>
-                <span>{{ point }}</span>
-              </li>
-            </ul>
+            <h3 class="text-base font-bold text-on-surface mb-2">Statische tools eerst</h3>
+            <p class="text-sm text-on-surface-variant leading-relaxed mb-4">
+              Voor het LLM iets ziet, draaien we de gevestigde tools.
+              Goedkoop, snel, betrouwbaar — en ze lossen al een groot deel
+              van de comments op zonder één AI-token.
+            </p>
+            <div class="flex flex-wrap gap-1.5">
+              <span v-for="t in ['Ruff', 'ESLint', 'SQLFluff', 'Dolos', 'CodeT5', 'AST']" :key="t"
+                class="px-2 py-0.5 bg-surface-container-lowest border border-outline-variant/20 rounded-md text-[11px] font-mono text-on-surface-variant">
+                {{ t }}
+              </span>
+            </div>
           </div>
 
-          <!-- What we do -->
-          <div class="bg-surface-container-low rounded-2xl border border-primary/30 p-7 relative shadow-xl shadow-primary/5">
-            <div class="flex items-center gap-3 mb-5">
-              <div class="w-10 h-10 rounded-lg bg-primary/15 flex items-center justify-center">
-                <span class="material-symbols-outlined text-primary text-xl">verified</span>
-              </div>
-              <h3 class="text-lg font-bold text-on-surface">Wat we wél doen</h3>
+          <!-- Stage 2 — Student context -->
+          <div class="relative bg-surface-container-low rounded-2xl border border-outline-variant/10 p-6 hover:border-primary/30 transition-colors">
+            <div class="absolute top-4 right-4 text-xs font-bold text-outline-variant/40 tracking-widest">02</div>
+            <div class="w-11 h-11 rounded-xl bg-primary/15 flex items-center justify-center mb-4">
+              <span class="material-symbols-outlined text-primary text-xl">person_search</span>
             </div>
-            <ul class="space-y-3 text-sm text-on-surface-variant">
-              <li v-for="point in [
-                'AI schrijft een concept in jouw stem — jij accepteert, bijstuurt of schrapt',
-                'Comments verschijnen pas op de PR nadat jij Verstuur klikt',
-                'Rubric blijft van jou; AI scoort tegen jouw criteria, niet zijn eigen',
-                'Hoe jij de drafts bewerkt, calibreert toekomstige concepten',
-              ]" :key="point" class="flex items-start gap-3">
-                <span class="material-symbols-outlined text-primary text-base mt-0.5 shrink-0">check</span>
-                <span>{{ point }}</span>
-              </li>
-            </ul>
+            <h3 class="text-base font-bold text-on-surface mb-2">Wij laden de student in</h3>
+            <p class="text-sm text-on-surface-variant leading-relaxed mb-4">
+              Vorige rubric-scores, terugkerende fouten, skill-trajectorie,
+              wat hij vorige week leerde. Geen leeg blad — de pijplijn weet
+              wie ze voor zich heeft voor er één regel feedback wordt geschreven.
+            </p>
+            <div class="flex flex-wrap gap-1.5">
+              <span v-for="t in ['Bayes-skill', 'Patterns', 'Trajectorie', '30d historie']" :key="t"
+                class="px-2 py-0.5 bg-surface-container-lowest border border-outline-variant/20 rounded-md text-[11px] font-mono text-on-surface-variant">
+                {{ t }}
+              </span>
+            </div>
+          </div>
+
+          <!-- Stage 3 — Custom prompt -->
+          <div class="relative bg-surface-container-low rounded-2xl border border-primary/30 p-6 shadow-xl shadow-primary/5">
+            <div class="absolute top-4 right-4 text-xs font-bold text-primary/60 tracking-widest">03</div>
+            <div class="w-11 h-11 rounded-xl bg-primary/20 flex items-center justify-center mb-4">
+              <span class="material-symbols-outlined text-primary text-xl">tune</span>
+            </div>
+            <h3 class="text-base font-bold text-on-surface mb-2">Wij bouwen de unieke prompt</h3>
+            <p class="text-sm text-on-surface-variant leading-relaxed mb-4">
+              Statische bevindingen + student-context + jouw rubric + jouw
+              stem-kalibratie = één prompt op maat van deze student, deze
+              commit, dit criterium. Niet één template voor iedereen.
+            </p>
+            <div class="flex flex-wrap gap-1.5">
+              <span v-for="t in ['Prompt-engineering', 'Voice calibration', 'Rubric grounding']" :key="t"
+                class="px-2 py-0.5 bg-primary/10 border border-primary/30 rounded-md text-[11px] font-mono text-primary">
+                {{ t }}
+              </span>
+            </div>
+          </div>
+
+          <!-- Stage 4 — Teacher review -->
+          <div class="relative bg-surface-container-low rounded-2xl border border-outline-variant/10 p-6 hover:border-primary/30 transition-colors">
+            <div class="absolute top-4 right-4 text-xs font-bold text-outline-variant/40 tracking-widest">04</div>
+            <div class="w-11 h-11 rounded-xl bg-tertiary/15 flex items-center justify-center mb-4">
+              <span class="material-symbols-outlined text-tertiary text-xl">how_to_reg</span>
+            </div>
+            <h3 class="text-base font-bold text-on-surface mb-2">Jij geeft het laatste woord</h3>
+            <p class="text-sm text-on-surface-variant leading-relaxed mb-4">
+              Concept verschijnt in jouw inbox. Lezen, bijsturen, klikken.
+              Geen comment gaat naar de student zonder jouw klik. Jouw
+              bewerkingen leren de pijplijn hoe jij grade.
+            </p>
+            <div class="flex flex-wrap gap-1.5">
+              <span v-for="t in ['Inline edit', 'Send-after-review', 'Calibration loop']" :key="t"
+                class="px-2 py-0.5 bg-surface-container-lowest border border-outline-variant/20 rounded-md text-[11px] font-mono text-on-surface-variant">
+                {{ t }}
+              </span>
+            </div>
           </div>
         </div>
 
-        <!-- Reinforcement callout -->
+        <!-- Closing claim -->
         <div class="max-w-3xl mx-auto bg-gradient-to-br from-primary/10 to-primary-container/5 rounded-2xl border border-primary/20 p-6 md:p-8 text-center">
           <p class="text-base md:text-lg text-on-surface leading-relaxed">
-            <span class="font-bold">Iedere comment die de student krijgt, draagt jouw oordeel.</span>
+            <span class="font-bold">Resultaat: per student, per commit, per criterium afgestemde feedback.</span>
             <span class="text-on-surface-variant block mt-2">
-              Niet dat van een model dat morgen anders denkt. Niet dat van een prompt
-              die niemand meer kan reproduceren. Jouw beoordeling — alleen sneller geschreven.
+              Geen one-size-fits-all AI-comment. Geen generieke ChatGPT-tone.
+              Iedere terugkoppeling is opgebouwd uit bewijs over deze ene student
+              — en draagt jouw oordeel.
             </span>
           </p>
         </div>
