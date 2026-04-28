@@ -1009,10 +1009,10 @@ function scrollTo(id: string) {
           <div>
             <div style="font-weight:700;margin-bottom:12px;font-size:13px;letter-spacing:.06em;text-transform:uppercase;color:var(--outline)">Bedrijf</div>
             <div style="display:flex;flex-direction:column;gap:8px">
-              <a href="mailto:hallo@leera.app" class="footer-link">Contact</a>
-              <a href="#" class="footer-link">Privacy</a>
-              <a href="#" class="footer-link">Voorwaarden</a>
-              <a href="#" class="footer-link">DPA</a>
+              <a href="mailto:inno8techs@gmail.com" class="footer-link">Contact</a>
+              <router-link to="/privacy" class="footer-link">Privacy</router-link>
+              <router-link to="/voorwaarden" class="footer-link">Voorwaarden</router-link>
+              <router-link to="/dpa" class="footer-link">DPA</router-link>
             </div>
           </div>
         </div>

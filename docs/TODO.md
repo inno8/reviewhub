@@ -243,6 +243,37 @@ python manage.py migrate batch 0004
 python manage.py migrate evaluations 0007
 ```
 
+## Anthropic EU-region migration (privacy commitment, v1.1)
+
+The privacy verklaring (`/privacy` section 5) commits us to migrating
+LLM calls to an EU-resident endpoint. Today every Claude call goes via
+Anthropic's default `api.anthropic.com`, which is US-resident. We
+disclose this honestly and cover the doorgifte with SCC's, but the
+target end-state is **AWS Bedrock, eu-central-1 (Frankfurt)** so
+student code never leaves the EU.
+
+What needs to change (~half a day):
+- Add a Bedrock client path next to the existing Anthropic client in
+  `ai_engine/app/llm/` (the Anthropic SDK supports Bedrock natively
+  via `AnthropicBedrock` — same prompt API, different auth)
+- New env vars: `LLM_PROVIDER=bedrock|anthropic`, `AWS_REGION=eu-central-1`,
+  IAM role with `bedrock:InvokeModel` for the Claude model id
+- Cost-log the model id with the Bedrock prefix so the ops dashboard
+  splits provider cost cleanly
+- Verify Anthropic-on-Bedrock supports the same Claude model versions
+  we use today (sonnet, haiku) — Bedrock typically lags Anthropic
+  direct by ~2-4 weeks on new model releases
+- Add a per-cohort toggle "AI feedback uitschakelen" so a school can
+  opt out of any LLM call (the privacy page already advertises this)
+
+Why post-pitch and not pre-pitch:
+- Pilot scope is one school; pilot DPA covers SCC route to Anthropic US
+- Bedrock requires AWS account setup + IAM that we don't need today
+- Migration is mechanical once the v1 plumbing is stable
+
+Estimate: 4-6 hours including env wiring, cost-log delta, and a smoke
+test of one cohort end-to-end on Bedrock.
+
 ## Resend email backend
 
 `django_backend/users/emails.py` adds Resend SDK as a fallback email

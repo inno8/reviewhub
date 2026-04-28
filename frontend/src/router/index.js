@@ -22,6 +22,9 @@ import RecommendationsView from '@/views/RecommendationsView.vue';
 //   import ResolvedFindingsView from '@/views/ResolvedFindingsView.vue';
 //   import DeveloperJourneyView from '@/views/DeveloperJourneyView.vue';
 import OrgSignupView from '@/views/OrgSignupView.vue';
+import PrivacyView from '@/views/PrivacyView.vue';
+import VoorwaardenView from '@/views/VoorwaardenView.vue';
+import DPAView from '@/views/DPAView.vue';
 import AcceptInviteView from '@/views/AcceptInviteView.vue';
 import OrgStudentDetailView from '@/views/OrgStudentDetailView.vue';
 import GradingInboxView from '@/views/GradingInboxView.vue';
@@ -66,6 +69,10 @@ const router = createRouter({
         //   { path: '/resolved', name: 'resolved', component: ResolvedFindingsView },
         //   { path: '/journey', name: 'journey', component: DeveloperJourneyView },
         { path: '/org-signup', name: 'org-signup', component: OrgSignupView, meta: { public: true } },
+        // Public legal pages
+        { path: '/privacy', name: 'privacy', component: PrivacyView, meta: { public: true } },
+        { path: '/voorwaarden', name: 'voorwaarden', component: VoorwaardenView, meta: { public: true } },
+        { path: '/dpa', name: 'dpa', component: DPAView, meta: { public: true } },
         { path: '/accept-invite', name: 'accept-invite', component: AcceptInviteView, meta: { public: true } },
         // /org-dashboard redirects to the unified view; the old OrgDashboardView
         // component file stays on disk and will be cleaned up in a later pass.
