@@ -136,8 +136,10 @@ REST_FRAMEWORK = {
 # P4-8: Access token default reduced from 60 to 15 min for production safety
 # ═══════════════════════════════════════════════════════════════════════════════
 SIMPLE_JWT = {
-    'ACCESS_TOKEN_LIFETIME': timedelta(minutes=int(os.getenv('JWT_ACCESS_TOKEN_LIFETIME_MINUTES', 15))),
-    'REFRESH_TOKEN_LIFETIME': timedelta(days=int(os.getenv('JWT_REFRESH_TOKEN_LIFETIME_DAYS', 7))),
+    # `or` so empty strings in .env fall through to the default
+    # (os.getenv returns '' for "KEY=", not None).
+    'ACCESS_TOKEN_LIFETIME': timedelta(minutes=int(os.getenv('JWT_ACCESS_TOKEN_LIFETIME_MINUTES') or 15)),
+    'REFRESH_TOKEN_LIFETIME': timedelta(days=int(os.getenv('JWT_REFRESH_TOKEN_LIFETIME_DAYS') or 7)),
     'ROTATE_REFRESH_TOKENS': True,
     'BLACKLIST_AFTER_ROTATION': True,
     'SIGNING_KEY': os.getenv('JWT_SECRET_KEY', SECRET_KEY),
@@ -198,7 +200,10 @@ EMAIL_BACKEND = os.getenv(
     'django.core.mail.backends.smtp.EmailBackend',
 )
 EMAIL_HOST = os.getenv('EMAIL_HOST', 'localhost')
-EMAIL_PORT = int(os.getenv('EMAIL_PORT', '1025'))
+# `os.getenv(KEY, default)` only falls back to `default` when KEY is
+# *unset* — an empty string ("EMAIL_PORT=" in .env) returns '' which
+# blows up `int('')`. Use `or` so an empty value also falls through.
+EMAIL_PORT = int(os.getenv('EMAIL_PORT') or '1025')
 EMAIL_HOST_USER = os.getenv('EMAIL_HOST_USER', '')
 EMAIL_HOST_PASSWORD = os.getenv('EMAIL_HOST_PASSWORD', '')
 EMAIL_USE_TLS = os.getenv('EMAIL_USE_TLS', 'false').lower() == 'true'
