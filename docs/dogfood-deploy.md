@@ -27,15 +27,16 @@ Verify each before touching production:
 
 ---
 
-## 1. Merge PR #4 to main
+## 1. Merge PR #5 to main (supersedes PR #4)
 
 ```bash
-gh pr merge 4 --squash
-# Or via GitHub UI if you want a manual review pass
+gh pr merge 5 --squash
+gh pr close 4 --comment "Superseded by #5"
 ```
 
-After merge, `main` has all 94 commits including the deploy infra from
-this branch. The next deploy reads from `main`.
+After merge, `main` has the full v1 dogfood: Nakijken Copilot, landing
+page, Project layer, school-admin dashboard, TLS infra. The next deploy
+reads from `main`.
 
 ---
 
@@ -87,11 +88,58 @@ SELECT id, prompt_version FROM evaluations_evaluation LIMIT 3;
 
 ---
 
-## 4. Build + bring services up
+## 4. Build + bootstrap TLS + bring services up
+
+### 4a. Build all images
 
 ```bash
 cd /srv/reviewhub
 docker compose -f docker-compose.prod.yml build
+```
+
+### 4b. Bootstrap Let's Encrypt (FIRST RUN ONLY)
+
+Before this step, confirm:
+
+- DNS A-record for `on-boardia.com` (and `www.on-boardia.com`) points
+  at this host
+- Port 80 + 443 are reachable from the public internet (firewall +
+  security groups)
+- `DOMAIN_NAME` and `LETSENCRYPT_EMAIL` are set correctly in `.env`
+
+Run the bootstrap script:
+
+```bash
+./scripts/init-letsencrypt.sh
+```
+
+What it does:
+
+1. Pulls the certbot image
+2. Creates a self-signed dummy cert at the path nginx expects
+3. Starts the frontend container (nginx serves :80 ACME challenge + :443 dummy)
+4. Deletes the dummy cert
+5. Calls `certbot certonly --webroot` — Let's Encrypt validates by
+   hitting `/.well-known/acme-challenge/` and issues the real cert
+6. Reloads nginx — real cert is now served on :443
+
+If anything fails, the script exits with the failing command's output.
+Most common failure: DNS not yet propagated — verify with
+`dig on-boardia.com +short` from another network before retrying.
+
+**One-time only.** After this runs successfully, the cert lives in the
+`certbot-conf` Docker volume and the certbot service auto-renews
+within 30 days of expiry (every 12h check).
+
+**Tip:** to test the pipeline without burning into Let's Encrypt's
+production rate-limit (5 cert issuances per domain per week), set
+`LETSENCRYPT_STAGING=1` in `.env` first. Staging certs are not
+browser-trusted — flip back to `0` once the bootstrap works to get
+the real cert.
+
+### 4c. Bring the rest of the stack up
+
+```bash
 docker compose -f docker-compose.prod.yml up -d
 ```
 
@@ -105,6 +153,19 @@ Expect:
 - django: `Listening at: http://0.0.0.0:8000 (gunicorn)`
 - ai-engine: `Application startup complete` from uvicorn
 - db: `database system is ready to accept connections`
+- frontend (nginx): `start worker process ...` — and it'll log a
+  reload every 12h once the renewal loop kicks in
+- certbot: silent until first renewal attempt fires (12h after start)
+
+### 4d. Verify TLS is live
+
+```bash
+curl -I https://on-boardia.com
+# Expect: HTTP/2 200, with Strict-Transport-Security header
+
+curl -I http://on-boardia.com
+# Expect: HTTP/1.1 301 Moved Permanently, Location: https://...
+```
 
 ---
 

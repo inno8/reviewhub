@@ -1,5 +1,14 @@
 version: '3.8'
 
+# LEERA production stack — Nakijken Copilot v1 dogfood.
+#
+# Five services, two volumes, two named networks (default + cert-share).
+# TLS is terminated by the frontend nginx container; Let's Encrypt
+# certificates are obtained + renewed by the certbot service. See
+# scripts/init-letsencrypt.sh for the first-time bootstrap (chicken-
+# and-egg: nginx needs a cert to start; certbot needs nginx running
+# to serve the ACME challenge).
+
 services:
   django:
     build:
@@ -22,8 +31,11 @@ services:
       - EMAIL_USE_TLS=true
       - EMAIL_FROM=${EMAIL_FROM}
       - FRONTEND_URL=${FRONTEND_URL}
-    ports:
-      - "8000:8000"
+    # No host port mapping — only reachable via the frontend nginx
+    # reverse proxy (which terminates TLS). Comment back in for direct
+    # debugging access if needed.
+    expose:
+      - "8000"
     depends_on:
       - db
     deploy:
@@ -46,8 +58,8 @@ services:
       - LLM_PROVIDER=${LLM_PROVIDER}
       - LLM_API_KEY=${LLM_API_KEY}
       - LLM_MODEL=${LLM_MODEL}
-    ports:
-      - "8001:8001"
+    expose:
+      - "8001"
     volumes:
       - ai-repos:/data/repos
     depends_on:
@@ -77,12 +89,52 @@ services:
     build:
       context: ./frontend
       dockerfile: Dockerfile
+    environment:
+      # nginx envsubst replaces ${DOMAIN_NAME} in default.conf.template
+      # with this value at container start.
+      - DOMAIN_NAME=${DOMAIN_NAME}
     ports:
       - "80:80"
+      - "443:443"
+    volumes:
+      # Shared with the certbot service — Let's Encrypt cert + key live here.
+      - certbot-conf:/etc/letsencrypt:ro
+      # Shared writable so certbot can drop the ACME-challenge files for
+      # nginx to serve on /.well-known/acme-challenge/.
+      - certbot-webroot:/var/www/certbot:ro
     depends_on:
       - django
     restart: unless-stopped
+    # Reload nginx every 12h so a renewed Let's Encrypt cert is picked
+    # up without manual intervention. The trap on TERM lets Docker stop
+    # the container cleanly.
+    command: >
+      /bin/sh -c "trap exit TERM;
+                  while :; do sleep 12h & wait $${!}; nginx -s reload; done &
+                  exec /docker-entrypoint.sh nginx -g 'daemon off;'"
+
+  certbot:
+    image: certbot/certbot:latest
+    volumes:
+      - certbot-conf:/etc/letsencrypt
+      - certbot-webroot:/var/www/certbot
+    depends_on:
+      - frontend
+    # Renew check every 12h (Let's Encrypt's recommended cadence;
+    # only actually renews when within 30 days of expiry, no-op otherwise).
+    # Deploy-hook reloads nginx in the frontend container so a freshly-
+    # renewed cert is picked up immediately rather than waiting for the
+    # frontend's 12h reload loop.
+    entrypoint: >
+      /bin/sh -c "trap exit TERM;
+                  while :; do
+                    certbot renew --webroot -w /var/www/certbot --quiet
+                      --deploy-hook 'echo Cert renewed at $$(date -u +%FT%TZ)';
+                    sleep 12h & wait $${!};
+                  done"
 
 volumes:
   pgdata:
   ai-repos:
+  certbot-conf:
+  certbot-webroot:
