@@ -1,4 +1,11 @@
-FROM python:3.12-slim
+# Pin Debian Bookworm explicitly. Docker Hub's `python:3.12-slim` tag
+# was rolled forward to Debian 13 Trixie in early 2026; Trixie's apt
+# ships PHP 8.4 and the `php8.2-*` packages no longer resolve. Keeping
+# Bookworm preserves the PHP 8.2 LTS line that our deterministic
+# runners expect (security support runs through end-2025; the
+# corresponding bookworm-slim base will keep getting security updates
+# into 2028 via Debian LTS).
+FROM python:3.12-slim-bookworm
 
 WORKDIR /app
 
@@ -10,8 +17,8 @@ COPY requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
 
 # PHP tooling for deterministic analysis (PHP Workstream).
-# python:3.12-slim is Debian 12 Bookworm which ships PHP 8.2 in apt directly.
-# phpcs is installed globally via composer so `phpcs` is on PATH.
+# Bookworm ships PHP 8.2 in apt directly. phpcs + phpstan are
+# installed globally via composer so they're on PATH.
 RUN apt-get update && apt-get install -y --no-install-recommends \
     php8.2-cli \
     php8.2-xml \

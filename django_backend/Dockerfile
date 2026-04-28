@@ -1,4 +1,7 @@
-FROM python:3.12-slim
+# Pin Debian Bookworm to match the ai-engine base (Trixie rollover early
+# 2026 broke ai-engine's PHP 8.2 packages; keeping both services on the
+# same Debian release means a uniform glibc + system-library surface).
+FROM python:3.12-slim-bookworm
 
 WORKDIR /app
 
