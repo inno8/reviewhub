@@ -885,13 +885,6 @@ function scrollTo(id: string) {
           </div>
         </div>
 
-        <div class="reveal" style="text-align:center">
-          <p style="font-size:14px;color:var(--on-surface-variant)">
-            Mis je een taal die je klas gebruikt?
-            <a href="mailto:hallo@leera.app?subject=Taalverzoek" style="color:var(--primary);font-weight:600;text-decoration:none;border-bottom:1px solid currentColor">Stuur ons een mail</a>
-            — nieuwe talen ondersteunen we op aanvraag.
-          </p>
-        </div>
       </div>
     </section>
 
@@ -937,15 +930,6 @@ function scrollTo(id: string) {
           </div>
         </div>
 
-        <div class="reveal" style="margin-top:60px;background:var(--surface-container);border:1px solid rgba(162,201,255,.12);border-radius:16px;padding:32px;display:flex;align-items:center;gap:20px;flex-wrap:wrap">
-          <div style="width:60px;height:60px;border-radius:12px;background:rgba(162,201,255,.15);display:grid;place-items:center;flex-shrink:0">
-            <span class="material-symbols-outlined" style="font-size:32px;color:var(--primary)">person</span>
-          </div>
-          <div style="flex:1;min-width:0">
-            <div style="font-weight:700;font-size:16px;margin-bottom:8px">"Mijn zondagavonden waren nakijktijd. Met LEERA review ik op vrijdag, klaar voor het weekend."</div>
-            <div style="font-size:13px;color:var(--outline)">Jan, ICT-docent · Media College — pilot 2026</div>
-          </div>
-        </div>
       </div>
     </section>
 
