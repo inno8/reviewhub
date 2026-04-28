@@ -16,7 +16,10 @@ services:
       dockerfile: Dockerfile
     environment:
       - DEBUG=false
-      - DATABASE_URL=postgres://reviewhub:${DB_PASSWORD}@db:5432/reviewhub
+      # DATABASE_URL composed from the postgres vars below. Override
+      # by setting DATABASE_URL directly in .env to point at an
+      # external managed Postgres (RDS / Supabase / Neon / etc.).
+      - DATABASE_URL=${DATABASE_URL:-postgres://${POSTGRES_USER:-reviewhub}:${DB_PASSWORD}@db:5432/${POSTGRES_DB:-reviewhub}}
       - SECRET_KEY=${SECRET_KEY}
       - JWT_SECRET_KEY=${JWT_SECRET_KEY}
       - ALLOWED_HOSTS=${ALLOWED_HOSTS}
@@ -74,8 +77,8 @@ services:
   db:
     image: postgres:16-alpine
     environment:
-      - POSTGRES_DB=reviewhub
-      - POSTGRES_USER=reviewhub
+      - POSTGRES_DB=${POSTGRES_DB:-reviewhub}
+      - POSTGRES_USER=${POSTGRES_USER:-reviewhub}
       - POSTGRES_PASSWORD=${DB_PASSWORD}
     volumes:
       - pgdata:/var/lib/postgresql/data

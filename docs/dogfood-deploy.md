@@ -1,8 +1,13 @@
 # Dogfood Deploy Runbook (May 2026)
 
+> **Looking for a from-zero walkthrough including server provisioning,
+> Docker install, DNS setup, and end-to-end smoke tests? See
+> [`deployment-guide.md`](./deployment-guide.md) — this file is the
+> condensed runbook for someone who already has Docker + a server +
+> DNS working.**
+
 The exact steps to bring the LEERA dogfood instance live for the May 7
-Media College Portfolio Day pitch. Built around the
-`feat/grading-nakijken-copilot-v1` branch landing this push.
+Media College Portfolio Day pitch.
 
 ---
 
@@ -10,12 +15,12 @@ Media College Portfolio Day pitch. Built around the
 
 Verify each before touching production:
 
-- [ ] PR #4 CI is green (`gh pr checks 4`)
-- [ ] PR #4 has been reviewed + approved
-- [ ] Production database is reachable (psql connect from deploy host)
-- [ ] DNS for the dogfood domain points at the deploy host
-- [ ] SSL certs are in place on the deploy host (Let's Encrypt, Caddy, or behind a reverse proxy)
-- [ ] You have the env values ready (see `.env.production.example`):
+- PR #4 CI is green (`gh pr checks 4`)
+- PR #4 has been reviewed + approved
+- Production database is reachable (psql connect from deploy host)
+- DNS for the dogfood domain points at the deploy host
+- SSL certs are in place on the deploy host (Let's Encrypt, Caddy, or behind a reverse proxy)
+- You have the env values ready (see `.env.production.example`):
   - `SECRET_KEY` — `python -c "import secrets; print(secrets.token_urlsafe(64))"`
   - `JWT_SECRET_KEY` — same generator, different value
   - `DB_PASSWORD` — set when creating the postgres user
@@ -102,9 +107,9 @@ docker compose -f docker-compose.prod.yml build
 Before this step, confirm:
 
 - DNS A-record for `on-boardia.com` (and `www.on-boardia.com`) points
-  at this host
+at this host
 - Port 80 + 443 are reachable from the public internet (firewall +
-  security groups)
+security groups)
 - `DOMAIN_NAME` and `LETSENCRYPT_EMAIL` are set correctly in `.env`
 
 Run the bootstrap script:
@@ -120,7 +125,7 @@ What it does:
 3. Starts the frontend container (nginx serves :80 ACME challenge + :443 dummy)
 4. Deletes the dummy cert
 5. Calls `certbot certonly --webroot` — Let's Encrypt validates by
-   hitting `/.well-known/acme-challenge/` and issues the real cert
+  hitting `/.well-known/acme-challenge/` and issues the real cert
 6. Reloads nginx — real cert is now served on :443
 
 If anything fails, the script exits with the failing command's output.
@@ -150,11 +155,12 @@ docker compose -f docker-compose.prod.yml logs -f --tail=100
 ```
 
 Expect:
+
 - django: `Listening at: http://0.0.0.0:8000 (gunicorn)`
 - ai-engine: `Application startup complete` from uvicorn
 - db: `database system is ready to accept connections`
 - frontend (nginx): `start worker process ...` — and it'll log a
-  reload every 12h once the renewal loop kicks in
+reload every 12h once the renewal loop kicks in
 - certbot: silent until first renewal attempt fires (12h after start)
 
 ### 4d. Verify TLS is live
@@ -184,6 +190,7 @@ curl -i https://leera.example.com/api/users/me/  # should return 401 without aut
 ### 5.2 Frontend loads
 
 Visit `https://leera.example.com` in a browser. Expect:
+
 - The login page renders, dark theme, LEERA wordmark visible
 - No console errors related to missing assets
 - JS bundle loads (Network tab: index-*.js comes back 200)
@@ -206,6 +213,7 @@ git push
 ```
 
 In dogfood logs, expect:
+
 - ai-engine: webhook received, signature verified, evaluation enqueued
 - django: webhook fan-out from grading webhook → ai_engine succeeded
 
