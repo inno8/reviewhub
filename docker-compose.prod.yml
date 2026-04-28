@@ -42,7 +42,12 @@ services:
     expose:
       - "8000"
     depends_on:
-      - db
+      db:
+        # Wait for Postgres to actually accept connections before
+        # starting Django. Without this, `docker compose run django ...`
+        # can race the db's first-boot initialization (~5-8 s on a
+        # fresh pgdata volume) and fail with "connection refused".
+        condition: service_healthy
     deploy:
       resources:
         limits:
@@ -84,6 +89,16 @@ services:
       - POSTGRES_PASSWORD=${DB_PASSWORD}
     volumes:
       - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      # Postgres reports "ready" only after first-boot init has finished
+      # creating the role + DB and the listener is accepting TCP. Used
+      # by django's `depends_on: db: condition: service_healthy` above
+      # so the migrate step doesn't race the db boot.
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-reviewhub} -d ${POSTGRES_DB:-reviewhub}"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+      start_period: 10s
     deploy:
       resources:
         limits:
