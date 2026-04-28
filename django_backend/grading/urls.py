@@ -23,6 +23,12 @@ router.register(r"cohorts", views.CohortViewSet, basename="cohort")
 router.register(r"courses", views.CourseViewSet, basename="course")
 router.register(r"submissions", views.SubmissionViewSet, basename="submission")
 router.register(r"sessions", views.GradingSessionViewSet, basename="grading-session")
+router.register(r"projects", views.ProjectViewSet, basename="project")
+router.register(
+    r"student-project-repos",
+    views.StudentProjectRepoViewSet,
+    basename="student-project-repo",
+)
 router.register(r"cost-logs", views.LLMCostLogViewSet, basename="llm-cost-log")
 
 urlpatterns = router.urls + [

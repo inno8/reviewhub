@@ -57,6 +57,8 @@ from grading.models import (
     Course,
     GradingSession,
     PostedComment,
+    Project,
+    StudentProjectRepo,
     Submission,
     SubmissionContributor,
     WebhookDelivery,
@@ -356,6 +358,44 @@ def _ensure_evaluation_link(submission: Submission, session: GradingSession, pr_
     )
 
 
+def _match_project_for_submission(
+    repo_full_name: str,
+    student_id: int,
+) -> Project | None:
+    """
+    Match an incoming PR to a specific Project the student has registered
+    a repo for (Apr 28 2026 — assignment layer).
+
+    Looks up the most-recent StudentProjectRepo where:
+      - `student_id` matches, AND
+      - `repo_url` contains `repo_full_name` substring (covers both
+        https and ssh URLs without forcing exact-match parsing)
+
+    Returns the Project, or None if the student has no matching repo
+    registered (in which case the caller falls back to the legacy
+    cohort-level resolution).
+
+    The most-recent match wins so a student who switched repos mid-
+    semester for the same project sees the new repo take effect.
+    """
+    if not repo_full_name or not student_id:
+        return None
+    repo = (
+        StudentProjectRepo.objects
+        .filter(student_id=student_id, repo_url__icontains=repo_full_name)
+        .select_related("project", "project__course", "project__rubric")
+        .order_by("-updated_at")
+        .first()
+    )
+    if repo is None:
+        return None
+    project = repo.project
+    if project.archived_at is not None:
+        # Archived project — don't route new submissions to it.
+        return None
+    return project
+
+
 def _upsert_submission_and_session(
     *,
     memberships: list[CohortMembership],
@@ -385,6 +425,27 @@ def _upsert_submission_and_session(
     if pr_state == "closed":
         status = Submission.Status.GRADED if pr_merged else Submission.Status.OPEN
 
+    # Apr 28 2026: match against the new Project layer first. If the
+    # primary student has a StudentProjectRepo registered with this
+    # repo URL, use the project's course (more specific than the legacy
+    # first-course-in-cohort heuristic) and attach the project FK so
+    # downstream views can render assignment-aware UI.
+    matched_project = _match_project_for_submission(
+        repo_full_name=repo_full_name,
+        student_id=primary.student_id,
+    )
+    if matched_project is not None:
+        # Trust the project's course as the authoritative routing target.
+        # If the caller-passed course differs, log a warning but proceed
+        # — this is the scenario the Project layer was added to handle
+        # (multi-course cohort routing). See docs/TODO.md.
+        if matched_project.course_id != course.id:
+            log.info(
+                "webhook: routing override — passed course=%s, project.course=%s; using project.course",
+                course.id, matched_project.course_id,
+            )
+        course = matched_project.course
+
     with transaction.atomic():
         submission, _ = Submission.objects.select_for_update().update_or_create(
             course=course,
@@ -392,6 +453,7 @@ def _upsert_submission_and_session(
             pr_number=pr_number,
             defaults={
                 "org": course.org,
+                "project": matched_project,  # None when no StudentProjectRepo matched
                 "student": primary.student,
                 "pr_url": pr_payload.get("html_url", ""),
                 "pr_title": (pr_payload.get("title") or "")[:500],
@@ -405,7 +467,11 @@ def _upsert_submission_and_session(
         _sync_contributors(submission, memberships, primary)
 
         # Ensure GradingSession exists (one per Submission, OneToOne)
-        course_rubric = course.rubric
+        # Use the project's effective rubric when available (project rubric
+        # overrides course rubric if set; otherwise inherits from course).
+        course_rubric = (
+            matched_project.effective_rubric if matched_project else course.rubric
+        )
         if course_rubric is None:
             log.warning(
                 "webhook: course %s has no default rubric; skipping session creation",

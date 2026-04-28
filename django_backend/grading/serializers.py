@@ -24,8 +24,10 @@ from .models import (
     GradingSession,
     LLMCostLog,
     PostedComment,
+    Project,
     Rubric,
     SessionEvaluation,
+    StudentProjectRepo,
     Submission,
     SubmissionContributor,
 )
@@ -710,6 +712,128 @@ class LLMCostLogSerializer(serializers.ModelSerializer):
             "cost_eur",
             "latency_ms",
             "ceiling_rejected",
+            "prompt_version",
             "occurred_at",
         ]
         read_only_fields = fields
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Project + StudentProjectRepo (Apr 28 2026 — assignment layer)
+# ─────────────────────────────────────────────────────────────────────────────
+class ProjectSerializer(serializers.ModelSerializer):
+    """
+    Project = an assignment within a Course.
+
+    Permissions (enforced in ProjectViewSet):
+      - Create / update / archive: course.owner (the teacher) or admin.
+      - List / retrieve: anyone in the cohort.
+
+    `org` is set automatically from `course.cohort.org` in `Project.save()`.
+    `created_by` is filled in by the view layer from `request.user`.
+    """
+
+    course_name = serializers.CharField(source="course.name", read_only=True)
+    cohort_id = serializers.IntegerField(source="course.cohort_id", read_only=True, default=None)
+    cohort_name = serializers.CharField(source="course.cohort.name", read_only=True, default=None)
+    rubric_name = serializers.CharField(source="rubric.name", read_only=True, default=None)
+    effective_rubric_id = serializers.SerializerMethodField()
+    created_by_email = serializers.EmailField(
+        source="created_by.email", read_only=True, default=None,
+    )
+    student_repo_count = serializers.SerializerMethodField()
+
+    class Meta:
+        model = Project
+        fields = [
+            "id",
+            "org",
+            "course",
+            "course_name",
+            "cohort_id",
+            "cohort_name",
+            "name",
+            "description",
+            "rubric",
+            "rubric_name",
+            "effective_rubric_id",
+            "created_by",
+            "created_by_email",
+            "archived_at",
+            "student_repo_count",
+            "created_at",
+            "updated_at",
+        ]
+        read_only_fields = [
+            "id",
+            "org",
+            "course_name",
+            "cohort_id",
+            "cohort_name",
+            "rubric_name",
+            "effective_rubric_id",
+            "created_by",
+            "created_by_email",
+            "archived_at",
+            "student_repo_count",
+            "created_at",
+            "updated_at",
+        ]
+
+    def get_effective_rubric_id(self, obj) -> int | None:
+        eff = obj.effective_rubric
+        return eff.id if eff else None
+
+    def get_student_repo_count(self, obj) -> int:
+        return obj.student_repos.count()
+
+
+class StudentProjectRepoSerializer(serializers.ModelSerializer):
+    """
+    A student's repo URL for a specific Project. Student-managed.
+
+    Permissions (enforced in StudentProjectRepoViewSet):
+      - Create: a student creates a row for themselves under a project
+        whose cohort they're a member of.
+      - Update: student updates their own row only.
+      - List: student sees own rows; teacher sees all rows for projects
+        whose course they own.
+      - Delete: student-owned only.
+
+    `org` is set from `project.org` in `StudentProjectRepo.save()`.
+    `student` is filled in by the view layer from `request.user` on
+    create.
+    """
+
+    project_name = serializers.CharField(source="project.name", read_only=True)
+    course_id = serializers.IntegerField(source="project.course_id", read_only=True)
+    course_name = serializers.CharField(source="project.course.name", read_only=True)
+    student_email = serializers.EmailField(source="student.email", read_only=True)
+
+    class Meta:
+        model = StudentProjectRepo
+        fields = [
+            "id",
+            "org",
+            "project",
+            "project_name",
+            "course_id",
+            "course_name",
+            "student",
+            "student_email",
+            "repo_url",
+            "created_at",
+            "updated_at",
+        ]
+        read_only_fields = [
+            "id",
+            "org",
+            "project_name",
+            "course_id",
+            "course_name",
+            "student",
+            "student_email",
+            "created_at",
+            "updated_at",
+        ]
+
