@@ -405,7 +405,7 @@ function scrollTo(id: string) {
                 <span style="font-size:24px;font-weight:800;color:var(--primary)">02</span>
               </div>
               <h3 style="font-size:32px;font-weight:800;letter-spacing:-1px;margin-bottom:16px">AI draftet concept</h3>
-              <p style="font-size:16px;color:var(--on-surface-variant);line-height:1.7">Claude analyseert de diff, spot patronen, schrijft inline comments en vult rubric-scores in. Klaar voor jouw review.</p>
+              <p style="font-size:16px;color:var(--on-surface-variant);line-height:1.7">De AI analyseert de diff, spot patronen, schrijft inline comments en vult rubric-scores in. Klaar voor jouw review.</p>
             </div>
             <div style="position:relative;order:1">
               <div class="glass" style="border-radius:16px;overflow:hidden;box-shadow:0 20px 60px -20px rgba(162,201,255,.4)">
