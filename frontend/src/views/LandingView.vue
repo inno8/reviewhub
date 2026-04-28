@@ -365,7 +365,7 @@ function scrollTo(id: string) {
             </div>
             <div style="position:relative">
               <div class="glass" style="background:var(--surface-container-lowest);border-radius:16px;padding:24px;box-shadow:0 20px 60px -20px rgba(162,201,255,.4)">
-                <div id="terminal-step1" style="background:var(--surface-container-high);border-radius:10px;padding:16px;font-family:'Fira Code',monospace;font-size:13px">
+                <div id="terminal-step1" style="background:var(--surface-container-high);border-radius:10px;padding:16px;font-family:'Fira Code',monospace;font-size:13px;min-height:380px">
                   <div style="display:flex;align-items:center;gap:8px;margin-bottom:12px;padding-bottom:12px;border-bottom:1px solid rgba(139,145,157,.08)">
                     <div style="width:12px;height:12px;border-radius:99px;background:#ff5f57"></div>
                     <div style="width:12px;height:12px;border-radius:99px;background:#ffbd2e"></div>
