@@ -949,24 +949,6 @@ function scrollTo(id: string) {
       </div>
     </section>
 
-    <!-- ════════════════════════ CTA ════════════════════════ -->
-    <section style="background:linear-gradient(135deg,rgba(162,201,255,.08),rgba(88,166,255,.02));border-top:1px solid rgba(162,201,255,.12);border-bottom:1px solid rgba(162,201,255,.12)">
-      <div class="container reveal" style="text-align:center">
-        <h2 style="font-size:clamp(32px,5vw,52px);font-weight:800;letter-spacing:-1.5px;margin-bottom:20px">Klaar om te beginnen?</h2>
-        <p style="font-size:18px;color:var(--on-surface-variant);max-width:600px;margin:0 auto 40px">We zoeken nog 3 MBO-instellingen voor de pilot van schooljaar 2026/27. Plan een demo van 30 minuten — we laten zien wat het scheelt.</p>
-        <div style="display:flex;gap:14px;justify-content:center;flex-wrap:wrap">
-          <button @click="goSignup" class="primary-gradient cta-btn glow" style="color:var(--on-primary)">
-            <span class="material-symbols-outlined" style="font-size:20px">rocket_launch</span>
-            Vraag een demo aan
-          </button>
-          <a href="mailto:hallo@leera.app" class="cta-btn" style="background:var(--surface-container);color:var(--on-surface);border:1px solid rgba(139,145,157,.16);text-decoration:none">
-            <span class="material-symbols-outlined" style="font-size:20px">mail</span>
-            hallo@leera.app
-          </a>
-        </div>
-      </div>
-    </section>
-
     <!-- ════════════════════════ FOOTER ════════════════════════ -->
     <footer>
       <div class="container">
