@@ -17,7 +17,7 @@
  *   - Cleaned up obvious Dutch typos in the design (likely AI hallucinations:
  *     "gestempeld" → "gekoppeld", "Greptodep" → "Goedkoop", etc.)
  */
-import { onMounted, onUnmounted, ref } from 'vue';
+import { onMounted, onUnmounted, ref, watch } from 'vue';
 import { useRouter } from 'vue-router';
 
 const router = useRouter();
@@ -93,8 +93,21 @@ function typeWriter(element: HTMLElement, delay = 0) {
   typingTimers.push(startTimer);
 }
 
+// Close mobile menu when crossing back to desktop width
+function onResize() {
+  if (window.innerWidth > 768 && mobileNavOpen.value) {
+    mobileNavOpen.value = false;
+  }
+}
+
+// Body scroll lock when the mobile menu is open
+watch(mobileNavOpen, (open) => {
+  document.body.style.overflow = open ? 'hidden' : '';
+});
+
 onMounted(() => {
   window.addEventListener('scroll', onScroll, { passive: true });
+  window.addEventListener('resize', onResize);
   document.addEventListener('mousemove', onMouseMove);
 
   // Reveal observer
@@ -122,27 +135,43 @@ onMounted(() => {
 
 onUnmounted(() => {
   window.removeEventListener('scroll', onScroll);
+  window.removeEventListener('resize', onResize);
   document.removeEventListener('mousemove', onMouseMove);
   revealObserver?.disconnect();
   terminalObserver?.disconnect();
   clearTimers();
+  // Always restore body scroll on teardown
+  document.body.style.overflow = '';
 });
 
 // ─────────────────────────────────────────────────────────────────────
 // CTA targets
 // ─────────────────────────────────────────────────────────────────────
-function goLogin() { router.push('/login'); }
-function goSignup() { router.push('/org-signup'); }
+function goLogin() {
+  mobileNavOpen.value = false;
+  router.push('/login');
+}
+function goSignup() {
+  mobileNavOpen.value = false;
+  router.push('/org-signup');
+}
 function scrollTo(id: string) {
+  mobileNavOpen.value = false;
   const el = document.getElementById(id);
   if (el) el.scrollIntoView({ behavior: 'smooth', block: 'start' });
 }
+
+// ─────────────────────────────────────────────────────────────────────
+// Mobile hamburger menu
+// ─────────────────────────────────────────────────────────────────────
+const mobileNavOpen = ref(false);
+function toggleMobileNav() { mobileNavOpen.value = !mobileNavOpen.value; }
 </script>
 
 <template>
   <div class="landing-root">
     <!-- ════════════════════════ NAV ════════════════════════ -->
-    <nav id="nav" :class="{ scrolled }">
+    <nav id="nav" :class="{ scrolled, 'menu-open': mobileNavOpen }">
       <div class="container" style="display:flex;align-items:center;justify-content:space-between">
         <div style="display:flex;align-items:center;gap:40px">
           <a href="#top" style="display:flex;align-items:center;gap:10px;text-decoration:none">
@@ -154,14 +183,49 @@ function scrollTo(id: string) {
             <button @click="scrollTo('languages')">Talen</button>
           </div>
         </div>
-        <div style="display:flex;gap:12px;align-items:center">
+        <div class="nav-desktop-actions" style="display:flex;gap:12px;align-items:center">
           <button @click="goLogin" class="login-link">Inloggen</button>
           <button @click="goSignup" class="primary-gradient cta-btn" style="color:var(--on-primary);padding:10px 20px;font-size:14px">
             Vraag een demo aan
           </button>
         </div>
+
+        <!-- Mobile hamburger -->
+        <button
+          type="button"
+          class="hamburger"
+          :aria-expanded="mobileNavOpen"
+          aria-controls="mobile-menu"
+          aria-label="Menu"
+          @click="toggleMobileNav"
+        >
+          <span class="hamburger-bar" :class="{ 'is-open': mobileNavOpen }"></span>
+          <span class="hamburger-bar middle" :class="{ 'is-open': mobileNavOpen }"></span>
+          <span class="hamburger-bar" :class="{ 'is-open': mobileNavOpen }"></span>
+        </button>
       </div>
     </nav>
+
+    <!-- Mobile menu sheet -->
+    <Transition name="mobile-menu">
+      <div
+        v-if="mobileNavOpen"
+        id="mobile-menu"
+        class="mobile-menu"
+        @click.self="mobileNavOpen = false"
+      >
+        <div class="mobile-menu-panel">
+          <button @click="scrollTo('features')" class="mobile-menu-link">Features</button>
+          <button @click="scrollTo('how')" class="mobile-menu-link">Hoe het werkt</button>
+          <button @click="scrollTo('languages')" class="mobile-menu-link">Talen</button>
+          <div class="mobile-menu-divider"></div>
+          <button @click="goLogin" class="mobile-menu-link mobile-menu-secondary">Inloggen</button>
+          <button @click="goSignup" class="mobile-menu-cta primary-gradient">
+            Vraag een demo aan
+          </button>
+        </div>
+      </div>
+    </Transition>
 
     <!-- ════════════════════════ HERO ════════════════════════ -->
     <section id="top" class="hero">
@@ -1141,6 +1205,115 @@ function scrollTo(id: string) {
 }
 .landing-root .login-link:hover { color: var(--on-surface); }
 
+/* Hamburger button — hidden on desktop, shown on mobile */
+.landing-root .hamburger {
+  display: none;
+  background: none;
+  border: 0;
+  padding: 8px;
+  cursor: pointer;
+  flex-direction: column;
+  gap: 5px;
+  width: 40px;
+  height: 40px;
+  align-items: center;
+  justify-content: center;
+}
+.landing-root .hamburger-bar {
+  display: block;
+  width: 22px;
+  height: 2px;
+  background: var(--on-surface);
+  border-radius: 2px;
+  transition: transform .3s cubic-bezier(.16, 1, .3, 1), opacity .2s;
+  transform-origin: center;
+}
+.landing-root .hamburger-bar.is-open:nth-child(1) { transform: translateY(7px) rotate(45deg); }
+.landing-root .hamburger-bar.middle.is-open { opacity: 0; }
+.landing-root .hamburger-bar.is-open:nth-child(3) { transform: translateY(-7px) rotate(-45deg); }
+
+/* Mobile menu sheet */
+.landing-root .mobile-menu {
+  position: fixed;
+  inset: 64px 0 0 0;
+  z-index: 90;
+  background: rgba(10, 14, 20, .92);
+  backdrop-filter: blur(16px);
+  -webkit-backdrop-filter: blur(16px);
+  display: flex;
+  flex-direction: column;
+}
+.landing-root .mobile-menu-panel {
+  display: flex;
+  flex-direction: column;
+  padding: 24px 20px 32px;
+  gap: 4px;
+  border-bottom: 1px solid rgba(139, 145, 157, .08);
+  background: var(--surface-container-lowest);
+}
+.landing-root .mobile-menu-link {
+  background: none;
+  border: 0;
+  color: var(--on-surface);
+  font: inherit;
+  font-size: 18px;
+  font-weight: 600;
+  text-align: left;
+  padding: 14px 8px;
+  cursor: pointer;
+  border-radius: 8px;
+  transition: background .15s;
+}
+.landing-root .mobile-menu-link:hover,
+.landing-root .mobile-menu-link:focus-visible {
+  background: rgba(162, 201, 255, .08);
+  outline: none;
+}
+.landing-root .mobile-menu-secondary {
+  color: var(--on-surface-variant);
+  font-size: 16px;
+}
+.landing-root .mobile-menu-divider {
+  height: 1px;
+  background: rgba(139, 145, 157, .1);
+  margin: 8px 0;
+}
+.landing-root .mobile-menu-cta {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  padding: 14px 20px;
+  border-radius: 12px;
+  border: 0;
+  color: var(--on-primary);
+  font: inherit;
+  font-weight: 700;
+  font-size: 15px;
+  margin-top: 8px;
+  cursor: pointer;
+  transition: transform .2s, box-shadow .3s;
+}
+.landing-root .mobile-menu-cta:hover {
+  transform: translateY(-1px);
+  box-shadow: 0 14px 36px -16px rgba(162, 201, 255, .5);
+}
+
+/* Slide-down enter/leave */
+.mobile-menu-enter-active .mobile-menu-panel,
+.mobile-menu-leave-active .mobile-menu-panel {
+  transition: transform .25s cubic-bezier(.16, 1, .3, 1), opacity .2s;
+}
+.mobile-menu-enter-from .mobile-menu-panel,
+.mobile-menu-leave-to .mobile-menu-panel {
+  transform: translateY(-12px);
+  opacity: 0;
+}
+.mobile-menu-enter-active,
+.mobile-menu-leave-active { transition: opacity .2s; }
+.mobile-menu-enter-from,
+.mobile-menu-leave-to { opacity: 0; }
+
 /* Sections */
 .landing-root section { padding: 120px 40px; position: relative; }
 .landing-root .container { max-width: 1200px; margin: 0 auto; }
@@ -1306,12 +1479,11 @@ function scrollTo(id: string) {
   .landing-root [style*="margin-bottom:60px"],
   .landing-root [style*="margin-bottom: 60px"] { margin-bottom: 40px !important; }
 
-  /* Nav: hide the link row, shrink CTA so logo + login + demo fit */
+  /* Nav: hide desktop link row + actions, show the hamburger */
   .landing-root nav { padding: 12px 16px !important; }
   .landing-root .nav-links { display: none; }
-  .landing-root nav [style*="gap:40px"] { gap: 16px !important; }
-  .landing-root nav .cta-btn { padding: 8px 14px !important; font-size: 13px !important; }
-  .landing-root .login-link { padding: 6px 8px !important; font-size: 13px !important; }
+  .landing-root .nav-desktop-actions { display: none !important; }
+  .landing-root .hamburger { display: flex; }
 
   /* Hero */
   .landing-root .hero { min-height: auto !important; padding: 96px 20px 56px !important; }
@@ -1363,8 +1535,6 @@ function scrollTo(id: string) {
 @media (max-width: 380px) {
   .landing-root section { padding: 56px 16px !important; }
   .landing-root nav { padding: 10px 12px !important; }
-  /* Hide the secondary "Inloggen" nav link to give the demo CTA room */
-  .landing-root .login-link { display: none !important; }
   .landing-root .feature-card { padding: 20px !important; }
   /* Hero h1 line-breaks get awkward sub-360px — let it wrap naturally */
   .landing-root .hero h1 br { display: none; }
