@@ -35,6 +35,14 @@ services:
       - EMAIL_HOST_PASSWORD=${EMAIL_HOST_PASSWORD}
       - EMAIL_USE_TLS=true
       - EMAIL_FROM=${EMAIL_FROM}
+      - DEFAULT_FROM_EMAIL=${EMAIL_FROM}
+      # Resend SDK path (preferred over SMTP). users/emails.py:
+      #   if RESEND_API_KEY -> use Resend SDK
+      #   else              -> Django SMTP
+      # Without this line the Resend key never reaches the container,
+      # so the code silently falls through to SMTP (which may have
+      # empty creds if the operator chose Resend), and nothing sends.
+      - RESEND_API_KEY=${RESEND_API_KEY}
       - FRONTEND_URL=${FRONTEND_URL}
     # No host port mapping — only reachable via the frontend nginx
     # reverse proxy (which terminates TLS). Comment back in for direct
