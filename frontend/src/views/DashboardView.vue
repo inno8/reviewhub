@@ -2,6 +2,7 @@
 import { ref, computed, onMounted, watch } from 'vue';
 import { useRoute, useRouter } from 'vue-router';
 import AppShell from '@/components/layout/AppShell.vue';
+import SchoolAdminDashboardView from '@/views/SchoolAdminDashboardView.vue';
 import SkillRadarChart from '@/components/charts/SkillRadarChart.vue';
 import SkillBreakdownDialog from '@/components/skills/SkillBreakdownDialog.vue';
 import { useFindingsStore } from '@/stores/findings';
@@ -496,8 +497,19 @@ function scoreColor(score: number) {
 
 <template>
   <AppShell>
+    <!-- ═══ SCHOOL ADMIN DASHBOARD (new Apr 28 2026) ═══
+         A non-developer IT/program manager doesn't need the per-student
+         code metrics, leaderboards, or commit feeds the legacy admin
+         dashboard rendered. They need cohorts, teachers, students-at-
+         risk, license health. SchoolAdminDashboardView is the answer.
+         Falls through to the existing admin dashboard for superusers
+         and teacher-admins (a school admin role + teacher role combo). -->
+    <template v-if="authStore.isSchoolAdmin && !authStore.isTeacher && !authStore.isSuperuser">
+      <SchoolAdminDashboardView />
+    </template>
+
     <!-- ═══ ADMIN DASHBOARD ═══ -->
-    <template v-if="authStore.isAdmin">
+    <template v-else-if="authStore.isAdmin">
       <div class="p-8 flex-1">
         <!-- Teacher-first hero banner (shown for role=teacher before the admin KPIs). -->
         <section

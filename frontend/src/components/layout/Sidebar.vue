@@ -84,10 +84,12 @@ const navItems = [
   //     via PR comments instead.
 
   // Teacher experience (the grading loop).
-  // School admins can land here to oversee teacher work.
   // Super admin / platform ops do NOT grade PRs — that's per-org teacher work.
+  // School admins also do NOT grade — they manage cohorts/teachers/students,
+  // they don't review code (and may not even read code). Removed
+  // schoolAdminOnly Apr 28 2026 — landed in school-admin dashboard rebuild.
   { name: 'Grading Inbox', icon: 'rate_review', path: '/grading',
-    teacherOnly: true, schoolAdminOnly: true },
+    teacherOnly: true },
   // Klas-overzicht — redirect-or-pick page for teachers (single cohort → straight
   // redirect to the cohort overview; multiple → picker).
   { name: 'Klas-overzicht', icon: 'insights', path: '/grading/klas-overzicht',
