@@ -1268,16 +1268,105 @@ function scrollTo(id: string) {
 }
 .landing-root .footer-link:hover { color: var(--on-surface); }
 
-/* Mobile */
-@media (max-width: 768px) {
-  .landing-root section { padding: 80px 24px; }
-  .landing-root nav { padding: 14px 24px; }
-  .landing-root .hero { min-height: 80vh; }
-  .landing-root .nav-links { display: none; }
-  .landing-root .hero-mock-grid { grid-template-columns: 1fr !important; }
+/* ─────────────────────────────────────────────────────────────────
+   Mobile / tablet
+   The Claude Design hand-off uses inline styles for layout. Inline
+   styles always beat CSS unless we either (a) use !important or (b)
+   target attribute selectors. The rules below use both so that the
+   landing page collapses cleanly on phones without re-writing every
+   inline style.
+   ───────────────────────────────────────────────────────────────── */
+
+/* Tablet: relax the two-column grids before we hit phone widths */
+@media (max-width: 1024px) {
   .landing-root .how-row,
-  .landing-root .feat-row { grid-template-columns: 1fr !important; }
+  .landing-root .feat-row { gap: 40px !important; }
+}
+
+/* Phone */
+@media (max-width: 768px) {
+  /* Sections — kill the 40px horizontal inline padding and trim vertical */
+  .landing-root section { padding: 64px 20px !important; }
+  .landing-root section[style*="padding:80px 40px"],
+  .landing-root section[style*="padding: 80px 40px"] { padding: 64px 20px !important; }
+  .landing-root section[style*="padding:120px 40px"],
+  .landing-root section[style*="padding: 120px 40px"] { padding: 72px 20px !important; }
+
+  /* Inner card padding (Onze aanpak block) */
+  .landing-root [style*="padding:60px 40px"],
+  .landing-root [style*="padding: 60px 40px"] { padding: 36px 20px !important; }
+
+  /* Big margin-bottom blocks become reasonable on phones */
+  .landing-root [style*="margin-bottom:100px"],
+  .landing-root [style*="margin-bottom: 100px"] { margin-bottom: 56px !important; }
+  .landing-root [style*="margin-bottom:120px"],
+  .landing-root [style*="margin-bottom: 120px"] { margin-bottom: 56px !important; }
+  .landing-root [style*="margin-bottom:80px"],
+  .landing-root [style*="margin-bottom: 80px"] { margin-bottom: 48px !important; }
+  .landing-root [style*="margin-bottom:60px"],
+  .landing-root [style*="margin-bottom: 60px"] { margin-bottom: 40px !important; }
+
+  /* Nav: hide the link row, shrink CTA so logo + login + demo fit */
+  .landing-root nav { padding: 12px 16px !important; }
+  .landing-root .nav-links { display: none; }
+  .landing-root nav [style*="gap:40px"] { gap: 16px !important; }
+  .landing-root nav .cta-btn { padding: 8px 14px !important; font-size: 13px !important; }
+  .landing-root .login-link { padding: 6px 8px !important; font-size: 13px !important; }
+
+  /* Hero */
+  .landing-root .hero { min-height: auto !important; padding: 96px 20px 56px !important; }
+  .landing-root .hero h1 { letter-spacing: -1px !important; }
+  .landing-root .hero p { font-size: 16px !important; }
+  /* Flatten the perspective tilt so the mock sits flat on phones */
+  .landing-root #hero-mock { transform: none !important; }
+
+  /* Hero mock — when the diff/rubric grid stacks, swap left-border for top-border */
+  .landing-root .hero-mock-grid { grid-template-columns: 1fr !important; }
+  .landing-root .hero-mock-grid > div:nth-child(2) {
+    border-left: 0 !important;
+    border-top: 1px solid rgba(139, 145, 157, .08) !important;
+  }
+
+  /* "Hoe het werkt" + Features rows: stack and reset order overrides */
+  .landing-root .how-row,
+  .landing-root .feat-row { grid-template-columns: 1fr !important; gap: 32px !important; }
   .landing-root .how-row > div[style*="order:2"],
   .landing-root .feat-row > div[style*="order:2"] { order: initial !important; }
+
+  /* Floating decorative badges overflow viewport with negative offsets — hide */
+  .landing-root .float { display: none !important; }
+
+  /* Inline section heading sizes inside features (h3 36px, h3 32px) */
+  .landing-root .how-row h3[style*="font-size:32px"],
+  .landing-root .feat-row h3[style*="font-size:36px"] { font-size: 26px !important; }
+
+  /* Large numerals inside mockups — keep readable but not gigantic */
+  .landing-root [style*="font-size:44px"] { font-size: 36px !important; }
+  .landing-root [style*="font-size:40px"] { font-size: 32px !important; }
+  .landing-root [style*="font-size:36px"] { font-size: 28px !important; }
+
+  /* Feature cards: tighter padding */
+  .landing-root .feature-card { padding: 24px !important; }
+
+  /* Footer: tighter padding, single-column friendly */
+  .landing-root footer { padding: 40px 20px 24px !important; }
+  .landing-root footer [style*="grid-template-columns:repeat(auto-fit,minmax(200px,1fr))"] { gap: 24px !important; }
+
+  /* The terminal in step-01 — keep min-height but allow shrink on tiny screens */
+  #terminal-step1 { min-height: 320px !important; font-size: 11px !important; }
+
+  /* Hero trust badges — already wrap, just tighten gap */
+  .landing-root .hero [style*="gap:28px"] { gap: 16px !important; }
+}
+
+/* Tiny phones (<= 380px) */
+@media (max-width: 380px) {
+  .landing-root section { padding: 56px 16px !important; }
+  .landing-root nav { padding: 10px 12px !important; }
+  /* Hide the secondary "Inloggen" nav link to give the demo CTA room */
+  .landing-root .login-link { display: none !important; }
+  .landing-root .feature-card { padding: 20px !important; }
+  /* Hero h1 line-breaks get awkward sub-360px — let it wrap naturally */
+  .landing-root .hero h1 br { display: none; }
 }
 </style>
