@@ -19,7 +19,9 @@ services:
       # DATABASE_URL composed from the postgres vars below. Override
       # by setting DATABASE_URL directly in .env to point at an
       # external managed Postgres (RDS / Supabase / Neon / etc.).
-      - DATABASE_URL=${DATABASE_URL:-postgres://${POSTGRES_USER:-reviewhub}:${DB_PASSWORD}@db:5432/${POSTGRES_DB:-reviewhub}}
+      # POSTGRES_HOST defaults to "db" (the in-compose service name);
+      # set it in .env when pointing at an external host.
+      - DATABASE_URL=${DATABASE_URL:-postgres://${POSTGRES_USER:-reviewhub}:${DB_PASSWORD}@${POSTGRES_HOST:-db}:${POSTGRES_PORT:-5432}/${POSTGRES_DB:-reviewhub}}
       - SECRET_KEY=${SECRET_KEY}
       - JWT_SECRET_KEY=${JWT_SECRET_KEY}
       - ALLOWED_HOSTS=${ALLOWED_HOSTS}
