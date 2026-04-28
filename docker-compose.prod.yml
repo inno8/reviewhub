@@ -123,7 +123,12 @@ services:
       # nginx to serve on /.well-known/acme-challenge/.
       - certbot-webroot:/var/www/certbot:ro
     depends_on:
+      # nginx resolves proxy_pass hostnames at startup, not per-request.
+      # If ai-engine isn't running when nginx parses the config, it fails
+      # with "host not found in upstream" and frontend exits before
+      # binding port 80. Both django and ai-engine must be present.
       - django
+      - ai-engine
     restart: unless-stopped
     # Reload nginx every 12h so a renewed Let's Encrypt cert is picked
     # up without manual intervention. The trap on TERM lets Docker stop
