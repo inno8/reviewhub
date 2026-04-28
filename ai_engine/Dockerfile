@@ -19,10 +19,17 @@ RUN pip install --no-cache-dir -r requirements.txt
 # PHP tooling for deterministic analysis (PHP Workstream).
 # Bookworm ships PHP 8.2 in apt directly. phpcs + phpstan are
 # installed globally via composer so they're on PATH.
+#
+# php8.2-zip + unzip are required for composer's package downloader.
+# Without either, `composer require` fails with:
+#   In ZipDownloader.php line 81:
+#     The zip extension and unzip/7z commands are both missing, skipping.
 RUN apt-get update && apt-get install -y --no-install-recommends \
     php8.2-cli \
     php8.2-xml \
     php8.2-mbstring \
+    php8.2-zip \
+    unzip \
     composer \
     && rm -rf /var/lib/apt/lists/*
 
