@@ -81,10 +81,16 @@ def log_llm_call(
     grading_session_id: int | None = None,
     latency_ms: int | None = None,
     ceiling_rejected: bool = False,
+    prompt_version: str = "",
 ):
     """
     Append one cost row to LLMCostLog. Short transaction so it never
     blocks the LLM call path.
+
+    `prompt_version` (Apr 28 2026): optional hash or semantic version of
+    the prompt template (e.g. "rubric_grader_v3", "ai_drafter_2026_04").
+    Lets ops compare cost and quality across prompt iterations later.
+    Existing callers that don't pass it are unaffected — defaults to "".
 
     Returns the created LLMCostLog instance.
     """
@@ -103,6 +109,7 @@ def log_llm_call(
         cost_eur=breakdown.cost_eur,
         latency_ms=latency_ms,
         ceiling_rejected=ceiling_rejected,
+        prompt_version=prompt_version,
     )
 
 

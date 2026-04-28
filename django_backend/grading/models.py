@@ -378,6 +378,18 @@ class Submission(models.Model):
         on_delete=models.CASCADE,
         related_name="submissions",
     )
+    project = models.ForeignKey(
+        "Project",
+        on_delete=models.PROTECT,
+        null=True,
+        blank=True,
+        related_name="submissions",
+        help_text=(
+            "Assignment this PR belongs to (Cohort → Course → Project). Nullable so "
+            "submissions ingested before the Project layer existed (or via legacy "
+            "CohortMembership.student_repo_url matching) keep working."
+        ),
+    )
     student = models.ForeignKey(
         settings.AUTH_USER_MODEL,
         on_delete=models.CASCADE,
@@ -800,6 +812,17 @@ class LLMCostLog(models.Model):
         default=False,
         help_text="True if ai_engine rejected this call due to hard per-docent daily ceiling.",
     )
+    prompt_version = models.CharField(
+        max_length=64,
+        blank=True,
+        default="",
+        help_text=(
+            "Hash or semantic version of the prompt template used for this LLM call "
+            "(e.g. 'rubric_grader_v3', 'ai_drafter_2026_04_28'). Lets ops compare cost "
+            "and quality across prompt iterations without backfilling. Empty for callers "
+            "that don't pass it; populated incrementally as services adopt the field."
+        ),
+    )
     occurred_at = models.DateTimeField(auto_now_add=True)
 
     class Meta:
@@ -876,3 +899,171 @@ class SubmissionContributor(models.Model):
     def __str__(self) -> str:
         tag = "primary" if self.is_primary_author else "contributor"
         return f"{self.user_id} @ sub#{self.submission_id} [{tag} {self.contribution_fraction:.2f}]"
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Project — assignment level (Cohort → Course → Project → student-repos)
+# ─────────────────────────────────────────────────────────────────────────────
+class Project(models.Model):
+    """
+    A specific assignment within a Course.
+
+    The cohort/course model alone couldn't represent "this Backend course has
+    three assignments this semester, each with its own repo per student." A
+    Course is a vak (subject); a Project is an opdracht (assignment) inside it.
+
+    Permission model:
+      - CREATE: the Course's `owner` (the teacher) — NOT the school admin.
+        The teacher decides what assignments live inside their course.
+      - UPDATE / ARCHIVE: course owner or org admin.
+      - LIST / RETRIEVE: anyone in the cohort (students see what they're enrolled
+        in; teachers see their own; admins see everything in the org).
+
+    Each student enrolls into a project via StudentProjectRepo, which carries
+    their per-project repo URL. That's how webhooks know which Course +
+    Project a given push belongs to.
+    """
+
+    org = models.ForeignKey(
+        "users.Organization",
+        on_delete=models.CASCADE,
+        related_name="projects",
+        help_text=(
+            "Denormalized from course.cohort.org so OrgScopedManager can filter "
+            "by a single FK at the ORM level. Set automatically on save() — see "
+            "save() override below."
+        ),
+    )
+    course = models.ForeignKey(
+        Course,
+        on_delete=models.CASCADE,
+        related_name="projects",
+    )
+    name = models.CharField(max_length=200)
+    description = models.TextField(blank=True)
+    rubric = models.ForeignKey(
+        Rubric,
+        on_delete=models.PROTECT,
+        null=True,
+        blank=True,
+        related_name="projects_using",
+        help_text=(
+            "Override the course's rubric for this project. NULL means "
+            "'inherit from course.rubric'. Useful when a single course has "
+            "an early-semester rubric (forgiving) and a late-semester rubric "
+            "(strict) for different assignments."
+        ),
+    )
+    created_by = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.PROTECT,
+        related_name="created_grading_projects",
+        help_text="The teacher who created this project. Stored for audit; not used for permissions. Related-name is grading-namespaced because the legacy projects.Project model already claims `created_projects`.",
+    )
+    archived_at = models.DateTimeField(
+        null=True,
+        blank=True,
+        help_text="Soft-archive timestamp. Archived projects are hidden by default but preserved for grading history.",
+    )
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    objects = OrgScopedManager()
+
+    class Meta:
+        db_table = "grading_projects"
+        indexes = [
+            models.Index(fields=["course", "archived_at", "-created_at"]),
+            models.Index(fields=["org", "-created_at"]),
+        ]
+        ordering = ["-created_at"]
+
+    def __str__(self) -> str:
+        return f"{self.course.name} / {self.name}"
+
+    def save(self, *args, **kwargs):
+        # Keep the denormalized org_id in sync with course.cohort.org_id.
+        # Defensive: handle the rare case where course.cohort is None (legacy
+        # row pre-cohort migration) by falling back to course.org.
+        if not self.org_id:
+            cohort = getattr(self.course, "cohort", None)
+            self.org_id = (
+                getattr(cohort, "org_id", None)
+                or getattr(self.course, "org_id", None)
+            )
+        super().save(*args, **kwargs)
+
+    @property
+    def effective_rubric(self) -> Rubric | None:
+        """Return this project's rubric, or fall back to the course's rubric."""
+        return self.rubric or self.course.rubric
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# StudentProjectRepo — student-managed repo URL for a specific project
+# ─────────────────────────────────────────────────────────────────────────────
+class StudentProjectRepo(models.Model):
+    """
+    The repo URL a student uses for one specific Project. Student-managed.
+
+    Webhook routing matches incoming PRs against `repo_url` here in preference
+    to the legacy CohortMembership.student_repo_url field. When the match
+    succeeds, the resulting Submission gets both `course` (from project.course)
+    and `project` populated.
+
+    Permission model:
+      - CREATE / UPDATE: the student themselves (writing their own row).
+      - LIST: a student sees their own rows; the project's course owner
+        (teacher) sees all rows for that project.
+      - DELETE: same as update — student-owned.
+    """
+
+    org = models.ForeignKey(
+        "users.Organization",
+        on_delete=models.CASCADE,
+        related_name="student_project_repos",
+        help_text="Denormalized from project.org for OrgScopedManager.",
+    )
+    project = models.ForeignKey(
+        Project,
+        on_delete=models.CASCADE,
+        related_name="student_repos",
+    )
+    student = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.CASCADE,
+        related_name="project_repos",
+    )
+    repo_url = models.URLField(
+        blank=True,
+        help_text="Full repo URL (e.g., https://github.com/jandeboer/assignment-q3). Used by the webhook router to match incoming PRs to this project + student.",
+    )
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    objects = OrgScopedManager()
+
+    class Meta:
+        db_table = "grading_student_project_repos"
+        constraints = [
+            models.UniqueConstraint(
+                fields=["project", "student"],
+                name="uniq_student_project_repo",
+            ),
+        ]
+        indexes = [
+            # The webhook hot path searches by repo_url substring.
+            models.Index(fields=["repo_url"]),
+            models.Index(fields=["student", "-updated_at"]),
+            models.Index(fields=["project", "-updated_at"]),
+        ]
+        ordering = ["-updated_at"]
+
+    def __str__(self) -> str:
+        return f"{self.student_id} → {self.project_id}: {self.repo_url or '(empty)'}"
+
+    def save(self, *args, **kwargs):
+        # Keep the denormalized org_id in sync with the project's org.
+        if not self.org_id:
+            self.org_id = getattr(self.project, "org_id", None)
+        super().save(*args, **kwargs)
