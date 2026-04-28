@@ -102,7 +102,16 @@ $COMPOSE run --rm --entrypoint "\
 # ─────────────────────────────────────────────────────────────────────
 # Step 3 — Start the frontend with the dummy cert so :80 (with the
 #          ACME challenge route) is reachable for the validator.
+#
+# We `build` first so any local changes to frontend/nginx.conf or
+# frontend/Dockerfile actually land in the running container. nginx.conf
+# is COPYed into the image at build time (not bind-mounted), so a plain
+# `up --force-recreate` reuses a stale image and applies the *old* config.
+# Building is a no-op when nothing has changed, so this is cheap to leave in.
 # ─────────────────────────────────────────────────────────────────────
+echo "→ Building frontend image…"
+$COMPOSE build frontend
+
 echo "→ Starting frontend (nginx with dummy cert)…"
 $COMPOSE up --force-recreate -d frontend
 
