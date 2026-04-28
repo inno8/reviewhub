@@ -33,7 +33,11 @@ services:
       - EMAIL_PORT=${EMAIL_PORT}
       - EMAIL_HOST_USER=${EMAIL_HOST_USER}
       - EMAIL_HOST_PASSWORD=${EMAIL_HOST_PASSWORD}
-      - EMAIL_USE_TLS=true
+      # TLS true for port 587 (Gmail) + port 2525 (Brevo, SendGrid).
+      # Default true so existing deploys keep working; override in .env
+      # if your provider uses implicit SSL on 465 (set EMAIL_USE_TLS=false
+      # and configure EMAIL_USE_SSL separately if needed).
+      - EMAIL_USE_TLS=${EMAIL_USE_TLS:-true}
       - EMAIL_FROM=${EMAIL_FROM}
       - DEFAULT_FROM_EMAIL=${EMAIL_FROM}
       # Resend SDK path (preferred over SMTP). users/emails.py:
