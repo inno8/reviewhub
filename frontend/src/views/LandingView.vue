@@ -858,6 +858,13 @@ function scrollTo(id: string) {
           </div>
         </div>
 
+        <div class="reveal" style="text-align:center;margin-top:8px">
+          <p style="font-size:13px;color:var(--outline)">
+            Werkt ook met de gangbare frameworks:
+            <span style="color:var(--on-surface-variant);font-weight:500">Laravel, Django, Vue, React</span>
+            en meer.
+          </p>
+        </div>
       </div>
     </section>
 

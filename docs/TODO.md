@@ -5,6 +5,36 @@ deployment, I found a stack of pre-existing issues that we're shipping
 around (not into) for the May 7 pitch deadline. Capturing them here so
 they don't drop on the floor.
 
+## PHP / Laravel deterministic layer (priority: HIGH for v1.1)
+
+User correction Apr 28 2026: **PHP + Laravel is the most common stack
+in Dutch MBO-4 ICT curricula** — more common than Python/Django.
+
+Today's deterministic layer covers:
+- **Python** via Ruff
+- **JavaScript / TypeScript** via ESLint (with `eslint-plugin-vue`,
+  `eslint-plugin-react`, `react-hooks`)
+- **SQL** via SQLFluff
+- **Dolos** (plagiarism, language-agnostic)
+- **CodeT5** (similarity, language-agnostic)
+
+The gap: **PHP code currently goes "LLM only" with no deterministic
+pre-pass.** Code still gets reviewed correctly because Claude knows
+PHP and Laravel cold, but we miss the cheap-token path that catches
+60% of common patterns before any LLM call. Per the user this should
+move up the post-pitch priority list since it's the most-used stack
+in the target audience.
+
+What to wire in v1.1:
+- **PHPStan** (or **Larastan** — the Laravel-aware extension) for
+  type checks + static analysis
+- **PHP-CS-Fixer** or **PHP_CodeSniffer** for style + PSR-12
+- Plug both into `ai_engine`'s pre-pass orchestrator the same way
+  Ruff is wired today
+
+Estimate: ~half a day for the orchestrator wiring + Docker image
+update + tests.
+
 ## Post-pitch ops polish (superuser dashboard + LLM cost views)
 
 The superuser dashboard (`OpsDashboardView.vue`) is solid for v1 — it
