@@ -1056,6 +1056,23 @@ class GradingSessionViewSet(
         from users.org_llm import get_org_llm_config
         llm_config = get_org_llm_config(request.user)
 
+        # Build identity-free student context for the LLM prompt.
+        # Pulls UserDevProfile + SkillMetric + recurring Pattern + recent
+        # LearningProof for this student so the AI's draft is calibrated
+        # to their level + goals + known weak spots, instead of a generic
+        # rubric pass. See grading/services/student_context.py for the
+        # exact shape and budget rationale.
+        from .services.student_context import build_student_context
+
+        # Scope skill / pattern queries to the assignment's project when
+        # the submission has one (sub-project metrics are more relevant
+        # than org-wide aggregates). Fall back to None for cohort-wide
+        # roll-up.
+        project_id = getattr(submission, 'project_id', None) or getattr(
+            getattr(submission, 'course', None), 'project_id', None
+        )
+        student_context = build_student_context(student, project_id=project_id)
+
         input_ = rubric_grader.GraderInput(
             diff=combined_diff,
             rubric_criteria=session.rubric.criteria,
@@ -1078,7 +1095,7 @@ class GradingSessionViewSet(
                     or ""
                 ),
             ),
-            context={},  # v1.1: fill with recurring-error summary etc.
+            context=student_context,
             tier="premium",
             docent_id=request.user.id,
             llm_config=llm_config,

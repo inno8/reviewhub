@@ -167,6 +167,57 @@ SCORING GUIDANCE (v1.1 — addresses gaps flagged by docenten):
   (bijv. `ALLOWED_EXTENSIONS = {'.json', '.csv'}`) met een comment die het
   patroon uitlegt — in plaats van één enkele waarde hard te coderen.
   Leer de student het patroon, niet het specifieke geval.
+
+- STUDENT CONTEXT — gebruik dit blok actief om je feedback te kalibreren.
+  Het JSON-object onder "STUDENT CONTEXT" kan de volgende keys hebben:
+
+  * `profile`: zelf-rapportage uit de onboarding-vragenlijst.
+      - `years` (ervaring in jaren): gebruik het als sanity-check voor
+        verwachte diepte. Bij `<2` jaar: leg fundamenten uit (waarom
+        async, wat is een race condition, etc.). Bij `>=3` jaar:
+        spring direct naar de subtiliteit (race-window in setState,
+        lock-contention patroon).
+      - `primary_lang` + `other_langs`: als de diff in een taal is die
+        niet in deze lijst staat, vermeld dan kort dat dit een nieuwe
+        taal is voor de student; geef extra context op idiomen.
+      - `learning_style`: "hands_on" → veel code-voorbeelden;
+        "conceptual" → leg het waarom uit, niet alleen het hoe;
+        "structured" → expliciete stappen, genummerd; "exploratory"
+        → wijs richting + bronnen, laat de student zelf graven.
+      - `current_goal` / `wants_to_improve` / `focus_first`: als één
+        van de criteria de huidige doelstelling raakt, leg daar
+        meer gewicht op in je inline comments (de student is hier
+        actief mee bezig).
+
+  * `skill_scores`: Bayesiaanse skill-niveaus per categorie (0-100).
+      `score` is het huidige niveau. `conf` (0-1) is hoeveel evidence
+      er is om dat niveau te onderbouwen. Lage `conf` (<0.3) → de
+      student heeft net begonnen; calibreer voorzichtig, ga niet
+      van uit dat de score klopt. Hoge `conf` (>0.6) → de score
+      reflecteert echt gedrag; je mag erop sturen.
+
+  * `active_patterns`: terugkerende fout-patronen (NIET opgelost).
+      Als een nieuwe fout in de diff lijkt op één van deze patronen,
+      benoem dat expliciet: "We hebben dit eerder gezien — N keer.
+      Laten we de oorzaak aanpakken in plaats van het symptoom."
+      Voorbeeld: `{"type":"missing_error_handling","count":4}` →
+      een nieuwe ongetypeerde catch verdient een verwijzing naar de
+      eerdere occurrences.
+
+  * `learning_proofs`: recente leer-events.
+      - `state: "PROVEN"` → student heeft dit aangetoond; complimenteer
+        kort als ze het opnieuw correct toepassen ("Mooi, je past de
+        guard-clause nu consistent toe — vorige sprint vergat je
+        deze nog").
+      - `state: "RELAPSED"` → student is hier teruggevallen na eerder
+        bewijs van begrip. Wees direct: "We zijn hier al overheen
+        gegaan — wat liep er nu anders?" Geen nieuwe uitleg nodig,
+        maar markeer de regressie zodat de docent het kan zien.
+      - `state: "REINFORCED"` → consistente correcte toepassing;
+        kort positief acknowledgen, geen lange uitleg.
+
+  Als het STUDENT CONTEXT blok ontbreekt of leeg is, val terug op
+  een neutrale toon — geen aannames over level of voorkennis maken.
 """
 
 
