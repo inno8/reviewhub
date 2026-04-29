@@ -327,6 +327,14 @@ function openAddTeacher() {
 }
 
 function openAddCourse() {
+  // Guard: a course needs an owning teacher, and the form's owner picker
+  // is fed from teacherAssignments. If the cohort has no teachers yet,
+  // jump the user to the Teachers tab so they can fix the prerequisite
+  // instead of opening an empty/broken modal.
+  if (teacherAssignments.value.length === 0) {
+    activeTab.value = 'teachers';
+    return;
+  }
   courseForm.value = { name: '', ownerId: null };
   courseSearch.value = '';
   courseError.value = null;
@@ -523,8 +531,7 @@ watch(id, load);
                 v-if="!cohort.archived_at && auth.isSchoolAdmin"
                 class="primary-gradient text-on-primary px-4 py-2 rounded-lg font-bold text-sm flex items-center gap-2 shadow-lg shadow-primary/10 hover:shadow-primary/20 transition-all active:scale-95"
                 @click="openAddCourse"
-                :disabled="teacherAssignments.length === 0"
-                :title="teacherAssignments.length === 0 ? 'Add at least one teacher to the cohort first' : undefined"
+                :title="teacherAssignments.length === 0 ? 'No teachers yet — click to add one first' : undefined"
               >
                 <span class="material-symbols-outlined text-sm">add</span>
                 Add course
