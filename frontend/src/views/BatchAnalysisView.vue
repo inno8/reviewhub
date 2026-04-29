@@ -110,6 +110,74 @@ const form = ref({
   max_commits: 500,
 });
 
+// ── Connected GitHub repositories ──────────────────────────────────────────
+// Repos the current user has authorized via the LEERA GitHub App. Populated
+// on mount; drives the repo-selection dropdown so students don't have to
+// paste URLs by hand. The select also offers a "+ Connect another repo"
+// option that deep-links to GitHub's install settings, and an "Advanced:
+// custom URL" escape hatch for the rare case of analyzing a public repo
+// the user hasn't (yet) installed the App on.
+interface ConnectedRepo {
+  full_name: string;
+  default_branch: string;
+  is_private: boolean;
+  installation_id: number;
+}
+const connectedRepos = ref<ConnectedRepo[]>([]);
+const githubInstallUrl = ref<string | null>(null);
+const useCustomRepoUrl = ref(false);
+// Drives the <select>'s v-model. Either a repo full_name (from the
+// dropdown), or one of the special sentinels "__connect__" / "__custom__".
+const repoSelectValue = ref<string>('');
+
+async function loadConnectedRepos() {
+  try {
+    const [installsRes, urlRes] = await Promise.all([
+      api.github.installations(),
+      api.github.installUrl().catch(() => null),
+    ]);
+    const installs = Array.isArray(installsRes.data) ? installsRes.data : [];
+    connectedRepos.value = installs.flatMap((inst: any) =>
+      (inst.repos || []).map((r: any) => ({
+        full_name: r.full_name,
+        default_branch: r.default_branch || 'main',
+        is_private: !!r.is_private,
+        installation_id: inst.installation_id,
+      })),
+    );
+    githubInstallUrl.value = urlRes?.data?.install_url || null;
+  } catch {
+    // Non-fatal — the form still works with the custom-URL escape hatch.
+    connectedRepos.value = [];
+  }
+}
+
+function onRepoSelectChange() {
+  const v = repoSelectValue.value;
+  if (v === '__connect__') {
+    if (githubInstallUrl.value) {
+      window.open(githubInstallUrl.value, '_blank', 'noopener');
+    }
+    // Reset the select so the user can pick a real option after returning
+    repoSelectValue.value = '';
+    return;
+  }
+  if (v === '__custom__') {
+    useCustomRepoUrl.value = true;
+    form.value.repo_url = '';
+    return;
+  }
+  // Real repo — copy into form.repo_url. Frontend code below treats
+  // form.repo_url as the source of truth, so the rest of the flow
+  // (branch lookup, validation, submit) keeps working unchanged.
+  useCustomRepoUrl.value = false;
+  if (v) {
+    form.value.repo_url = `https://github.com/${v}`;
+  } else {
+    form.value.repo_url = '';
+  }
+}
+
 const branchNames = ref<string[]>([]);
 const branchesLoading = ref(false);
 const branchesError = ref('');
@@ -543,6 +611,7 @@ function extractRepoName(url: string): string {
 // Lifecycle
 onMounted(() => {
   projectsStore.fetchProjects().catch(() => {});
+  loadConnectedRepos();
   loadData();
   // Poll for updates if there are running jobs
   pollInterval = window.setInterval(() => {
@@ -983,18 +1052,71 @@ onUnmounted(() => {
                 </p>
               </div>
 
-              <!-- Repo URL -->
+              <!-- Repository — connected repos first, custom-URL escape hatch -->
               <div>
                 <label class="block text-xs font-semibold uppercase tracking-widest text-outline mb-2">
-                  Repository URL *
+                  Repository *
                 </label>
-                <input
-                  v-model="form.repo_url"
-                  type="url"
-                  placeholder="https://github.com/owner/repo"
+
+                <!-- Empty state: no connected repos AND App URL unavailable -->
+                <p
+                  v-if="!connectedRepos.length && !githubInstallUrl && !useCustomRepoUrl"
+                  class="text-xs text-amber-400 bg-amber-500/10 border border-amber-500/20 rounded-lg p-2.5 mb-2"
+                >
+                  Geen verbonden repositories. Installeer de LEERA GitHub App
+                  via je dev-profiel of gebruik de geavanceerde optie hieronder.
+                </p>
+
+                <!-- Smart select (default mode) -->
+                <select
+                  v-if="!useCustomRepoUrl"
+                  v-model="repoSelectValue"
+                  @change="onRepoSelectChange"
                   class="w-full bg-surface-container-lowest border border-outline-variant/30 text-on-surface rounded-lg py-2.5 px-3 focus:outline-none focus:ring-1 focus:ring-primary/50 focus:border-primary"
                   required
-                />
+                >
+                  <option disabled value="">Kies een gekoppelde repository</option>
+                  <option
+                    v-for="r in connectedRepos"
+                    :key="r.full_name"
+                    :value="r.full_name"
+                  >
+                    {{ r.full_name }}{{ r.is_private ? ' (privé)' : '' }}
+                  </option>
+                  <option
+                    v-if="githubInstallUrl"
+                    value="__connect__"
+                  >
+                    + Verbind een nieuwe repository op GitHub…
+                  </option>
+                  <option value="__custom__">
+                    Geavanceerd: handmatige URL invoeren
+                  </option>
+                </select>
+
+                <!-- Free-text URL input (escape hatch for non-installed public repos) -->
+                <div v-else class="space-y-2">
+                  <input
+                    v-model="form.repo_url"
+                    type="url"
+                    placeholder="https://github.com/owner/repo"
+                    class="w-full bg-surface-container-lowest border border-outline-variant/30 text-on-surface rounded-lg py-2.5 px-3 focus:outline-none focus:ring-1 focus:ring-primary/50 focus:border-primary"
+                    required
+                  />
+                  <button
+                    type="button"
+                    @click="useCustomRepoUrl = false; repoSelectValue = ''; form.repo_url = ''"
+                    class="text-xs text-primary hover:underline"
+                  >
+                    ← Terug naar gekoppelde repositories
+                  </button>
+                </div>
+
+                <p class="text-[11px] text-on-surface-variant mt-1">
+                  Repos die je via de LEERA GitHub App hebt geautoriseerd
+                  verschijnen hierboven. Voor publieke repositories die je
+                  niet wilt koppelen, gebruik de geavanceerde optie.
+                </p>
               </div>
 
               <!-- GitHub author username (before branch list; affects API branch filter) -->
