@@ -104,9 +104,9 @@ onMounted(load);
       <div class="max-w-6xl mx-auto">
         <header class="flex flex-wrap gap-4 justify-between items-end mb-8">
           <div>
-            <h1 class="text-4xl font-extrabold text-on-surface tracking-tight">Cohorts</h1>
+            <h1 class="text-4xl font-extrabold text-on-surface tracking-tight">Cohorten</h1>
             <p class="text-on-surface-variant mt-2 max-w-xl">
-              Groups of students. Courses belong to a cohort.
+              Klassen van studenten. Vakken horen bij een cohort.
             </p>
           </div>
           <div class="flex items-center gap-3">
@@ -117,7 +117,7 @@ onMounted(load);
                 @change="load"
                 class="h-4 w-4 rounded border-outline-variant bg-surface-container text-primary"
               />
-              Include archived
+              Toon gearchiveerd
             </label>
             <button
               v-if="canWriteCohorts"
@@ -126,14 +126,14 @@ onMounted(load);
               data-testid="new-cohort-btn"
             >
               <span class="material-symbols-outlined text-sm">add</span>
-              New cohort
+              Nieuw cohort
             </button>
           </div>
         </header>
 
         <div v-if="loading" class="p-12 text-center text-outline">
           <span class="material-symbols-outlined animate-spin text-2xl text-primary">progress_activity</span>
-          <p class="mt-2 text-sm">Loading cohorts…</p>
+          <p class="mt-2 text-sm">Cohorten laden…</p>
         </div>
         <div
           v-else-if="error"
@@ -146,7 +146,7 @@ onMounted(load);
           class="p-12 text-center text-outline text-sm bg-surface-container-low rounded-xl border border-outline-variant/10"
         >
           <span class="material-symbols-outlined text-3xl mb-2 block opacity-40">groups_2</span>
-          No cohorts yet. Create one to start grouping students and courses.
+          Nog geen cohorten. Maak er een aan om studenten en vakken te organiseren.
         </div>
         <div v-else class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
           <div
@@ -163,7 +163,7 @@ onMounted(load);
                 v-if="c.archived_at"
                 class="px-2 py-0.5 rounded-full text-[10px] font-bold uppercase tracking-wider bg-on-surface-variant/10 text-on-surface-variant border border-outline-variant/20"
               >
-                Archived
+                Gearchiveerd
               </span>
             </div>
             <div class="flex flex-wrap gap-2 mb-3">
@@ -171,10 +171,10 @@ onMounted(load);
                 v-if="c.year"
                 class="px-2 py-0.5 rounded-md text-[11px] font-medium bg-surface-container text-on-surface-variant"
               >
-                Year {{ c.year }}
+Jaar {{ c.year }}
               </span>
               <span class="px-2 py-0.5 rounded-md text-[11px] font-medium bg-surface-container text-on-surface-variant">
-                {{ c.student_count }} students
+                {{ c.student_count }} studenten
               </span>
               <span class="px-2 py-0.5 rounded-md text-[11px] font-medium bg-surface-container text-on-surface-variant">
                 {{ c.course_count }} courses

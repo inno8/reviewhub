@@ -188,16 +188,16 @@ function openSkillBreakdown(id: number) { breakdownSkillId.value = id; breakdown
       <!-- Header -->
       <section class="flex flex-col md:flex-row justify-between items-start md:items-end mb-12 gap-6">
         <div class="space-y-2">
-          <span class="text-primary font-bold uppercase tracking-[0.2em] text-xs">Analytics Overview</span>
+          <span class="text-primary font-bold uppercase tracking-[0.2em] text-xs">Analyse</span>
           <h1 class="text-5xl font-black tracking-tighter text-on-surface">
-            {{ showUserList ? 'Team Insights' : 'Performance Insights — All Projects' }}
+            {{ showUserList ? 'Klas-overzicht' : 'Voortgang — alle projecten' }}
           </h1>
         </div>
 
         <div class="flex flex-wrap items-center gap-3">
           <button v-if="authStore.isAdmin && selectedUserId" @click="backToList"
             class="flex items-center gap-2 px-4 py-2 bg-surface-container rounded-lg border border-outline-variant/20 text-sm hover:text-primary transition-colors">
-            <span class="material-symbols-outlined text-sm">arrow_back</span> All Users
+            <span class="material-symbols-outlined text-sm">arrow_back</span> Alle gebruikers
           </button>
 
           <template v-if="selectedUserId">

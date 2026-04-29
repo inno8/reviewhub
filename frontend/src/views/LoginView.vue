@@ -42,8 +42,8 @@ async function handleSubmit() {
 
         <div class="relative z-10">
           <header class="mb-8">
-            <h2 class="text-xl font-bold text-on-surface">Welcome back</h2>
-            <p class="text-on-surface-variant text-sm mt-1">Access your editorial code space</p>
+            <h2 class="text-xl font-bold text-on-surface">Welkom terug</h2>
+            <p class="text-on-surface-variant text-sm mt-1">Log in om door te gaan met nakijken</p>
           </header>
 
           <!-- Error Message -->
@@ -55,7 +55,7 @@ async function handleSubmit() {
             <!-- Email Field -->
             <div class="space-y-2">
               <label class="block text-xs font-semibold uppercase tracking-widest text-outline ml-1">
-                Email
+                E-mail
               </label>
               <div class="relative">
                 <span class="material-symbols-outlined absolute left-3 top-1/2 -translate-y-1/2 text-outline text-xl">person</span>
@@ -73,7 +73,7 @@ async function handleSubmit() {
             <div class="space-y-2">
               <div class="ml-1">
                 <label class="block text-xs font-semibold uppercase tracking-widest text-outline">
-                  Password
+                  Wachtwoord
                 </label>
                 <!-- Forgot-password flow not implemented yet (v1.1 backlog —
                      see docs/TODO.md). The link is removed until the
@@ -97,7 +97,7 @@ async function handleSubmit() {
               :disabled="loading"
               class="w-full primary-gradient text-on-primary font-bold py-3.5 rounded-lg active:scale-[0.98] transition-transform flex items-center justify-center gap-2 group disabled:opacity-50"
             >
-              <span>{{ loading ? 'Signing in...' : 'Sign In' }}</span>
+              <span>{{ loading ? 'Aanmelden...' : 'Inloggen' }}</span>
               <span class="material-symbols-outlined text-sm transition-transform group-hover:translate-x-1">arrow_forward</span>
             </button>
           </form>
@@ -105,12 +105,12 @@ async function handleSubmit() {
           <!-- Footer Links -->
           <div class="mt-8 pt-6 border-t border-outline-variant/10 text-center space-y-2">
             <p class="text-sm text-on-surface-variant">
-              First time here?
-              <router-link to="/onboard" class="text-primary-container font-semibold hover:underline ml-1">Set up your account</router-link>
+              Eerste keer hier?
+              <router-link to="/onboard" class="text-primary-container font-semibold hover:underline ml-1">Stel je account in</router-link>
             </p>
             <p class="text-sm text-on-surface-variant">
-              Running a school or bootcamp?
-              <router-link to="/org-signup" class="text-primary-container font-semibold hover:underline ml-1">Register your organization</router-link>
+              School of opleiding?
+              <router-link to="/org-signup" class="text-primary-container font-semibold hover:underline ml-1">Registreer je organisatie</router-link>
             </p>
           </div>
         </div>
@@ -124,9 +124,9 @@ async function handleSubmit() {
         © 2026 Leera
       </div>
       <div class="flex gap-6">
-        <a href="#" class="text-[10px] uppercase tracking-[0.2em] text-outline hover:text-primary transition-colors">Documentation</a>
-        <a href="#" class="text-[10px] uppercase tracking-[0.2em] text-outline hover:text-primary transition-colors">System Status</a>
-        <a href="#" class="text-[10px] uppercase tracking-[0.2em] text-outline hover:text-primary transition-colors">Privacy</a>
+        <router-link to="/voorwaarden" class="text-[10px] uppercase tracking-[0.2em] text-outline hover:text-primary transition-colors">Voorwaarden</router-link>
+        <router-link to="/privacy" class="text-[10px] uppercase tracking-[0.2em] text-outline hover:text-primary transition-colors">Privacy</router-link>
+        <router-link to="/dpa" class="text-[10px] uppercase tracking-[0.2em] text-outline hover:text-primary transition-colors">DPA</router-link>
       </div>
     </footer>
 

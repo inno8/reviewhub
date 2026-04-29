@@ -94,26 +94,26 @@ async function handleSubmit() {
       <!-- Expired -->
       <div v-if="expired" class="bg-surface-container-low rounded-xl border border-error/20 p-8 text-center">
         <span class="material-symbols-outlined text-error text-5xl mb-4">timer_off</span>
-        <h2 class="text-xl font-bold text-on-surface mb-2">Invitation Expired</h2>
-        <p class="text-on-surface-variant text-sm mb-6">This invitation link has expired. Ask your admin to send a new one.</p>
-        <router-link to="/login" class="text-primary font-semibold hover:underline">Go to login</router-link>
+        <h2 class="text-xl font-bold text-on-surface mb-2">Uitnodiging verlopen</h2>
+        <p class="text-on-surface-variant text-sm mb-6">Deze uitnodigingslink is verlopen. Vraag je beheerder om een nieuwe te versturen.</p>
+        <router-link to="/login" class="text-primary font-semibold hover:underline">Naar inloggen</router-link>
       </div>
 
       <!-- Success -->
       <div v-else-if="success" class="bg-surface-container-low rounded-xl border border-primary/20 p-8 text-center">
         <span class="material-symbols-outlined text-primary text-5xl mb-4">celebration</span>
-        <h2 class="text-xl font-bold text-on-surface mb-2">Welcome aboard!</h2>
+        <h2 class="text-xl font-bold text-on-surface mb-2">Welkom!</h2>
         <p class="text-on-surface-variant text-sm">
-          You've joined <strong class="text-on-surface">{{ orgName }}</strong>. Redirecting...
+          Je bent nu lid van <strong class="text-on-surface">{{ orgName }}</strong>. Je wordt doorgestuurd...
         </p>
       </div>
 
       <!-- No token -->
       <div v-else-if="!token" class="bg-surface-container-low rounded-xl border border-error/20 p-8 text-center">
         <span class="material-symbols-outlined text-error text-5xl mb-4">link_off</span>
-        <h2 class="text-xl font-bold text-on-surface mb-2">Invalid Link</h2>
-        <p class="text-on-surface-variant text-sm mb-6">No invitation token found. Make sure you used the full link from your email.</p>
-        <router-link to="/login" class="text-primary font-semibold hover:underline">Go to login</router-link>
+        <h2 class="text-xl font-bold text-on-surface mb-2">Ongeldige link</h2>
+        <p class="text-on-surface-variant text-sm mb-6">Geen uitnodigingstoken gevonden. Gebruik de volledige link uit je e-mail.</p>
+        <router-link to="/login" class="text-primary font-semibold hover:underline">Naar inloggen</router-link>
       </div>
 
       <!-- Accept form -->
@@ -122,8 +122,8 @@ async function handleSubmit() {
 
         <div class="relative z-10">
           <header class="mb-8">
-            <h2 class="text-xl font-bold text-on-surface">Set up your account</h2>
-            <p class="text-on-surface-variant text-sm mt-1">Choose a username and password to complete your registration</p>
+            <h2 class="text-xl font-bold text-on-surface">Stel je account in</h2>
+            <p class="text-on-surface-variant text-sm mt-1">Kies een gebruikersnaam en wachtwoord om je registratie af te ronden</p>
           </header>
 
           <div v-if="errors.general || errors.token" class="mb-6 p-3 bg-error/10 border border-error/20 rounded-lg">
@@ -134,11 +134,11 @@ async function handleSubmit() {
             <!-- Username (optional) -->
             <div class="space-y-2">
               <label class="block text-xs font-semibold uppercase tracking-widest text-outline ml-1">
-                Username <span class="text-outline/50 normal-case">(optional)</span>
+                Gebruikersnaam <span class="text-outline/50 normal-case">(optioneel)</span>
               </label>
               <div class="relative">
                 <span class="material-symbols-outlined absolute left-3 top-1/2 -translate-y-1/2 text-outline text-xl">person</span>
-                <input v-model="username" type="text" placeholder="Your display name"
+                <input v-model="username" type="text" placeholder="Je weergavenaam"
                   class="w-full bg-surface-container-lowest border border-outline-variant/30 text-on-surface rounded-lg py-3 pl-10 pr-4 focus:outline-none focus:ring-1 focus:ring-primary/50 focus:border-primary transition-all placeholder:text-outline/40" />
               </div>
             </div>
@@ -146,11 +146,11 @@ async function handleSubmit() {
             <!-- Password -->
             <div class="space-y-2">
               <label class="block text-xs font-semibold uppercase tracking-widest text-outline ml-1">
-                Password
+                Wachtwoord
               </label>
               <div class="relative">
                 <span class="material-symbols-outlined absolute left-3 top-1/2 -translate-y-1/2 text-outline text-xl">lock</span>
-                <input v-model="password" type="password" placeholder="Min. 8 characters"
+                <input v-model="password" type="password" placeholder="Min. 8 karakters"
                   class="w-full bg-surface-container-lowest border border-outline-variant/30 text-on-surface rounded-lg py-3 pl-10 pr-4 focus:outline-none focus:ring-1 focus:ring-primary/50 focus:border-primary transition-all placeholder:text-outline/40"
                   required />
               </div>
@@ -160,11 +160,11 @@ async function handleSubmit() {
             <!-- Confirm password -->
             <div class="space-y-2">
               <label class="block text-xs font-semibold uppercase tracking-widest text-outline ml-1">
-                Confirm Password
+                Bevestig wachtwoord
               </label>
               <div class="relative">
                 <span class="material-symbols-outlined absolute left-3 top-1/2 -translate-y-1/2 text-outline text-xl">lock</span>
-                <input v-model="confirmPassword" type="password" placeholder="Repeat password"
+                <input v-model="confirmPassword" type="password" placeholder="Herhaal wachtwoord"
                   class="w-full bg-surface-container-lowest border border-outline-variant/30 text-on-surface rounded-lg py-3 pl-10 pr-4 focus:outline-none focus:ring-1 focus:ring-primary/50 focus:border-primary transition-all placeholder:text-outline/40"
                   required />
               </div>
@@ -173,15 +173,15 @@ async function handleSubmit() {
 
             <button type="submit" :disabled="loading"
               class="w-full primary-gradient text-on-primary font-bold py-3.5 rounded-lg active:scale-[0.98] transition-transform flex items-center justify-center gap-2 group disabled:opacity-50">
-              <span>{{ loading ? 'Joining...' : 'Join Organization' }}</span>
+              <span>{{ loading ? 'Bezig met aanmelden...' : 'Account aanmaken' }}</span>
               <span class="material-symbols-outlined text-sm transition-transform group-hover:translate-x-1">arrow_forward</span>
             </button>
           </form>
 
           <div class="mt-8 pt-6 border-t border-outline-variant/10 text-center">
             <p class="text-sm text-on-surface-variant">
-              Already have an account?
-              <router-link to="/login" class="text-primary-container font-semibold hover:underline ml-1">Sign in</router-link>
+              Heb je al een account?
+              <router-link to="/login" class="text-primary-container font-semibold hover:underline ml-1">Inloggen</router-link>
             </p>
           </div>
         </div>

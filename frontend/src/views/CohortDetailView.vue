@@ -387,7 +387,7 @@ watch(id, load);
 
         <div v-if="loading" class="p-12 text-center text-outline">
           <span class="material-symbols-outlined animate-spin text-2xl text-primary">progress_activity</span>
-          <p class="mt-2 text-sm">Loading cohort…</p>
+          <p class="mt-2 text-sm">Cohort laden…</p>
         </div>
         <div v-else-if="error" class="bg-error/10 border border-error/20 text-error rounded-lg px-4 py-3 text-sm">
           {{ error }}
@@ -400,14 +400,14 @@ watch(id, load);
               v-for="tab in (auth.isSchoolAdmin ? ['students', 'teachers', 'courses'] : ['students', 'courses']) as Tab[]"
               :key="tab"
               :class="[
-                'px-5 py-2 rounded-lg text-sm font-bold transition-all capitalize',
+                'px-5 py-2 rounded-lg text-sm font-bold transition-all',
                 activeTab === tab
                   ? 'bg-surface-container-highest text-primary shadow-sm'
                   : 'text-outline hover:text-on-surface'
               ]"
               @click="activeTab = tab"
             >
-              {{ tab }}
+              {{ tab === 'students' ? 'Studenten' : tab === 'teachers' ? 'Docenten' : 'Vakken' }}
               <span class="ml-1.5 text-xs font-normal opacity-70">
                 {{ tab === 'students' ? members.length : tab === 'teachers' ? teacherAssignments.length : courses.length }}
               </span>
@@ -418,7 +418,7 @@ watch(id, load);
           <section v-show="activeTab === 'students'" class="bg-surface-container-low rounded-xl border border-outline-variant/10 overflow-hidden">
             <div class="flex justify-between items-center px-6 py-4 border-b border-outline-variant/10">
               <h2 class="text-base font-bold text-on-surface m-0">
-                Students
+                Studenten
                 <span class="ml-2 text-sm font-normal text-outline">({{ members.length }})</span>
               </h2>
               <button
@@ -427,20 +427,20 @@ watch(id, load);
                 @click="openAddStudent"
               >
                 <span class="material-symbols-outlined text-sm">person_add</span>
-                Add student
+                Student toevoegen
               </button>
             </div>
 
             <div v-if="!members.length" class="p-8 text-center text-outline text-sm">
-              No students enrolled yet.
+              Nog geen studenten in dit cohort.
             </div>
             <div v-else class="overflow-x-auto">
               <table class="w-full text-left border-collapse">
                 <thead>
                   <tr class="bg-surface-container text-outline text-xs uppercase tracking-widest font-semibold">
-                    <th class="px-6 py-4">Name</th>
-                    <th class="px-6 py-4">Email</th>
-                    <th class="px-6 py-4">Joined</th>
+                    <th class="px-6 py-4">Naam</th>
+                    <th class="px-6 py-4">E-mail</th>
+                    <th class="px-6 py-4">Toegevoegd</th>
                     <th v-if="auth.isSchoolAdmin" class="px-6 py-4"></th>
                   </tr>
                 </thead>
@@ -461,7 +461,7 @@ watch(id, load);
                         class="text-xs text-error hover:text-error/80 font-semibold transition-colors"
                         @click="removeStudent(m)"
                       >
-                        Remove
+                        Verwijderen
                       </button>
                     </td>
                   </tr>
@@ -474,7 +474,7 @@ watch(id, load);
           <section v-show="activeTab === 'teachers'" class="bg-surface-container-low rounded-xl border border-outline-variant/10 overflow-hidden">
             <div class="flex justify-between items-center px-6 py-4 border-b border-outline-variant/10">
               <h2 class="text-base font-bold text-on-surface m-0">
-                Teachers
+                Docenten
                 <span class="ml-2 text-sm font-normal text-outline">({{ teacherAssignments.length }})</span>
               </h2>
               <button
@@ -483,20 +483,20 @@ watch(id, load);
                 @click="openAddTeacher"
               >
                 <span class="material-symbols-outlined text-sm">person_add</span>
-                Add teacher
+                Docent toevoegen
               </button>
             </div>
 
             <div v-if="!teacherAssignments.length" class="p-8 text-center text-outline text-sm">
-              No teachers assigned yet. Add teachers before creating courses.
+              Nog geen docenten toegewezen. Voeg eerst docenten toe voordat je vakken aanmaakt.
             </div>
             <div v-else class="overflow-x-auto">
               <table class="w-full text-left border-collapse">
                 <thead>
                   <tr class="bg-surface-container text-outline text-xs uppercase tracking-widest font-semibold">
-                    <th class="px-6 py-4">Name</th>
-                    <th class="px-6 py-4">Email</th>
-                    <th class="px-6 py-4">Added</th>
+                    <th class="px-6 py-4">Naam</th>
+                    <th class="px-6 py-4">E-mail</th>
+                    <th class="px-6 py-4">Toegevoegd</th>
                     <th v-if="auth.isSchoolAdmin" class="px-6 py-4"></th>
                   </tr>
                 </thead>
@@ -517,7 +517,7 @@ watch(id, load);
                         class="text-xs text-error hover:text-error/80 font-semibold transition-colors"
                         @click="removeTeacher(ta)"
                       >
-                        Remove
+                        Verwijderen
                       </button>
                     </td>
                   </tr>
@@ -530,24 +530,24 @@ watch(id, load);
           <section v-show="activeTab === 'courses'" class="bg-surface-container-low rounded-xl border border-outline-variant/10 overflow-hidden">
             <div class="flex justify-between items-center px-6 py-4 border-b border-outline-variant/10">
               <h2 class="text-base font-bold text-on-surface m-0">
-                Courses
+                Vakken
                 <span class="ml-2 text-sm font-normal text-outline">({{ courses.length }})</span>
               </h2>
               <button
                 v-if="!cohort.archived_at && auth.isSchoolAdmin"
                 class="primary-gradient text-on-primary px-4 py-2 rounded-lg font-bold text-sm flex items-center gap-2 shadow-lg shadow-primary/10 hover:shadow-primary/20 transition-all active:scale-95"
                 @click="openAddCourse"
-                :title="teacherAssignments.length === 0 ? 'No teachers yet — click to add one first' : undefined"
+                :title="teacherAssignments.length === 0 ? 'Nog geen docenten — klik om er een toe te voegen' : undefined"
               >
                 <span class="material-symbols-outlined text-sm">add</span>
-                Add course
+                Vak toevoegen
               </button>
             </div>
 
             <div v-if="!courses.length" class="p-8 text-center text-outline text-sm">
-              <p>No courses yet.</p>
+              <p>Nog geen vakken aangemaakt.</p>
               <p v-if="teacherAssignments.length === 0" class="mt-1 text-xs">
-                First add teachers to this cohort, then create courses.
+                Voeg eerst docenten toe aan dit cohort, daarna kun je vakken aanmaken.
               </p>
             </div>
             <div v-else class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4 p-6">
@@ -565,7 +565,7 @@ watch(id, load);
                 </p>
                 <div class="flex flex-wrap gap-2 mt-3">
                   <span class="px-2 py-0.5 rounded-md text-[11px] font-medium bg-surface-container-high text-on-surface-variant">
-                    {{ c.student_count }} students
+                    {{ c.student_count }} studenten
                   </span>
                   <span
                     v-if="c.rubric_name"
@@ -577,7 +577,7 @@ watch(id, load);
                     v-if="c.archived_at"
                     class="px-2 py-0.5 rounded-md text-[11px] font-medium bg-on-surface-variant/10 text-on-surface-variant"
                   >
-                    Archived
+                    Gearchiveerd
                   </span>
                 </div>
               </div>
@@ -595,18 +595,18 @@ watch(id, load);
     >
       <div class="glass-panel w-full max-w-md rounded-xl overflow-hidden shadow-2xl">
         <div class="px-6 py-4 border-b border-outline-variant/10 flex justify-between items-center">
-          <h2 class="text-lg font-bold text-on-surface m-0">Add student</h2>
+          <h2 class="text-lg font-bold text-on-surface m-0">Student toevoegen</h2>
           <button class="text-outline hover:text-on-surface transition-colors" @click="showAddStudent = false">
             <span class="material-symbols-outlined">close</span>
           </button>
         </div>
         <div class="p-6 space-y-4">
           <div class="space-y-1.5">
-            <label class="text-xs font-bold uppercase tracking-widest text-outline">Search students</label>
+            <label class="text-xs font-bold uppercase tracking-widest text-outline">Zoek studenten</label>
             <input
               v-model="studentSearch"
               type="text"
-              placeholder="Name or email…"
+              placeholder="Naam of e-mail…"
               autofocus
               class="w-full bg-surface-container-lowest border-none rounded-lg text-on-surface placeholder:text-outline/40 focus:ring-1 focus:ring-primary/50 py-3 px-4"
             />
@@ -647,7 +647,7 @@ watch(id, load);
               class="flex-1 py-3 bg-surface-container-highest text-on-surface font-bold rounded-lg hover:bg-outline-variant transition-colors"
               @click="showAddStudent = false"
             >
-              Cancel
+              Annuleren
             </button>
             <button
               type="button"
@@ -655,7 +655,7 @@ watch(id, load);
               class="flex-1 primary-gradient text-on-primary font-bold py-3 rounded-lg disabled:opacity-50 transition-all active:scale-95 shadow-lg shadow-primary/20"
               @click="addStudent"
             >
-              {{ addingStudent ? 'Adding…' : 'Add' }}
+              {{ addingStudent ? 'Toevoegen…' : 'Toevoegen' }}
             </button>
           </div>
         </div>
@@ -670,18 +670,18 @@ watch(id, load);
     >
       <div class="glass-panel w-full max-w-md rounded-xl overflow-hidden shadow-2xl">
         <div class="px-6 py-4 border-b border-outline-variant/10 flex justify-between items-center">
-          <h2 class="text-lg font-bold text-on-surface m-0">Add teacher</h2>
+          <h2 class="text-lg font-bold text-on-surface m-0">Docent toevoegen</h2>
           <button class="text-outline hover:text-on-surface transition-colors" @click="showAddTeacher = false">
             <span class="material-symbols-outlined">close</span>
           </button>
         </div>
         <div class="p-6 space-y-4">
           <div class="space-y-1.5">
-            <label class="text-xs font-bold uppercase tracking-widest text-outline">Search teachers</label>
+            <label class="text-xs font-bold uppercase tracking-widest text-outline">Zoek docenten</label>
             <input
               v-model="teacherSearch"
               type="text"
-              placeholder="Name or email…"
+              placeholder="Naam of e-mail…"
               autofocus
               class="w-full bg-surface-container-lowest border-none rounded-lg text-on-surface placeholder:text-outline/40 focus:ring-1 focus:ring-primary/50 py-3 px-4"
             />
@@ -720,7 +720,7 @@ watch(id, load);
               class="flex-1 py-3 bg-surface-container-highest text-on-surface font-bold rounded-lg hover:bg-outline-variant transition-colors"
               @click="showAddTeacher = false"
             >
-              Cancel
+              Annuleren
             </button>
             <button
               type="button"
@@ -728,7 +728,7 @@ watch(id, load);
               class="flex-1 primary-gradient text-on-primary font-bold py-3 rounded-lg disabled:opacity-50 transition-all active:scale-95 shadow-lg shadow-primary/20"
               @click="addTeacher"
             >
-              {{ addingTeacher ? 'Adding…' : 'Add' }}
+              {{ addingTeacher ? 'Toevoegen…' : 'Toevoegen' }}
             </button>
           </div>
         </div>
@@ -743,7 +743,7 @@ watch(id, load);
     >
       <div class="glass-panel w-full max-w-md rounded-xl overflow-hidden shadow-2xl">
         <div class="px-6 py-4 border-b border-outline-variant/10 flex justify-between items-center">
-          <h2 class="text-lg font-bold text-on-surface m-0">Add course</h2>
+          <h2 class="text-lg font-bold text-on-surface m-0">Vak aanmaken</h2>
           <button class="text-outline hover:text-on-surface transition-colors" @click="showAddCourse = false">
             <span class="material-symbols-outlined">close</span>
           </button>
@@ -755,7 +755,7 @@ watch(id, load);
               v-model="courseForm.name"
               type="text"
               required
-              placeholder="e.g. Frontend Development"
+              placeholder="Bijv. Webontwikkeling"
               autofocus
               class="w-full bg-surface-container-lowest border-none rounded-lg text-on-surface placeholder:text-outline/40 focus:ring-1 focus:ring-primary/50 py-3 px-4"
             />
@@ -766,7 +766,7 @@ watch(id, load);
             <input
               v-model="courseSearch"
               type="text"
-              placeholder="Search by name or email…"
+              placeholder="Zoek op naam of e-mail…"
               class="w-full bg-surface-container-lowest border-none rounded-lg text-on-surface placeholder:text-outline/40 focus:ring-1 focus:ring-primary/50 py-2.5 px-4 text-sm mb-2"
             />
             <div class="max-h-48 overflow-y-auto rounded-lg border border-outline-variant/20 divide-y divide-outline-variant/10">
@@ -788,7 +788,7 @@ watch(id, load);
                 <span v-if="courseForm.ownerId === ta.teacher" class="ml-auto text-primary material-symbols-outlined text-lg">check_circle</span>
               </button>
               <p v-if="courseTeacherOptions.length === 0" class="text-xs text-outline px-4 py-3">
-                No teachers in this cohort. Add teachers first.
+                Geen docenten in dit cohort. Voeg eerst docenten toe.
               </p>
             </div>
           </div>
@@ -800,7 +800,7 @@ watch(id, load);
               class="flex-1 py-3 bg-surface-container-highest text-on-surface font-bold rounded-lg hover:bg-outline-variant transition-colors"
               @click="showAddCourse = false"
             >
-              Cancel
+              Annuleren
             </button>
             <button
               type="button"
@@ -808,7 +808,7 @@ watch(id, load);
               class="flex-1 primary-gradient text-on-primary font-bold py-3 rounded-lg disabled:opacity-50 transition-all active:scale-95 shadow-lg shadow-primary/20"
               @click="addCourse"
             >
-              {{ addingCourse ? 'Creating…' : 'Create course' }}
+              {{ addingCourse ? 'Aanmaken…' : 'Vak aanmaken' }}
             </button>
           </div>
         </div>
