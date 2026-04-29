@@ -14,7 +14,17 @@ from .models import BatchJob, BatchCommitResult, DeveloperProfile
 class BatchJobCreateSerializer(serializers.ModelSerializer):
     """Serializer for creating a new batch job."""
 
-    project = serializers.PrimaryKeyRelatedField(queryset=Project.objects.none())
+    # `project` is optional. The legacy projects.Project model isn't
+    # auto-populated for new users (especially invited students), so
+    # requiring a project here blocks the dev-profile-calibration flow:
+    # the frontend looks up the user's projects, finds none, and bails
+    # out silently without ever submitting the job. Allowing null lets
+    # calibration runs proceed without requiring a paired Project row.
+    project = serializers.PrimaryKeyRelatedField(
+        queryset=Project.objects.none(),
+        required=False,
+        allow_null=True,
+    )
 
     class Meta:
         model = BatchJob
@@ -38,6 +48,9 @@ class BatchJobCreateSerializer(serializers.ModelSerializer):
         self.fields['project'].queryset = qs
 
     def validate_project(self, project):
+        # Only fires when a project is provided. None passes through.
+        if project is None:
+            return project
         if (project.repo_url or '').strip():
             raise serializers.ValidationError(
                 'This project already has a repository linked. '

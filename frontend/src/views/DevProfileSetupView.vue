@@ -222,25 +222,38 @@ async function connectPastProject(): Promise<number | null> {
   if (!repoUrl.value.trim()) return null;
   connectingRepo.value = true;
   try {
-    const { data: projects } = await api.projects.list();
-    const list = projects.results || projects.projects || projects || [];
-    if (!list.length) {
-      toastMsg.value = 'No project found — repo analysis skipped.';
-      return null;
+    // Try the user's own GitHub username from a connected git provider so
+    // the analyzer scopes to their commits only. Falls back to "all
+    // commits in the repo" if no GitHub connection exists yet.
+    let targetUsername: string | undefined;
+    try {
+      const { data: connections } = await api.gitConnections.list();
+      const githubConn = (Array.isArray(connections) ? connections : [])
+        .find((c: any) => c?.provider === 'github' && c?.username);
+      if (githubConn?.username) targetUsername = githubConn.username;
+    } catch {
+      // Non-fatal — analyzer can run without it (just looks at all authors)
     }
-    // Prefer a project without a linked repo (batch create requires it)
-    const project =
-      list.find((p: any) => !(p.repo_url || '').trim()) || list[0];
+
+    // "__all__" tells the backend to enumerate every active branch and
+    // pick whichever ones have commits matching the target user. Avoids
+    // hardcoding "main" which fails on repos whose default branch is
+    // "master" / "develop" / etc.
     const { data: job } = await api.batch.createJob({
       repo_url: repoUrl.value.trim(),
-      project: project.id,
-      branch: 'main',
+      branch: '__all__',
       max_commits: 20,
+      ...(targetUsername ? { target_github_username: targetUsername } : {}),
     });
     toastMsg.value = 'Past project queued for analysis!';
     return typeof job?.id === 'number' ? job.id : null;
-  } catch {
-    toastMsg.value = 'Repo connection failed — profile saved, analysis skipped.';
+  } catch (err: any) {
+    const msg =
+      err?.response?.data?.repo_url?.[0] ||
+      err?.response?.data?.branch?.[0] ||
+      err?.response?.data?.detail ||
+      'Repo connection failed — profile saved, analysis skipped.';
+    toastMsg.value = msg;
     return null;
   } finally {
     connectingRepo.value = false;
