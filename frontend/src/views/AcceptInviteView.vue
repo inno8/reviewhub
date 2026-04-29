@@ -87,13 +87,8 @@ async function handleSubmit() {
     <main class="w-full max-w-md">
       <!-- Brand -->
       <div class="flex flex-col items-center mb-10">
-        <div class="mb-4 bg-surface-container-highest p-4 rounded-xl">
-          <span class="material-symbols-outlined text-primary text-4xl">group_add</span>
-        </div>
-        <h1 class="text-3xl font-extrabold tracking-tight text-on-surface">
-          Review<span class="text-primary-container">Hub</span>
-        </h1>
-        <p class="text-on-surface-variant mt-2 text-sm tracking-wide">JOIN YOUR TEAM</p>
+        <img src="/logo/leera-wordmark-primary.svg" alt="LEERA" class="h-9 mb-3" />
+        <p class="text-on-surface-variant text-sm tracking-wide">Nakijken Copilot voor het MBO</p>
       </div>
 
       <!-- Expired -->
