@@ -1455,6 +1455,119 @@ class OrgInvitationsView(APIView):
         return Response(list(invitations))
 
 
+class OrgSubscriptionView(APIView):
+    """
+    GET /api/users/org/subscription/
+
+    School-admin license + health summary. Replaces the placeholder
+    "45 dagen / Gezond" card on the school admin dashboard with real
+    data computed from the org's actual cohorts + memberships.
+
+    Response shape:
+      {
+        "cohort_count": int,            # active (non-archived) cohorts
+        "total_cohort_count": int,      # incl. archived, for context
+        "seat_count": int,              # students in active cohorts
+        "teacher_count": int,           # teachers in the org
+        "monthly_cost_eur": int,        # cohort_count * tier_price
+        "tier_price_eur": int,          # 200 — the v1 dogfood price/cohort
+        "renewal_date": "YYYY-MM-DD",   # 1 year from org creation
+        "days_until_renewal": int,
+        "status": "healthy" | "trial" | "overdue",
+                                        # 'trial' until 30 days post-creation,
+                                        # 'healthy' after that. 'overdue' is
+                                        # reserved for when billing integration
+                                        # lands (post-pitch).
+        "status_label": "Gezond" | ... ,   # ready-to-render Dutch label
+      }
+
+    Permissions: school admin or platform superuser. Teachers and
+    students get 403 — they shouldn't see license info.
+    """
+    permission_classes = [permissions.IsAuthenticated]
+
+    # v1 dogfood price per cohort per month. Used until a real billing
+    # integration lands (post-pitch); centralised here so we can tweak
+    # without touching the dashboard.
+    TIER_PRICE_EUR = 200
+
+    def get(self, request):
+        user = request.user
+
+        if not user.organization:
+            return Response(
+                {'error': 'You must belong to an organization.'},
+                status=400,
+            )
+
+        is_admin = (
+            getattr(user, 'role', None) == 'admin'
+            or getattr(user, 'is_superuser', False)
+            or getattr(user, 'is_staff', False)
+        )
+        if not is_admin:
+            return Response(
+                {'error': 'Only school admins can view subscription details.'},
+                status=403,
+            )
+
+        org = user.organization
+
+        # Lazy imports — keeps the users app from depending on grading
+        # at module-import time (would create a cycle otherwise).
+        from grading.models import Cohort, CohortMembership
+
+        active_cohorts = Cohort.objects.filter(
+            organization=org, archived_at__isnull=True,
+        )
+        cohort_count = active_cohorts.count()
+        total_cohort_count = Cohort.objects.filter(organization=org).count()
+
+        seat_count = CohortMembership.objects.filter(
+            cohort__in=active_cohorts,
+        ).count()
+
+        teacher_count = User.objects.filter(
+            organization=org, role='teacher',
+        ).count()
+
+        # Renewal: 1 year after org creation. Pilot schools start with
+        # a billing date anchored to signup. When billing integration
+        # ships (post-pitch), this becomes Stripe.subscription.current_period_end.
+        from datetime import timedelta
+        from django.utils import timezone
+
+        now = timezone.now()
+        anchor = org.created_at or now
+        renewal_date = anchor + timedelta(days=365)
+        days_until_renewal = max(0, (renewal_date.date() - now.date()).days)
+
+        # Status: 'trial' for the first 30 days, 'healthy' afterwards.
+        # 'overdue' is reserved for failed billing (post-pitch).
+        days_since_signup = (now.date() - anchor.date()).days
+        if days_since_signup < 30:
+            status_code = 'trial'
+            status_label = 'Pilot'
+        else:
+            status_code = 'healthy'
+            status_label = 'Gezond'
+
+        monthly_cost_eur = cohort_count * self.TIER_PRICE_EUR
+
+        return Response({
+            'cohort_count': cohort_count,
+            'total_cohort_count': total_cohort_count,
+            'seat_count': seat_count,
+            'teacher_count': teacher_count,
+            'monthly_cost_eur': monthly_cost_eur,
+            'tier_price_eur': self.TIER_PRICE_EUR,
+            'renewal_date': renewal_date.date().isoformat(),
+            'days_until_renewal': days_until_renewal,
+            'status': status_code,
+            'status_label': status_label,
+        })
+
+
 class ResendInvitationView(APIView):
     """
     Re-send a pending invitation email.

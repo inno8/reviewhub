@@ -61,6 +61,7 @@ urlpatterns = [
     path('accept-invite/', views.AcceptInviteView.as_view(), name='accept-invite'),
     path('org/members/', views.OrgMembersView.as_view(), name='org-members'),
     path('org/invitations/', views.OrgInvitationsView.as_view(), name='org-invitations'),
+    path('org/subscription/', views.OrgSubscriptionView.as_view(), name='org-subscription'),
     path(
         'org/invitations/<int:invitation_id>/resend/',
         views.ResendInvitationView.as_view(),

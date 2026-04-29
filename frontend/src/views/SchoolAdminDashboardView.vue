@@ -34,6 +34,16 @@ const cohorts = ref<any[]>([]);
 const members = ref<any[]>([]);
 const invitations = ref<any[]>([]);
 const atRiskStudents = ref<any[]>([]);
+const subscription = ref<{
+  cohort_count: number;
+  seat_count: number;
+  teacher_count: number;
+  monthly_cost_eur: number;
+  renewal_date: string;
+  days_until_renewal: number;
+  status: 'healthy' | 'trial' | 'overdue';
+  status_label: string;
+} | null>(null);
 const loading = ref(true);
 const errorText = ref<string | null>(null);
 
@@ -50,18 +60,40 @@ const activeCohorts = computed(() =>
   cohorts.value.filter((c: any) => !c.archived_at),
 );
 
+// Format an ISO date as a human-friendly Dutch short date.
+// "2027-04-29" → "29 apr 2027"
+function formatDate(iso: string): string {
+  if (!iso) return '—';
+  try {
+    const d = new Date(iso);
+    return d.toLocaleDateString('nl-NL', {
+      day: 'numeric',
+      month: 'short',
+      year: 'numeric',
+    });
+  } catch {
+    return iso;
+  }
+}
+
 async function loadDashboard() {
   loading.value = true;
   errorText.value = null;
   try {
-    const [cohortsRes, membersRes, invitesRes] = await Promise.all([
+    // Subscription is fetched alongside the rest so the dashboard
+    // renders in a single round-trip. Failure on the subscription
+    // call is non-fatal — the License widget gracefully degrades to
+    // showing just the cohort count without renewal info.
+    const [cohortsRes, membersRes, invitesRes, subRes] = await Promise.all([
       api.grading.cohorts.list({}),
       api.org.members(),
       api.org.invitations(),
+      api.org.subscription().catch(() => null),
     ]);
     cohorts.value = cohortsRes.data?.results || cohortsRes.data || [];
     members.value = membersRes.data?.results || membersRes.data || [];
     invitations.value = invitesRes.data?.results || invitesRes.data || [];
+    subscription.value = subRes?.data || null;
 
     // Roll up at-risk students across all active cohorts.
     // A cohort overview returns a per-student `band` ('onvoldoende' | 'voldoende' | 'goed')
@@ -149,7 +181,7 @@ function gotoStudent(cohortId: number, studentId: number) {
     </div>
 
     <div v-else class="space-y-6">
-      <!-- Widget 1 — License + Health -->
+      <!-- Widget 1 — License + Health (live from /api/users/org/subscription/) -->
       <section class="bg-gradient-to-br from-primary/10 to-primary-container/5 border border-primary/20 rounded-2xl p-6 md:p-7">
         <div class="flex flex-wrap items-center justify-between gap-4">
           <div class="flex items-center gap-4">
@@ -160,15 +192,53 @@ function gotoStudent(cohortId: number, studentId: number) {
               <p class="text-xs uppercase tracking-widest text-outline font-bold mb-1">Licentie</p>
               <p class="text-lg font-bold text-on-surface">
                 {{ activeCohorts.length }} actief cohort{{ activeCohorts.length === 1 ? '' : 'en' }}
+                <span v-if="subscription" class="text-sm font-normal text-on-surface-variant ml-1">
+                  · €{{ subscription.monthly_cost_eur }}/maand
+                </span>
               </p>
               <p class="text-sm text-on-surface-variant">
-                Alles operationeel · verlenging in <span class="text-on-surface font-semibold">45 dagen</span>
+                <template v-if="subscription">
+                  <span v-if="subscription.status === 'trial'">
+                    Pilot · verlenging op
+                    <span class="text-on-surface font-semibold">{{ formatDate(subscription.renewal_date) }}</span>
+                    ({{ subscription.days_until_renewal }} dagen)
+                  </span>
+                  <span v-else>
+                    Alles operationeel · verlenging in
+                    <span class="text-on-surface font-semibold">{{ subscription.days_until_renewal }} dagen</span>
+                  </span>
+                </template>
+                <template v-else>
+                  Licentiestatus niet beschikbaar
+                </template>
+              </p>
+              <p v-if="subscription" class="text-xs text-outline mt-1">
+                {{ subscription.seat_count }}
+                {{ subscription.seat_count === 1 ? 'student' : 'studenten' }} ·
+                {{ subscription.teacher_count }}
+                {{ subscription.teacher_count === 1 ? 'docent' : 'docenten' }}
               </p>
             </div>
           </div>
           <div class="flex items-center gap-2">
-            <span class="w-2 h-2 rounded-full bg-green-500 animate-pulse"></span>
-            <span class="text-sm font-semibold text-green-400">Gezond</span>
+            <template v-if="subscription">
+              <span
+                class="w-2 h-2 rounded-full animate-pulse"
+                :class="subscription.status === 'healthy' ? 'bg-green-500' :
+                        subscription.status === 'trial'   ? 'bg-primary' :
+                                                             'bg-amber-500'"
+              ></span>
+              <span
+                class="text-sm font-semibold"
+                :class="subscription.status === 'healthy' ? 'text-green-400' :
+                        subscription.status === 'trial'   ? 'text-primary' :
+                                                             'text-amber-400'"
+              >{{ subscription.status_label }}</span>
+            </template>
+            <template v-else>
+              <span class="w-2 h-2 rounded-full bg-outline/50"></span>
+              <span class="text-sm font-semibold text-outline">—</span>
+            </template>
           </div>
         </div>
       </section>

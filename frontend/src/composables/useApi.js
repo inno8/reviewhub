@@ -220,6 +220,7 @@ export const api = {
         resendInvitation: (id) => client.post(`/users/org/invitations/${id}/resend/`),
         members: () => client.get('/users/org/members/'),
         invitations: () => client.get('/users/org/invitations/'),
+        subscription: () => client.get('/users/org/subscription/'),
         dashboard: () => client.get('/skills/org-dashboard/'),
         studentDetail: (studentId) => client.get(`/skills/org-dashboard/students/${studentId}/`),
     },
