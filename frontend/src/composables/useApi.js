@@ -205,6 +205,7 @@ export const api = {
         signup: (data) => client.post('/users/org-signup/', data),
         acceptInvite: (data) => client.post('/users/accept-invite/', data),
         invite: (data) => client.post('/users/invite/', data),
+        resendInvitation: (id) => client.post(`/users/org/invitations/${id}/resend/`),
         members: () => client.get('/users/org/members/'),
         invitations: () => client.get('/users/org/invitations/'),
         dashboard: () => client.get('/skills/org-dashboard/'),

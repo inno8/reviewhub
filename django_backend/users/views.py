@@ -1453,3 +1453,83 @@ class OrgInvitationsView(APIView):
         )
 
         return Response(list(invitations))
+
+
+class ResendInvitationView(APIView):
+    """
+    Re-send a pending invitation email.
+
+    Mirrors InviteStudentView's permission gate:
+      - Admin can resend any pending invitation in their org
+      - Teacher can only resend student (developer/viewer) invitations
+        (no resending peer-teacher or admin invites)
+
+    Behavior on resend:
+      - Generates a *new* token (old email links stop working — predictable
+        expiry semantics, prevents recipient confusion when an old link is
+        about to die anyway)
+      - Resets expires_at to now + 7 days
+      - Re-sends the invitation email with the fresh link
+    """
+    permission_classes = [permissions.IsAuthenticated]
+
+    def post(self, request, invitation_id):
+        if not request.user.organization:
+            return Response({'error': 'You must belong to an organization.'}, status=400)
+
+        if request.user.role not in ('admin', 'teacher'):
+            return Response({'error': 'Only admins and teachers can resend invitations.'}, status=403)
+
+        # Org-scoped lookup. 404 (not 403) on cross-org access — same
+        # pattern as the rest of the API (per CLAUDE.md isolation rules).
+        try:
+            invitation = Invitation.objects.get(
+                id=invitation_id,
+                organization=request.user.organization,
+            )
+        except Invitation.DoesNotExist:
+            return Response({'error': 'Invitation not found.'}, status=404)
+
+        if invitation.status != 'pending':
+            return Response(
+                {'error': f'Cannot resend a {invitation.status} invitation.'},
+                status=400,
+            )
+
+        # Permission ladder mirror of InviteStudentView: only admins can
+        # invite (or resend) teachers.
+        if invitation.role == 'teacher' and request.user.role != 'admin':
+            return Response(
+                {'error': 'Only organization admins can resend teacher invitations.'},
+                status=403,
+            )
+
+        # Rotate token + reset expiry. The old email link dies; recipient
+        # uses the new one we send below.
+        import secrets
+        invitation.token = secrets.token_urlsafe(32)
+        invitation.expires_at = timezone.now() + timedelta(days=7)
+        invitation.save(update_fields=['token', 'expires_at'])
+
+        from .emails import send_invitation_email
+        ok = send_invitation_email(
+            email=invitation.email,
+            org_name=invitation.organization.name,
+            token=invitation.token,
+            invited_by=request.user.display_name,
+        )
+
+        if not ok:
+            # Email layer logs the underlying error (Resend / SMTP); we
+            # surface a generic 502 so the operator knows to check logs.
+            return Response(
+                {'error': 'Invitation token rotated but email failed to send. Check server logs.'},
+                status=502,
+            )
+
+        return Response({
+            'id': invitation.id,
+            'email': invitation.email,
+            'expires_at': invitation.expires_at.isoformat(),
+            'message': 'Invitation re-sent.',
+        })

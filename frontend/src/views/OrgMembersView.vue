@@ -217,6 +217,51 @@ async function submitInvite() {
   }
 }
 
+// ── Resend invitation ─────────────────────────────────────────────
+// Tracks per-invitation in-flight state so we can show a spinner +
+// disable the button without locking the entire table. Also tracks
+// recently-resent invitation ids so the row briefly shows "Sent ✓"
+// feedback before reverting.
+const resendingIds = ref<Set<number>>(new Set());
+const recentlyResentIds = ref<Set<number>>(new Set());
+const resendError = ref<string | null>(null);
+
+async function resendInvite(invitationId: number) {
+  resendError.value = null;
+  resendingIds.value.add(invitationId);
+  // Trigger reactivity (Set mutations don't trigger Vue refs by default)
+  resendingIds.value = new Set(resendingIds.value);
+  try {
+    await api.org.resendInvitation(invitationId);
+    recentlyResentIds.value.add(invitationId);
+    recentlyResentIds.value = new Set(recentlyResentIds.value);
+    // Refresh invitations so the new expires_at lands in the row.
+    const { data } = await api.org.invitations();
+    invitations.value = Array.isArray(data) ? data : [];
+    // Clear "Sent ✓" badge after 4s
+    setTimeout(() => {
+      recentlyResentIds.value.delete(invitationId);
+      recentlyResentIds.value = new Set(recentlyResentIds.value);
+    }, 4000);
+  } catch (e: any) {
+    const data = e?.response?.data;
+    resendError.value =
+      data?.error ||
+      data?.detail ||
+      (typeof data === 'string' ? data : null) ||
+      'Failed to resend invitation.';
+  } finally {
+    resendingIds.value.delete(invitationId);
+    resendingIds.value = new Set(resendingIds.value);
+  }
+}
+
+function canResendRow(row: Row): boolean {
+  if (row.kind !== 'invite') return false;
+  if (row.role === 'teacher') return canInviteTeacher.value;
+  return canInviteStudent.value;
+}
+
 function roleBadgeClass(role: string) {
   if (role === 'admin') return 'bg-primary/10 text-primary border-primary/20';
   if (role === 'teacher')
@@ -312,6 +357,7 @@ onMounted(loadData);
         </div>
 
         <p v-if="error" class="text-sm text-error mb-4">{{ error }}</p>
+        <p v-if="resendError" class="text-sm text-error mb-4">{{ resendError }}</p>
 
         <!-- Members table -->
         <div class="bg-surface-container-low rounded-xl overflow-hidden border border-outline-variant/10">
@@ -331,6 +377,7 @@ onMounted(loadData);
                   <th class="px-6 py-4">Role</th>
                   <th class="px-6 py-4">Status</th>
                   <th class="px-6 py-4">Joined</th>
+                  <th class="px-6 py-4 text-right">Actions</th>
                 </tr>
               </thead>
               <tbody class="divide-y divide-outline-variant/5">
@@ -385,10 +432,35 @@ onMounted(loadData);
                   <td class="px-6 py-5 text-xs text-on-surface-variant">
                     {{ row.joined }}
                   </td>
+                  <td class="px-6 py-5 text-right">
+                    <!-- Resend invitation: only on pending-invite rows
+                         the current user is allowed to invite. -->
+                    <button
+                      v-if="row.kind === 'invite' && canResendRow(row)"
+                      @click="resendInvite(row.rawInvite!.id)"
+                      :disabled="resendingIds.has(row.rawInvite!.id)"
+                      class="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-md text-xs font-semibold border border-outline-variant/20 text-on-surface-variant hover:bg-surface-container-high hover:text-on-surface disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+                      :title="`Re-send the invitation email to ${row.email} with a fresh 7-day token`"
+                    >
+                      <span
+                        v-if="resendingIds.has(row.rawInvite!.id)"
+                        class="material-symbols-outlined text-sm animate-spin"
+                        >progress_activity</span
+                      >
+                      <span
+                        v-else-if="recentlyResentIds.has(row.rawInvite!.id)"
+                        class="material-symbols-outlined text-sm text-primary"
+                        >check_circle</span
+                      >
+                      <span v-else class="material-symbols-outlined text-sm">forward_to_inbox</span>
+                      <span v-if="recentlyResentIds.has(row.rawInvite!.id)">Sent</span>
+                      <span v-else>Resend</span>
+                    </button>
+                  </td>
                 </tr>
                 <tr v-if="!filteredRows.length">
                   <td
-                    colspan="4"
+                    colspan="5"
                     class="px-6 py-12 text-center text-outline text-sm"
                   >
                     <span class="material-symbols-outlined text-3xl mb-2 block opacity-40"
