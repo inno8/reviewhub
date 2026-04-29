@@ -48,13 +48,13 @@ services:
       # empty creds if the operator chose Resend), and nothing sends.
       - RESEND_API_KEY=${RESEND_API_KEY}
       - FRONTEND_URL=${FRONTEND_URL}
-      # Platform LLM fallback (LEERA-pays-LLM model). When schools
-      # haven't configured their own per-org LLM, batch jobs and
-      # grading sessions fall back to these. Same env vars consumed
-      # by ai-engine — single source of truth in .env.
-      - LLM_PROVIDER=${LLM_PROVIDER}
-      - LLM_API_KEY=${LLM_API_KEY}
-      - LLM_MODEL=${LLM_MODEL}
+      # NOTE: Django does NOT receive LLM_* env vars. Per the LEERA
+      # business model, the platform LLM key is configured by the
+      # superadmin via Settings → LLM Config and stored encrypted in
+      # the LLMConfiguration DB table. ai-engine still gets LLM env
+      # vars below — it uses PR_LLM_MODEL / COMMIT_LLM_MODEL for
+      # per-task model tier routing. The api_key reaches ai-engine
+      # via the request payload from Django, sourced from DB.
     # No host port mapping — only reachable via the frontend nginx
     # reverse proxy (which terminates TLS). Comment back in for direct
     # debugging access if needed.
@@ -84,9 +84,19 @@ services:
       - GITHUB_WEBHOOK_SECRET=${GITHUB_WEBHOOK_SECRET}
       - GITLAB_WEBHOOK_SECRET=${GITLAB_WEBHOOK_SECRET}
       - GIT_CACHE_DIR=/data/repos
+      # LLM credentials reach ai-engine via the request payload from
+      # Django (sourced from LLMConfiguration in DB — see LEERA
+      # business model in users/org_llm.py). LLM_API_KEY here is a
+      # legacy fallback only; can be left empty in .env.
       - LLM_PROVIDER=${LLM_PROVIDER}
-      - LLM_API_KEY=${LLM_API_KEY}
-      - LLM_MODEL=${LLM_MODEL}
+      - LLM_API_KEY=${LLM_API_KEY:-}
+      - LLM_MODEL=${LLM_MODEL:-}
+      # Two-tier model routing — ai-engine picks PR_LLM_MODEL for
+      # full-PR rubric grading sessions (best quality) and
+      # COMMIT_LLM_MODEL for commit-level inline reviews (cheap +
+      # fast). Both must match LLM_PROVIDER's vendor.
+      - PR_LLM_MODEL=${PR_LLM_MODEL:-}
+      - COMMIT_LLM_MODEL=${COMMIT_LLM_MODEL:-}
     expose:
       - "8001"
     volumes:

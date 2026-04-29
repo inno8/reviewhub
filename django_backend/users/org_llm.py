@@ -107,30 +107,52 @@ def _organisation_admin_ids(user) -> set[int]:
 
 def _platform_llm_config() -> "dict | None":
     """
-    Platform-level LLM fallback. LEERA pays for LLM and schools that
-    haven't configured their own use these env-vars as the floor:
-        LLM_PROVIDER  (e.g. "anthropic", "openai")
-        LLM_API_KEY   (the key — required)
-        LLM_MODEL     (e.g. "claude-3-5-haiku-20241022")
-    Returns None if any of the three is missing/empty.
+    Platform-level LLM fallback — the LEERA business model floor.
 
-    Schools that DO configure per-org LLM via Settings → LLM Config
-    take precedence; this is only used when no usable per-org config
-    is found.
+    LEERA owns ONE shared LLM key, configured by the platform superadmin
+    via Settings → LLM Config (encrypted at rest in the LLMConfiguration
+    table). Schools using LEERA don't bring their own keys; cost flows
+    to LEERA which bills schools at the cohort tier.
+
+    This function finds that key by looking up any user with
+    `is_superuser=True` who has a usable LLMConfiguration row. The first
+    one found wins (schools should typically have exactly one platform
+    superadmin; multiple is not standard but tolerated).
+
+    Per-task model routing (haiku for commit-level inline reviews,
+    sonnet for full-PR rubric grading) happens in ai-engine via
+    PR_LLM_MODEL / COMMIT_LLM_MODEL env vars. The `model` field on the
+    LLMConfiguration row returned here is a fallback for code paths
+    that don't go through ai-engine's tier router.
+
+    Returns:
+        {provider, api_key, model} dict, or None if no superuser has
+        a usable LLMConfiguration.
     """
-    from django.conf import settings
+    from .models import LLMConfiguration
 
-    provider = getattr(settings, 'PLATFORM_LLM_PROVIDER', '') or ''
-    api_key = getattr(settings, 'PLATFORM_LLM_API_KEY', '') or ''
-    model = getattr(settings, 'PLATFORM_LLM_MODEL', '') or ''
-
-    if not (api_key and model):
-        return None
-    return {
-        'provider': provider or 'anthropic',
-        'api_key': api_key,
-        'model': model,
-    }
+    superusers = User.objects.filter(is_superuser=True)
+    for admin in superusers:
+        for cfg in LLMConfiguration.objects.filter(user=admin).order_by('-is_default', '-id'):
+            if not (cfg.model or "").strip():
+                continue
+            if cfg.auth_method == LLMConfiguration.AuthMethod.OAUTH_GOOGLE:
+                token = cfg.oauth_access_token
+                if token:
+                    return {
+                        "provider": cfg.provider,
+                        "api_key": token,
+                        "model": cfg.model,
+                    }
+                continue
+            key = cfg.api_key
+            if key:
+                return {
+                    "provider": cfg.provider,
+                    "api_key": key,
+                    "model": cfg.model,
+                }
+    return None
 
 
 def get_org_llm_config(user) -> "dict | None":
@@ -208,8 +230,9 @@ def org_llm_ready_for_user(user) -> tuple[bool, str]:
 
     return (
         False,
-        "No LLM has been configured. Either an organisation admin must "
-        "add a key + model under Settings → LLM Configuration, or the "
-        "platform operator must set LLM_PROVIDER / LLM_API_KEY / LLM_MODEL "
-        "in the deployment environment.",
+        "No LLM has been configured. The LEERA platform superadmin must "
+        "add an LLM API key under Settings → LLM Configuration (the key "
+        "is stored encrypted in the database). Schools may also configure "
+        "their own per-organisation key in the same place, which "
+        "overrides the platform default.",
     )

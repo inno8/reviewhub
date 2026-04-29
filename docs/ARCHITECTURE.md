@@ -255,6 +255,70 @@ django_backend/
 
 ---
 
+## LLM credentials & business model
+
+LEERA pays for LLM. Schools using the product don't bring their own API
+keys; cost flows to LEERA which bills schools at the cohort tier
+(€200/cohort/month). One shared Anthropic key powers grading + commit
+review for every school on the platform.
+
+### Where the key lives
+
+The platform key is configured by the LEERA superadmin via
+**Settings → LLM Configuration** in the running app. It's stored
+**encrypted at rest** in the `LLMConfiguration` table on the
+superadmin's user row. **Never read from `.env`** — the key is a
+runtime-managed secret, rotated via the UI without redeploying.
+
+Per-school override is supported but rarely used in v1: a school admin
+can configure their own `LLMConfiguration` (e.g. for Schrems-II reasons
+or a school's own Anthropic enterprise contract). When set, the
+per-org config takes precedence over the platform fallback. The
+resolver chain is in
+[`users/org_llm.py`](../django_backend/users/org_llm.py):
+
+```
+get_org_llm_config(user)
+  ├─ per-user LLMConfiguration of the user's org admins (BYO-key path)
+  ├─ legacy User.llm_api_key on those admins (deprecated, v0 compat)
+  └─ _platform_llm_config()  ← finds any superuser's LLMConfiguration
+                                in the DB; the LEERA-pays floor
+```
+
+### What `.env` configures
+
+Just the **model names** for two-tier routing:
+
+| env var            | purpose                                              | typical value                       |
+|--------------------|------------------------------------------------------|-------------------------------------|
+| `LLM_PROVIDER`     | which vendor (`anthropic` / `openai` / `google`)    | `anthropic`                         |
+| `PR_LLM_MODEL`     | full-PR rubric grading sessions (best quality)       | `claude-sonnet-4-5-20250929`        |
+| `COMMIT_LLM_MODEL` | commit-level inline reviews (cheap + fast)           | `claude-haiku-4-5-20250929`         |
+
+Both consumed by **ai-engine** for per-task routing — Django doesn't
+need them. The API key reaches ai-engine via the Django→ai-engine
+request payload, sourced from the `LLMConfiguration` lookup above.
+
+### Cost flow
+
+```
+GitHub webhook → ai-engine (uses COMMIT_LLM_MODEL = haiku)
+  ↓
+  AI feedback drafted on commit, stored
+  ↓
+Teacher opens grading session → Django → ai-engine (uses PR_LLM_MODEL = sonnet)
+  ↓
+  rubric draft assembled
+  ↓
+Each call → LLMCostLog row (provider, model, input/output tokens, EUR)
+  ↓
+Daily aggregate → /ops dashboard for LEERA-internal cost monitoring
+```
+
+The `LLMCostLog` rows are admin-internal only — teachers never see
+per-PR cost. LEERA tracks them to make sure cohort pricing covers the
+LLM bill.
+
 ## Open questions / v1.1 backlog
 
 - `GrowthSnapshot` is read today via the trajectory endpoint but nothing writes it. A weekly Celery aggregator is queued for v1.1.
