@@ -207,6 +207,16 @@ EMAIL_PORT = int(os.getenv('EMAIL_PORT') or '1025')
 EMAIL_HOST_USER = os.getenv('EMAIL_HOST_USER', '')
 EMAIL_HOST_PASSWORD = os.getenv('EMAIL_HOST_PASSWORD', '')
 EMAIL_USE_TLS = os.getenv('EMAIL_USE_TLS', 'false').lower() == 'true'
+# Hard cap on SMTP connect/operation time. Without this, Python's
+# socket.create_connection() blocks indefinitely when the destination
+# port is firewalled (e.g. DigitalOcean blocks outbound SMTP by default).
+# A 30s gunicorn worker timeout fires before the SMTP call returns,
+# the worker is killed mid-request, and the client sees a 500.
+# 10s is generous for a healthy SMTP relay (Gmail/Brevo round-trip is
+# ~200ms in EU) and short enough to keep workers alive when egress is
+# blocked, so our error path returns a clean 502 instead of a worker
+# crash.
+EMAIL_TIMEOUT = int(os.getenv('EMAIL_TIMEOUT') or '10')
 EMAIL_FROM = os.getenv('DEFAULT_FROM_EMAIL', os.getenv('EMAIL_FROM', 'noreply@reviewhub.com'))
 DEFAULT_FROM_EMAIL = EMAIL_FROM
 RESEND_API_KEY = os.getenv('RESEND_API_KEY', '')
