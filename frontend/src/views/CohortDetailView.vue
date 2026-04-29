@@ -151,8 +151,11 @@ async function load() {
 }
 
 // ── Add Student ─────────────────────────────────────────────────────────────
+// Form holds just studentId — repos are linked by the student themselves
+// via the LEERA GitHub App install. Teachers/school admins are no longer
+// responsible for pasting repo URLs; the cohort tracks membership only.
 const showAddStudent = ref(false);
-const studentForm = ref({ studentId: null as number | null, repoUrl: '' });
+const studentForm = ref({ studentId: null as number | null });
 const studentSearch = ref('');
 const studentError = ref<string | null>(null);
 const addingStudent = ref(false);
@@ -174,8 +177,11 @@ async function addStudent() {
   addingStudent.value = true;
   studentError.value = null;
   try {
-    await api.grading.cohorts.addMember(id.value, studentForm.value.studentId, studentForm.value.repoUrl);
-    studentForm.value = { studentId: null, repoUrl: '' };
+    // student_repo_url is intentionally omitted — repos are linked by
+    // the student via the LEERA GitHub App install, not by the
+    // teacher/admin. Backend treats missing as null.
+    await api.grading.cohorts.addMember(id.value, studentForm.value.studentId);
+    studentForm.value = { studentId: null };
     studentSearch.value = '';
     showAddStudent.value = false;
     await load();
@@ -311,7 +317,7 @@ function goBack() { router.push({ name: 'org-cohorts' }); }
 
 // ── Modal open helpers ───────────────────────────────────────────────────────
 function openAddStudent() {
-  studentForm.value = { studentId: null, repoUrl: '' };
+  studentForm.value = { studentId: null };
   studentSearch.value = '';
   studentError.value = null;
   showAddStudent.value = true;

@@ -12,11 +12,22 @@ From the eng-review Section 2 error map and the concurrency bundle:
   - Idempotency: client_mutation_id = sha256(session_id | file | line |
     body_hash). Same comment = same id = skipped on retry.
 
-v1 auth model:
-  - Uses the teacher's encrypted github_personal_access_token (PAT) stored
-    on the User model. Documented in the design doc; v1.1 replaces this
-    with a proper GitHub App installation flow.
-  - If the teacher has no PAT, Send fails with a user-visible error.
+v1.1 auth model — GitHub App (preferred path):
+  - When a StudentRepo + GitHubInstallation row exists for the
+    submission's repo, mint a short-lived (~1h) installation token via
+    users.github_app.mint_installation_token() and use that as the
+    bearer credential. Comments post under the LEERA App's identity
+    (e.g. "leera[bot] commented") rather than the teacher's account.
+    Teachers never need to be repo collaborators.
+  - Falls back to the legacy PAT path below if no installation is
+    found — keeps tests + transitional deploys working.
+
+Legacy v1 auth (deprecated, kept as fallback):
+  - Uses the teacher's encrypted github_personal_access_token (PAT)
+    stored on the User model. Required the teacher to be a repo
+    collaborator (one invitation per student repo). Replaced by the
+    GitHub App migration; this path is left in place so any
+    Submissions whose repo predates the App install still work.
 
 v1 limitations noted (to be addressed in v1.1):
   - No OAuth refresh race guard (single PAT per teacher, no expiry).
@@ -65,6 +76,9 @@ def _github_headers(user_token: str | None) -> dict:
     if token:
         h["Authorization"] = f"Bearer {token}"
     return h
+
+
+from grading.services.github_app_auth import resolve_token_for_repo as _resolve_token
 
 
 def _parse_repo_full_name(repo_full_name: str) -> tuple[str, str]:
@@ -309,7 +323,12 @@ def post_all_or_nothing(
     owner, repo = _parse_repo_full_name(submission.repo_full_name)
     pr_number = submission.pr_number
 
-    snap = _fetch_pr_snapshot(owner, repo, pr_number, teacher_pat)
+    # Resolve the bearer token: prefer the GitHub App installation
+    # token (acts as leera[bot] on the repo); fall back to the
+    # teacher's PAT during the migration window.
+    token = _resolve_token(submission.repo_full_name, teacher_pat)
+
+    snap = _fetch_pr_snapshot(owner, repo, pr_number, token)
 
     # Source of truth for what to post: final_comments (docent-edited),
     # falling back to ai_draft_comments if docent didn't edit.
@@ -356,7 +375,7 @@ def post_all_or_nothing(
                 owner=owner,
                 repo=repo,
                 pr_number=pr_number,
-                token=teacher_pat,
+                token=token,
                 commit_id=snap.head_sha,
                 path=path,
                 line=line,
@@ -394,7 +413,8 @@ def post_all_or_nothing(
         try:
             summary_id = _post_pr_summary_comment(
                 owner=owner, repo=repo, pr_number=pr_number,
-                token=teacher_pat, body=summary_body,
+                token=token,
+                body=summary_body,
             )
         except (GitHubError, GitHubAuthExpired) as e:
             # Inline comments already landed. Treat summary-only failure

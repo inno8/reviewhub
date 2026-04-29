@@ -8,9 +8,19 @@ Used by:
   - grading.webhooks (the PR webhook handler) — verifies the PR still
     exists and pulls the head commit SHA when creating a Submission.
 
-v1 auth: uses the teacher's encrypted github_personal_access_token (PAT)
-stored on the User model. Falls back to settings.GITHUB_TOKEN for server-
-side calls (webhook handler doesn't have a user context).
+Auth (v1.1+): callers pass a `token` kwarg. The expected production
+flow is:
+  - generate_draft view: resolves a GitHub App installation token via
+    grading.services.github_app_auth.resolve_token_for_repo() and
+    passes it here. Comments + reads happen as the LEERA App identity.
+  - PAT fallback: the resolver falls through to the teacher's PAT
+    only when the repo has no active installation (transition window).
+  - Webhook handler context (no User session): pass token=None and
+    the fetcher falls back to settings.GITHUB_TOKEN if set.
+
+This module itself stays auth-agnostic — it just sends whatever token
+the caller hands it. Don't add resolver logic here; keep that in
+github_app_auth.
 
 Why fetch the diff fresh instead of reusing push-webhook Evaluations:
   - Student pushes a commit → ai_engine fires a per-commit Evaluation.

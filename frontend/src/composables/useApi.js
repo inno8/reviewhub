@@ -239,7 +239,11 @@ export const api = {
             update: (id, data) => client.patch(`/grading/cohorts/${id}/`, data),
             archive: (id) => client.post(`/grading/cohorts/${id}/archive/`, {}),
             members: (id) => client.get(`/grading/cohorts/${id}/members/`),
-            addMember: (id, studentId, repoUrl) => client.post(
+            // repoUrl param kept optional for any caller still passing it,
+            // but the GitHub App migration moved repo binding to the
+            // student's own onboarding flow. Default to empty string so
+            // the backend stores NULL.
+            addMember: (id, studentId, repoUrl = '') => client.post(
                 `/grading/cohorts/${id}/members/`,
                 { student_id: studentId, student_repo_url: repoUrl || '' }
             ),

@@ -989,6 +989,12 @@ class GradingSessionViewSet(
             owner, repo = submission.repo_full_name.split("/", 1)
             teacher_pat = getattr(request.user, "github_personal_access_token", None)
 
+            # Resolve the bearer token: prefer GitHub App installation
+            # token (acts as leera[bot] on the repo); fall back to the
+            # teacher's PAT during the migration window.
+            from .services.github_app_auth import resolve_token_for_repo
+            github_token = resolve_token_for_repo(submission.repo_full_name, teacher_pat)
+
             # Three sequential GET /pulls/{n}/... round-trips were eating
             # ~600-900ms before the LLM even started. They're independent
             # (different endpoints / different Accept headers), so we fan
@@ -1007,21 +1013,21 @@ class GradingSessionViewSet(
                     owner=owner,
                     repo=repo,
                     pr_number=submission.pr_number,
-                    token=teacher_pat,
+                    token=github_token,
                 )
                 fut_msgs = pool.submit(
                     github_fetcher.fetch_pr_commit_messages,
                     owner=owner,
                     repo=repo,
                     pr_number=submission.pr_number,
-                    token=teacher_pat,
+                    token=github_token,
                 )
                 fut_body = pool.submit(
                     github_fetcher.fetch_pr_body,
                     owner=owner,
                     repo=repo,
                     pr_number=submission.pr_number,
-                    token=teacher_pat,
+                    token=github_token,
                 )
                 # .result() re-raises the first exception from the diff
                 # call. The other two never raise (they return []/"" on

@@ -926,10 +926,33 @@ def github_webhook(request):
         if not created:
             return JsonResponse({"ok": True, "deduped": True}, status=200)
 
-    # 4. Push events: forward to ai_engine for the per-commit Code Review
-    #    pipeline. Nakijken itself doesn't touch push (rubric grading is
-    #    PR-level), but we own the GitHub webhook integration, so we act
-    #    as the gateway and fan out. See forward_push_to_ai_engine.
+    # 4a. GitHub App lifecycle events. Update local view of which
+    #     installations + repos exist before any push/PR work depends
+    #     on a stale picture. These never fan out to ai-engine.
+    if event_type == "installation":
+        from grading.services.github_app_events import handle_installation_event
+        try:
+            result = handle_installation_event(payload)
+        except Exception:
+            log.exception("installation event handler crashed")
+            return JsonResponse({"ok": False, "error": "handler crashed"}, status=500)
+        return JsonResponse({"ok": True, "result": result}, status=200)
+
+    if event_type == "installation_repositories":
+        from grading.services.github_app_events import (
+            handle_installation_repositories_event,
+        )
+        try:
+            result = handle_installation_repositories_event(payload)
+        except Exception:
+            log.exception("installation_repositories event handler crashed")
+            return JsonResponse({"ok": False, "error": "handler crashed"}, status=500)
+        return JsonResponse({"ok": True, "result": result}, status=200)
+
+    # 4b. Push events: forward to ai_engine for the per-commit Code Review
+    #     pipeline. Nakijken itself doesn't touch push (rubric grading is
+    #     PR-level), but we own the GitHub webhook integration, so we act
+    #     as the gateway and fan out. See forward_push_to_ai_engine.
     if event_type == "push":
         sig_header = request.META.get("HTTP_X_HUB_SIGNATURE_256", "")
         result = forward_push_to_ai_engine(
