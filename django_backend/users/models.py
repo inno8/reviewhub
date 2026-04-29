@@ -577,6 +577,147 @@ class LLMConfiguration(models.Model):
         return f"{self.user.email} - {self.provider}"
 
 
+class GitHubInstallation(models.Model):
+    """
+    A GitHub App installation by a user. Created when a student installs
+    the LEERA App on their GitHub account / org via the install-callback
+    flow at /api/github/install-callback.
+
+    One row per installation_id. The same user can install on multiple
+    accounts (their personal + their school's org), so a User can have
+    multiple GitHubInstallation rows.
+
+    The installation_id is GitHub's stable identifier for this install
+    — it's the only thing we need to mint short-lived (~1h) installation
+    access tokens via the JWT exchange (sign with App private key →
+    POST /app/installations/<id>/access_tokens). We never store the
+    token itself — it's minted on demand and discarded.
+    """
+    user = models.ForeignKey(
+        User,
+        on_delete=models.CASCADE,
+        related_name='github_installations',
+        help_text='The LEERA user who completed the install flow.',
+    )
+
+    # GitHub's identifier for this install. Stable across account renames.
+    # We mint installation tokens by POSTing JWT-signed requests to
+    # /app/installations/<installation_id>/access_tokens
+    installation_id = models.BigIntegerField(
+        unique=True,
+        help_text="GitHub's installation id (stable identifier).",
+    )
+
+    # The GitHub account the App was installed on. Could be the user's
+    # personal account, a school's org, or any org they're a member of.
+    # We capture both id and login so renames don't lose the link.
+    github_account_id = models.BigIntegerField()
+    github_account_login = models.CharField(max_length=200)
+    github_account_type = models.CharField(
+        max_length=20,
+        choices=[('User', 'User'), ('Organization', 'Organization')],
+        default='User',
+        help_text='User = personal account; Organization = a GitHub org.',
+    )
+
+    # Repo-selection mode the student picked at install time.
+    # 'all' means any new repo they create on this account is auto-covered.
+    # 'selected' means we only see the specific repos they ticked.
+    repository_selection = models.CharField(
+        max_length=20,
+        choices=[
+            ('all', 'All repositories'),
+            ('selected', 'Selected repositories'),
+        ],
+        default='selected',
+    )
+
+    # Lifecycle. GitHub fires `installation` events on suspend/unsuspend
+    # and `deleted` when the user uninstalls. We mark instead of deleting
+    # so historical Submissions / GradingSessions retain their FK.
+    suspended_at = models.DateTimeField(null=True, blank=True)
+    deleted_at = models.DateTimeField(null=True, blank=True)
+
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        db_table = 'github_installations'
+        ordering = ['-created_at']
+        indexes = [
+            models.Index(fields=['user']),
+            models.Index(fields=['github_account_id']),
+        ]
+
+    def __str__(self):
+        return f'{self.github_account_login} ({self.installation_id})'
+
+    @property
+    def is_active(self):
+        """True when the installation is live (not suspended, not deleted)."""
+        return self.suspended_at is None and self.deleted_at is None
+
+
+class StudentRepo(models.Model):
+    """
+    A specific repository the student has authorized LEERA to read +
+    review through their GitHub App installation.
+
+    Synced from GitHub via:
+      1. Initial fetch when the install completes (install-callback view)
+      2. `installation_repositories` webhook events (add / remove)
+
+    `is_active=False` rows mean the student removed the repo from the
+    install — kept for FK history but skipped in queries.
+    """
+    user = models.ForeignKey(
+        User,
+        on_delete=models.CASCADE,
+        related_name='student_repos',
+    )
+    installation = models.ForeignKey(
+        GitHubInstallation,
+        on_delete=models.CASCADE,
+        related_name='repos',
+    )
+
+    # GitHub's stable identifier for the repo. Survives owner/name renames.
+    github_repo_id = models.BigIntegerField()
+
+    # Display + clone-URL fields. full_name is "owner/repo".
+    full_name = models.CharField(
+        max_length=200,
+        help_text='e.g. "ahmed-b/student-portfolio"',
+    )
+    default_branch = models.CharField(max_length=200, default='main')
+    is_private = models.BooleanField(default=False)
+
+    # Lifecycle.
+    is_active = models.BooleanField(default=True)
+    granted_at = models.DateTimeField(auto_now_add=True)
+    removed_at = models.DateTimeField(null=True, blank=True)
+
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        db_table = 'student_repos'
+        unique_together = [('installation', 'github_repo_id')]
+        ordering = ['full_name']
+        indexes = [
+            models.Index(fields=['user', 'is_active']),
+            models.Index(fields=['github_repo_id']),
+        ]
+
+    def __str__(self):
+        return self.full_name
+
+    @property
+    def clone_url(self) -> str:
+        """https URL — the App's installation token is the credential at clone time."""
+        return f'https://github.com/{self.full_name}.git'
+
+
 class OnboardCode(models.Model):
     """Temporary OTP codes for first-time user onboarding."""
     user = models.ForeignKey(User, on_delete=models.CASCADE, related_name='onboard_codes')

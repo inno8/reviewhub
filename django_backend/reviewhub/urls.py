@@ -37,6 +37,7 @@ urlpatterns = [
     path('api/notifications/', include('notifications.urls')),
     path('api/batch/', include('batch.urls')),  # Phase 6: Batch analysis
     path('api/grading/', include('grading.urls')),  # Nakijken Copilot v1
+    path('api/github/', include('users.github_urls')),  # GitHub App install flow
 
     # Onboard (public endpoints)
     path('api/onboard/check-email/', OnboardCheckEmailView.as_view(), name='onboard-check-email'),

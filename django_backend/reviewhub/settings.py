@@ -221,6 +221,26 @@ EMAIL_FROM = os.getenv('DEFAULT_FROM_EMAIL', os.getenv('EMAIL_FROM', 'noreply@re
 DEFAULT_FROM_EMAIL = EMAIL_FROM
 RESEND_API_KEY = os.getenv('RESEND_API_KEY', '')
 
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# GitHub App credentials (LEERA-the-company App)
+# ═══════════════════════════════════════════════════════════════════════════════
+# Used by users/github_app.py to mint installation tokens via JWT
+# exchange. None of these touch the DB — App credentials are deployment
+# secrets, not user-configurable.
+#
+# Per-org / per-user GitHub PATs are deprecated in favor of the App.
+# See docs/ARCHITECTURE.md → "GitHub App auth" for the migration plan.
+GITHUB_APP_ID = os.getenv('GITHUB_APP_ID', '').strip()
+GITHUB_APP_CLIENT_ID = os.getenv('GITHUB_APP_CLIENT_ID', '').strip()
+GITHUB_APP_CLIENT_SECRET = os.getenv('GITHUB_APP_CLIENT_SECRET', '').strip()
+GITHUB_APP_SLUG = (os.getenv('GITHUB_APP_SLUG', 'leera') or 'leera').strip()
+# Two ways to provide the private key — file path takes precedence.
+# See django_backend/.env.production.example for setup notes.
+GITHUB_APP_PRIVATE_KEY_PATH = os.getenv('GITHUB_APP_PRIVATE_KEY_PATH', '').strip()
+GITHUB_APP_PRIVATE_KEY = os.getenv('GITHUB_APP_PRIVATE_KEY', '')
+
+
 # NOTE on LLM credentials: NOT read from env in Django.
 # Per the LEERA business model the platform owns one shared API key,
 # configured by the LEERA superadmin via Settings → LLM Config and
