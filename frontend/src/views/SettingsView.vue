@@ -300,8 +300,9 @@ onMounted(async () => {
     webhookProjectId.value = projectsStore.selectedProjectId;
   }
   // Land on the cohort tab when the URL says so (the redirect from the
-  // legacy /my-cohort route uses ?tab=cohort).
-  if (auth.isStudent && route.query.tab === 'cohort') {
+  // legacy /my-cohort route uses ?tab=cohort). Same superuser exclusion
+  // as the tab visibility check above.
+  if (auth.isStudent && !auth.isSuperuser && route.query.tab === 'cohort') {
     activeTab.value = 'cohort';
   }
 });
@@ -629,9 +630,11 @@ const tabs = computed(() => {
   ];
   // Student-only "My Cohort" tab (cohort name, teachers, courses). Was a
   // top-level nav item; relocated here Apr 26 2026 because it's reference
-  // info, not a daily-flow surface. auth.isStudent gates this so teachers
-  // / school admins / ops don't see a confusing self-referential cohort tab.
-  if (auth.isStudent) {
+  // info, not a daily-flow surface. Gate on isStudent + NOT superuser so a
+  // platform admin whose `role` field happens to still be 'developer'
+  // (common for early-bootstrap accounts created before role flipped)
+  // doesn't see a self-referential cohort tab in their settings.
+  if (auth.isStudent && !auth.isSuperuser) {
     t.push({ id: 'cohort', label: 'My Cohort', icon: 'groups' });
   }
   if (auth.isSuperuser) {

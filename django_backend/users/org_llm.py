@@ -84,6 +84,24 @@ def _organisation_admin_ids(user) -> set[int]:
         if getattr(user, "role", None) == User.Role.ADMIN or user.is_staff:
             admin_ids.add(user.id)
 
+    # ── Self fallback ────────────────────────────────────────────────────
+    # If the user is themselves an admin (org admin OR platform staff/
+    # superuser) and they have their own LLMConfiguration, allow them to
+    # use it. Covers two common cases that the org-admin-only model
+    # would otherwise block:
+    #   * The org owner submitting a batch (they ARE the admin; the
+    #     branch above already adds them via the org-owner lookup, but
+    #     this catches edge cases like role mismatch on legacy accounts).
+    #   * A platform superuser with their own LLM key (used during
+    #     dogfood + demos before per-school admins are paying).
+    # Non-admin students still fall through this block — billing model
+    # intact: students can't bring their own LLM to bypass the school's
+    # admin config.
+    is_admin_role = getattr(user, "role", None) == User.Role.ADMIN
+    is_platform_admin = bool(getattr(user, "is_staff", False) or getattr(user, "is_superuser", False))
+    if (is_admin_role or is_platform_admin) and user.id not in admin_ids:
+        admin_ids.add(user.id)
+
     return admin_ids
 
 
