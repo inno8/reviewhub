@@ -48,6 +48,13 @@ services:
       # empty creds if the operator chose Resend), and nothing sends.
       - RESEND_API_KEY=${RESEND_API_KEY}
       - FRONTEND_URL=${FRONTEND_URL}
+      # Platform LLM fallback (LEERA-pays-LLM model). When schools
+      # haven't configured their own per-org LLM, batch jobs and
+      # grading sessions fall back to these. Same env vars consumed
+      # by ai-engine — single source of truth in .env.
+      - LLM_PROVIDER=${LLM_PROVIDER}
+      - LLM_API_KEY=${LLM_API_KEY}
+      - LLM_MODEL=${LLM_MODEL}
     # No host port mapping — only reachable via the frontend nginx
     # reverse proxy (which terminates TLS). Comment back in for direct
     # debugging access if needed.

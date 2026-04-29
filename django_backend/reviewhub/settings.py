@@ -220,3 +220,20 @@ EMAIL_TIMEOUT = int(os.getenv('EMAIL_TIMEOUT') or '10')
 EMAIL_FROM = os.getenv('DEFAULT_FROM_EMAIL', os.getenv('EMAIL_FROM', 'noreply@reviewhub.com'))
 DEFAULT_FROM_EMAIL = EMAIL_FROM
 RESEND_API_KEY = os.getenv('RESEND_API_KEY', '')
+
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# Platform-level LLM fallback
+# ═══════════════════════════════════════════════════════════════════════════════
+# When a school/org admin hasn't configured their own LLM, fall back to the
+# platform-level keys. This matches the LEERA business model where the
+# platform pays for LLM and schools don't bring their own. Schools that
+# DO configure their own LLM (per-org admin via Settings → LLM Config)
+# override these values; this is just the floor.
+#
+# These env vars are also consumed by ai-engine for the same purpose
+# (the bot-level fallback when batch payloads don't carry per-org creds).
+# Sharing the same names keeps a single source of truth in .env.
+PLATFORM_LLM_PROVIDER = os.getenv('LLM_PROVIDER', '').strip()
+PLATFORM_LLM_API_KEY = os.getenv('LLM_API_KEY', '').strip()
+PLATFORM_LLM_MODEL = os.getenv('LLM_MODEL', '').strip()

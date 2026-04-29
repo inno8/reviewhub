@@ -105,19 +105,51 @@ def _organisation_admin_ids(user) -> set[int]:
     return admin_ids
 
 
+def _platform_llm_config() -> "dict | None":
+    """
+    Platform-level LLM fallback. LEERA pays for LLM and schools that
+    haven't configured their own use these env-vars as the floor:
+        LLM_PROVIDER  (e.g. "anthropic", "openai")
+        LLM_API_KEY   (the key — required)
+        LLM_MODEL     (e.g. "claude-3-5-haiku-20241022")
+    Returns None if any of the three is missing/empty.
+
+    Schools that DO configure per-org LLM via Settings → LLM Config
+    take precedence; this is only used when no usable per-org config
+    is found.
+    """
+    from django.conf import settings
+
+    provider = getattr(settings, 'PLATFORM_LLM_PROVIDER', '') or ''
+    api_key = getattr(settings, 'PLATFORM_LLM_API_KEY', '') or ''
+    model = getattr(settings, 'PLATFORM_LLM_MODEL', '') or ''
+
+    if not (api_key and model):
+        return None
+    return {
+        'provider': provider or 'anthropic',
+        'api_key': api_key,
+        'model': model,
+    }
+
+
 def get_org_llm_config(user) -> "dict | None":
     """
     Return the first usable LLM config (provider, api_key, model) for the user's org.
     Returns None if no usable config is found.
     Used by batch views to pass credentials to the AI engine.
+
+    Resolution order:
+      1. Per-user LLMConfiguration belonging to the user's org admins
+      2. Legacy User.llm_api_key on those same admins
+      3. Platform-level env-var fallback (PLATFORM_LLM_*) — LEERA's
+         own keys, used when no school admin has configured their own
     """
     from .models import LLMConfiguration
 
     admin_ids = _organisation_admin_ids(user)
-    if not admin_ids:
-        return None
+    admins = User.objects.filter(pk__in=admin_ids) if admin_ids else User.objects.none()
 
-    admins = User.objects.filter(pk__in=admin_ids)
     for admin in admins:
         for cfg in LLMConfiguration.objects.filter(user=admin).order_by('-is_default', 'id'):
             if not (cfg.model or "").strip():
@@ -143,7 +175,8 @@ def get_org_llm_config(user) -> "dict | None":
                 "model": legacy_model,
             }
 
-    return None
+    # Platform-level fallback — the LEERA business-model floor.
+    return _platform_llm_config()
 
 
 def org_llm_ready_for_user(user) -> tuple[bool, str]:
@@ -151,25 +184,32 @@ def org_llm_ready_for_user(user) -> tuple[bool, str]:
     Returns (True, "") if batch analysis may run for this user.
 
     Otherwise (False, human-readable message).
+
+    The check passes if EITHER:
+      - An organisation admin reachable from this user has a usable
+        LLMConfiguration (per-school BYO-LLM model), OR
+      - The platform-level PLATFORM_LLM_* env vars are set (LEERA-pays
+        model — the floor, used when schools haven't configured their own).
     """
     if not user or not user.is_authenticated:
         return False, "Authentication required."
 
+    # Per-school admin LLM (preferred when set).
     admin_ids = _organisation_admin_ids(user)
-    if not admin_ids:
-        return (
-            False,
-            "Your account is not linked to a team or group. Ask an administrator to add you "
-            "to a team and configure an LLM provider (API key, token, or Google OAuth) and model for the organisation.",
-        )
+    if admin_ids:
+        admins = User.objects.filter(pk__in=admin_ids)
+        for admin in admins:
+            if _admin_has_llm_with_model(admin):
+                return True, ""
 
-    admins = User.objects.filter(pk__in=admin_ids)
-    for admin in admins:
-        if _admin_has_llm_with_model(admin):
-            return True, ""
+    # Platform-level fallback — LEERA's own keys.
+    if _platform_llm_config() is not None:
+        return True, ""
 
     return (
         False,
-        "No organisation administrator has configured an LLM (API key, access token, or Google OAuth) "
-        "with a model. An admin must add this under Settings → LLM configuration before batch analysis can run.",
+        "No LLM has been configured. Either an organisation admin must "
+        "add a key + model under Settings → LLM Configuration, or the "
+        "platform operator must set LLM_PROVIDER / LLM_API_KEY / LLM_MODEL "
+        "in the deployment environment.",
     )
