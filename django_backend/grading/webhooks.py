@@ -99,10 +99,22 @@ def _resolve_project_id_for_push(repo_html_url: str) -> int | None:
     the right ai_engine endpoint. Tolerant of trailing slashes and the
     .git suffix that GitHub clones use but webhook payloads don't.
 
-    Returns None if no Project matches — push silently skips fan-out.
-    A teacher's first push to a fresh repo before they register the
-    Project should not 500; it should just no-op the AI auto-review
-    until the Project exists.
+    Resolution order:
+
+      1. Direct match on projects.Project.repo_url (legacy path —
+         teacher manually registered the repo as a Project).
+
+      2. StudentRepo match via the GitHub App (post-v1.1 path). Any
+         repo a student has installed the LEERA App on resolves to a
+         Project owned by that student, auto-created on first push if
+         it doesn't exist yet. This is what bridges App-installed
+         repos to the existing per-commit AI review pipeline so the
+         push → ai-engine → Evaluation → SkillObservation chain runs
+         without the teacher manually creating Projects.
+
+      3. None — push silently skips fan-out. Teacher's first push to
+         a fresh repo before any registration / install does not 500;
+         it just no-ops the AI auto-review.
     """
     if not repo_html_url:
         return None
@@ -115,7 +127,89 @@ def _resolve_project_id_for_push(repo_html_url: str) -> int | None:
     if repo_html_url.endswith(".git"):
         candidates.add(repo_html_url[:-4])
     project = Project.objects.filter(repo_url__in=list(candidates)).first()
-    return project.id if project else None
+    if project:
+        return project.id
+
+    # Fallback: GitHub App path. If a StudentRepo matches the repo
+    # URL, auto-create a Project for that student so the push flows
+    # through the existing analyzer pipeline.
+    return _resolve_via_student_repo(repo_html_url)
+
+
+def _resolve_via_student_repo(repo_html_url: str) -> int | None:
+    """
+    Look up a StudentRepo (the GitHub App's per-repo grant) by the
+    push event's repo URL, and return a projects.Project id —
+    creating one on first call if no Project row exists for the repo.
+
+    This is the GitHub-App-aware bridge into the legacy projects model
+    used by ai-engine's per-commit pipeline. Two compatibility wins:
+
+      - Students who install the App on a repo that no teacher has
+        registered as a Project still get AI feedback on every commit.
+      - The auto-created Project is owned by the student (created_by
+        + repo_url set), so downstream code that expects a Project FK
+        keeps working unchanged.
+
+    Returns None if no StudentRepo matches (e.g. a push from a repo
+    that isn't connected to LEERA at all).
+    """
+    try:
+        from users.models import StudentRepo
+        from projects.models import Project
+    except Exception:
+        return None
+
+    # GitHub push payloads' repository.html_url is "https://github.com/owner/repo".
+    # StudentRepo stores "owner/repo" in full_name. Convert.
+    full_name = _repo_html_url_to_full_name(repo_html_url)
+    if not full_name:
+        return None
+
+    student_repo = (
+        StudentRepo.objects
+        .filter(full_name=full_name, is_active=True)
+        .select_related('user')
+        .first()
+    )
+    if not student_repo:
+        return None
+
+    # Auto-create the Project on first push. URL match is canonical
+    # without the .git suffix (matches how push payloads phrase it).
+    canonical_url = repo_html_url.rstrip("/")
+    if canonical_url.endswith(".git"):
+        canonical_url = canonical_url[:-4]
+
+    project, _created = Project.objects.get_or_create(
+        repo_url=canonical_url,
+        defaults={
+            'name': full_name,
+            'created_by': student_repo.user,
+        },
+    )
+    return project.id
+
+
+def _repo_html_url_to_full_name(repo_html_url: str) -> str | None:
+    """
+    "https://github.com/owner/repo[.git][/]" → "owner/repo".
+    Returns None if the URL doesn't parse to a github.com path with
+    at least owner/repo segments.
+    """
+    try:
+        parsed = urlparse((repo_html_url or "").strip())
+    except Exception:
+        return None
+    if not parsed.hostname or "github.com" not in parsed.hostname.lower():
+        return None
+    parts = [p for p in parsed.path.strip("/").split("/") if p]
+    if len(parts) < 2:
+        return None
+    owner, repo = parts[0], parts[1]
+    if repo.endswith(".git"):
+        repo = repo[:-4]
+    return f"{owner}/{repo}"
 
 
 def forward_push_to_ai_engine(
