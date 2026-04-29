@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { ref, computed } from 'vue';
+import { ref, computed, onMounted } from 'vue';
 import { useRouter } from 'vue-router';
 import { api } from '@/composables/useApi';
 import { useAuthStore } from '@/stores/auth';
@@ -11,7 +11,10 @@ const auth = useAuthStore();
 const currentStep = ref(1);
 const totalSteps = 7;
 const saving = ref(false);
+const loading = ref(true);  // starts true so the form doesn't flash empty
+                            // before existing values are loaded in
 const toastMsg = ref('');
+const isEditing = ref(false);  // true when an existing profile was loaded
 
 // ── Form data ─────────────────────────────────────────────────────────────
 
@@ -108,6 +111,68 @@ function scoreLabel(val: number): string {
   return ['', 'Weak', 'Below avg', 'Average', 'Good', 'Strong'][val] ?? '';
 }
 
+// ── Load existing profile (edit mode) ─────────────────────────────────────
+// On mount, fetch the user's existing profile if one exists. The backend
+// returns 404 for first-time users — that's not an error, just means we
+// keep the form defaults. For users editing, every field gets pre-filled
+// so they can tweak rather than re-enter.
+
+async function loadExistingProfile() {
+  try {
+    const { data } = await api.devProfile.get();
+    if (!data) return;
+    isEditing.value = true;
+
+    // Step 1
+    if (data.job_role) jobRole.value = data.job_role;
+    if (data.experience_years != null) experienceYears.value = data.experience_years;
+    if (data.primary_language) primaryLanguage.value = data.primary_language;
+    if (Array.isArray(data.other_languages)) otherLanguages.value = [...data.other_languages];
+
+    // Step 2 — only override defaults for keys the backend actually sent;
+    // any new skill key in skillLabels but missing from saved data keeps
+    // its 3 default.
+    if (data.self_scores && typeof data.self_scores === 'object') {
+      selfScores.value = { ...selfScores.value, ...data.self_scores };
+    }
+
+    // Step 3
+    if (data.focus_first) focusFirst.value = data.focus_first;
+    if (data.writes_tests) writesTests.value = data.writes_tests;
+    if (data.edge_case_handling) edgeCaseHandling.value = data.edge_case_handling;
+    if (data.debugging_approach) debuggingApproach.value = data.debugging_approach;
+
+    // Step 4
+    if (data.can_design_system) canDesignSystem.value = data.can_design_system;
+    if (Array.isArray(data.comfortable_with)) comfortableWith.value = [...data.comfortable_with];
+    if (Array.isArray(data.worked_on)) workedOn.value = [...data.worked_on];
+
+    // Step 5
+    if (data.enjoy_most) enjoyMost.value = data.enjoy_most;
+    if (data.want_to_improve) wantToImprove.value = data.want_to_improve;
+
+    // Step 6
+    if (data.current_goal) currentGoal.value = data.current_goal;
+    if (data.learning_style) learningStyle.value = data.learning_style;
+
+    // Step 7 — proud_code/struggled_code are free-text; repoUrl is set in
+    // a separate flow (Settings → GitHub) and isn't part of the profile,
+    // so we don't prefill it here.
+    if (data.proud_code) proudCode.value = data.proud_code;
+    if (data.struggled_code) struggledCode.value = data.struggled_code;
+  } catch (err: any) {
+    // 404 = first-time user, no profile yet. Anything else = real error,
+    // log but don't block — the user can still fill the form.
+    if (err?.response?.status !== 404) {
+      console.error('Failed to load existing dev profile:', err);
+    }
+  } finally {
+    loading.value = false;
+  }
+}
+
+onMounted(loadExistingProfile);
+
 // ── Submit ────────────────────────────────────────────────────────────────
 
 async function submit() {
@@ -192,11 +257,22 @@ function skipToEnd() {
     <!-- Header -->
     <div class="w-full max-w-2xl mb-8 text-center">
       <h1 class="text-4xl font-black tracking-tight text-on-surface mb-2">
-        Set Up Your Developer Profile
+        {{ isEditing ? 'Update Your Developer Profile' : 'Set Up Your Developer Profile' }}
       </h1>
-      <p class="text-outline text-sm">Help us personalise your code reviews and skill tracking (2–3 min)</p>
+      <p class="text-outline text-sm">
+        {{ isEditing
+          ? 'Tweak your answers — your saved values are pre-filled.'
+          : 'Help us personalise your code reviews and skill tracking (2–3 min)' }}
+      </p>
     </div>
 
+    <!-- Loading skeleton — prevents flash-of-empty-form before saved values load -->
+    <div v-if="loading" class="w-full max-w-2xl bg-surface-container-low rounded-2xl border border-outline-variant/15 p-8 text-center">
+      <span class="material-symbols-outlined animate-spin text-2xl text-primary">progress_activity</span>
+      <p class="mt-2 text-sm text-on-surface-variant">Loading your profile...</p>
+    </div>
+
+    <template v-else>
     <!-- Progress bar -->
     <div class="w-full max-w-2xl mb-6">
       <div class="flex justify-between text-xs text-outline mb-2">
@@ -580,6 +656,7 @@ function skipToEnd() {
         @click="currentStep = n"
       />
     </div>
+    </template>
 
     <!-- Toast -->
     <div
