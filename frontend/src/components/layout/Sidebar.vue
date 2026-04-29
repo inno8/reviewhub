@@ -307,6 +307,61 @@ const reviewBranchSummary = ref<{
   matchesDefault: boolean | null;
 } | null>(null);
 
+// GitHub App connected repos. Pulled from /api/github/installations/.
+// Drives the repo dropdown so students don't have to paste URLs by hand.
+// "+ Connect another repo" deep-links to the App's install settings.
+// "Custom URL" toggle keeps the legacy free-text input around as an
+// escape hatch for analyzing public repos the user hasn't installed.
+interface ConnectedRepoLite {
+  full_name: string;
+  default_branch: string;
+  is_private: boolean;
+  installation_id: number;
+}
+const reviewConnectedRepos = ref<ConnectedRepoLite[]>([]);
+const reviewInstallUrl = ref<string | null>(null);
+const reviewUseCustomUrl = ref(false);
+const reviewRepoSelectValue = ref<string>('');
+
+async function loadReviewConnectedRepos() {
+  try {
+    const [installsRes, urlRes] = await Promise.all([
+      api.github.installations(),
+      api.github.installUrl().catch(() => null),
+    ]);
+    const installs = Array.isArray(installsRes.data) ? installsRes.data : [];
+    reviewConnectedRepos.value = installs.flatMap((inst: any) =>
+      (inst.repos || []).map((r: any) => ({
+        full_name: r.full_name,
+        default_branch: r.default_branch || 'main',
+        is_private: !!r.is_private,
+        installation_id: inst.installation_id,
+      })),
+    );
+    reviewInstallUrl.value = urlRes?.data?.install_url || null;
+  } catch {
+    reviewConnectedRepos.value = [];
+  }
+}
+
+function onReviewRepoSelectChange() {
+  const v = reviewRepoSelectValue.value;
+  if (v === '__connect__') {
+    if (reviewInstallUrl.value) {
+      window.open(reviewInstallUrl.value, '_blank', 'noopener');
+    }
+    reviewRepoSelectValue.value = '';
+    return;
+  }
+  if (v === '__custom__') {
+    reviewUseCustomUrl.value = true;
+    reviewRepoUrl.value = '';
+    return;
+  }
+  reviewUseCustomUrl.value = false;
+  reviewRepoUrl.value = v ? `https://github.com/${v}` : '';
+}
+
 async function openNewReviewModal() {
   showNewReviewModal.value = true;
   modalError.value = '';
@@ -317,14 +372,20 @@ async function openNewReviewModal() {
   reviewWebhookInfo.value = null;
   reviewBranchSummary.value = null;
   reviewRepoUrl.value = '';
+  reviewRepoSelectValue.value = '';
+  reviewUseCustomUrl.value = false;
   branches.value = [];
 
   const options = newReviewProjectOptions.value;
   const sel = projectsStore.selectedProjectId;
   reviewProjectId.value = sel && options.some((p) => p.id === sel) ? sel : options[0]?.id ?? null;
 
-  // Load git connections for commit filtering
-  await loadGitConnections();
+  // Load git connections for commit filtering + GitHub App-connected
+  // repos in parallel — the modal renders both as soon as either resolves.
+  await Promise.all([
+    loadGitConnections(),
+    loadReviewConnectedRepos(),
+  ]);
 }
 
 async function analyzeMyHistory() {
@@ -600,7 +661,7 @@ function toggleAllBranches(selected: boolean) {
         class="w-full primary-gradient text-on-primary font-bold py-3 px-4 rounded-lg flex items-center justify-center gap-2 active:scale-95 transition-transform"
       >
         <span class="material-symbols-outlined text-xl">add</span>
-        <span class="text-sm">New Review</span>
+        <span class="text-sm">Nieuwe review</span>
       </button>
     </div>
 
@@ -728,7 +789,7 @@ function toggleAllBranches(selected: boolean) {
   >
     <div class="glass-panel w-full max-w-lg rounded-xl overflow-hidden shadow-2xl max-h-[90vh] overflow-y-auto">
       <div class="px-6 py-4 border-b border-outline-variant/10 flex justify-between items-center">
-        <h3 class="text-lg font-bold text-on-surface">New Review</h3>
+        <h3 class="text-lg font-bold text-on-surface">Nieuwe review</h3>
         <button @click="showNewReviewModal = false" class="text-outline hover:text-on-surface">
           <span class="material-symbols-outlined">close</span>
         </button>
@@ -740,27 +801,79 @@ function toggleAllBranches(selected: boolean) {
           <div class="space-y-1.5">
             <label class="text-xs font-bold uppercase tracking-widest text-outline">Project</label>
             <p v-if="!newReviewProjectOptions.length" class="text-sm text-outline py-2">
-              No projects available. Ask an admin to add you to a project.
+              Geen projecten beschikbaar. Vraag een beheerder om je aan een project toe te voegen.
             </p>
             <select v-else v-model="reviewProjectId"
               class="w-full bg-surface-container-lowest border border-outline-variant/30 rounded-lg text-on-surface text-sm focus:ring-1 focus:ring-primary/50 py-3 px-4">
-              <option :value="null" disabled>Select project...</option>
+              <option :value="null" disabled>Kies project...</option>
               <option v-for="p in newReviewProjectOptions" :key="p.id" :value="p.id">{{ p.displayName }}</option>
             </select>
             <p v-if="newReviewProjectOptions.length" class="text-[10px] text-outline">
-              Pick the project whose repo and webhook you want to inspect. Enter a URL only if that project is not linked yet.
+              Kies het project waarvan je de repo en webhook wilt inzien. Vul alleen een URL in als het project nog niet gekoppeld is.
             </p>
           </div>
           <div class="space-y-1.5">
-            <label class="text-xs font-bold uppercase tracking-widest text-outline">Repository URL</label>
-            <input v-model="reviewRepoUrl" type="url" placeholder="https://github.com/user/repo"
-              class="w-full bg-surface-container-lowest border border-outline-variant/30 rounded-lg text-on-surface placeholder:text-outline/40 focus:ring-1 focus:ring-primary/50 py-3 px-4 text-sm" />
-            <p class="text-[10px] text-outline">GitHub, GitLab, or Bitbucket repository URL</p>
+            <label class="text-xs font-bold uppercase tracking-widest text-outline">Repository</label>
+
+            <!-- Empty state: no installs AND no install URL configured -->
+            <p
+              v-if="!reviewConnectedRepos.length && !reviewInstallUrl && !reviewUseCustomUrl"
+              class="text-[11px] text-amber-400 bg-amber-500/10 border border-amber-500/20 rounded-lg p-2.5"
+            >
+              Geen verbonden repositories. Installeer de LEERA GitHub App
+              vanuit je dev-profiel of gebruik de geavanceerde optie hieronder.
+            </p>
+
+            <!-- Smart select (default) -->
+            <select
+              v-if="!reviewUseCustomUrl"
+              v-model="reviewRepoSelectValue"
+              @change="onReviewRepoSelectChange"
+              class="w-full bg-surface-container-lowest border border-outline-variant/30 rounded-lg text-on-surface text-sm focus:ring-1 focus:ring-primary/50 py-3 px-4"
+            >
+              <option disabled value="">Kies een gekoppelde repository</option>
+              <option
+                v-for="r in reviewConnectedRepos"
+                :key="r.full_name"
+                :value="r.full_name"
+              >
+                {{ r.full_name }}{{ r.is_private ? ' (privé)' : '' }}
+              </option>
+              <option v-if="reviewInstallUrl" value="__connect__">
+                + Verbind een nieuwe repository op GitHub…
+              </option>
+              <option value="__custom__">
+                Geavanceerd: handmatige URL invoeren
+              </option>
+            </select>
+
+            <!-- Free-text URL input (escape hatch) -->
+            <div v-else class="space-y-1.5">
+              <input
+                v-model="reviewRepoUrl"
+                type="url"
+                placeholder="https://github.com/user/repo"
+                class="w-full bg-surface-container-lowest border border-outline-variant/30 rounded-lg text-on-surface placeholder:text-outline/40 focus:ring-1 focus:ring-primary/50 py-3 px-4 text-sm"
+              />
+              <button
+                type="button"
+                @click="reviewUseCustomUrl = false; reviewRepoSelectValue = ''; reviewRepoUrl = ''"
+                class="text-[10px] text-primary hover:underline"
+              >
+                ← Terug naar gekoppelde repositories
+              </button>
+            </div>
+
+            <p class="text-[10px] text-outline">
+              Repos die je via de LEERA GitHub App hebt geautoriseerd staan
+              hierboven. GitHub, GitLab of Bitbucket-URL voor publieke repos
+              via de geavanceerde optie.
+            </p>
           </div>
 
           <!-- Git Identity Selector -->
           <div class="space-y-1.5">
-            <label class="text-xs font-bold uppercase tracking-widest text-outline">Your Git Identity</label>
+            <label class="text-xs font-bold uppercase tracking-widest text-outline">Jouw git-identiteit</label>
             <div v-if="hasGitConnection">
               <select v-model="selectedGitUsername"
                 class="w-full bg-surface-container-lowest border border-outline-variant/30 rounded-lg text-on-surface text-sm focus:ring-1 focus:ring-primary/50 py-3 px-4">
@@ -769,17 +882,17 @@ function toggleAllBranches(selected: boolean) {
                 </option>
               </select>
               <p class="text-[10px] text-outline mt-1">
-                Only commits matching this git username will be fetched and reviewed.
+                Alleen commits van deze git-gebruikersnaam worden opgehaald en beoordeeld.
               </p>
             </div>
             <div v-else class="p-3 rounded-lg bg-orange-500/10 border border-orange-500/20">
               <p class="text-sm text-orange-400 flex items-center gap-2">
                 <span class="material-symbols-outlined text-sm">warning</span>
-                No git account configured.
+                Geen git-account gekoppeld.
               </p>
               <p class="text-[10px] text-outline mt-1">
-                Go to <router-link to="/settings" class="text-primary font-semibold" @click="showNewReviewModal = false">Settings → Git Connections</router-link>
-                to link your GitHub/GitLab account first. This is needed to identify your commits.
+                Ga naar <router-link to="/settings" class="text-primary font-semibold" @click="showNewReviewModal = false">Instellingen → Git-koppelingen</router-link>
+                om je GitHub/GitLab-account te koppelen. Dit is nodig om je eigen commits te identificeren.
               </p>
             </div>
           </div>
@@ -789,7 +902,7 @@ function toggleAllBranches(selected: boolean) {
         <template v-if="reviewStep === 'checking'">
           <div class="flex flex-col items-center py-8">
             <span class="material-symbols-outlined text-4xl text-primary animate-spin mb-4">progress_activity</span>
-            <p class="text-sm text-on-surface-variant">Checking for past commits & webhook status...</p>
+            <p class="text-sm text-on-surface-variant">Bezig met controle van eerdere commits en webhook-status…</p>
           </div>
         </template>
 
@@ -905,12 +1018,12 @@ function toggleAllBranches(selected: boolean) {
         <div class="flex gap-3 pt-2">
           <button @click="showNewReviewModal = false"
             class="flex-1 py-3 bg-surface-container-highest text-on-surface font-bold rounded-lg hover:bg-outline-variant transition-colors">
-            Cancel
+            Annuleren
           </button>
           <button v-if="reviewStep === 'setup'" @click="startReviewCheck"
             :disabled="reviewLoading || !reviewProjectId || !newReviewProjectOptions.length || !hasGitConnection"
             class="flex-1 py-3 primary-gradient text-on-primary font-bold rounded-lg disabled:opacity-50 flex items-center justify-center gap-2">
-            Start Review
+            Review starten
           </button>
         </div>
       </div>
