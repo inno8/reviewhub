@@ -55,6 +55,32 @@ services:
       # vars below — it uses PR_LLM_MODEL / COMMIT_LLM_MODEL for
       # per-task model tier routing. The api_key reaches ai-engine
       # via the request payload from Django, sourced from DB.
+      # GitHub App credentials. Used by Django to:
+      #  - mint installation JWTs (signed with PRIVATE_KEY)
+      #  - exchange them for short-lived installation tokens
+      #  - clone repos + post PR comments under the App's identity
+      # ai-engine doesn't need these directly — it receives the
+      # short-lived installation token via Django's request payload.
+      # Webhook signature verification reuses GITHUB_WEBHOOK_SECRET.
+      - GITHUB_APP_ID=${GITHUB_APP_ID:-}
+      - GITHUB_APP_CLIENT_ID=${GITHUB_APP_CLIENT_ID:-}
+      - GITHUB_APP_CLIENT_SECRET=${GITHUB_APP_CLIENT_SECRET:-}
+      - GITHUB_APP_SLUG=${GITHUB_APP_SLUG:-leera}
+      - GITHUB_APP_PRIVATE_KEY_PATH=${GITHUB_APP_PRIVATE_KEY_PATH:-}
+      - GITHUB_APP_PRIVATE_KEY=${GITHUB_APP_PRIVATE_KEY:-}
+      # NOTE on the App private key:
+      # The default deployment uses GITHUB_APP_PRIVATE_KEY (inline PEM
+      # contents in .env, with \n escapes) — Option B from the example
+      # file. Simpler, no compose edits, no host filesystem dependency.
+      # If you'd rather mount the .pem as a file (Option A — better for
+      # rotation), uncomment the volumes block below AND set
+      # GITHUB_APP_PRIVATE_KEY_PATH=/run/secrets/github-app.pem in .env.
+      # The host path /etc/leera/github-app.pem is a convention; change
+      # to wherever you've placed the file. Container will fail to
+      # start if the host path doesn't exist — that's by design (better
+      # to fail loud than read a missing key at runtime).
+      # volumes:
+      #   - /etc/leera/github-app.pem:/run/secrets/github-app.pem:ro
     # No host port mapping — only reachable via the frontend nginx
     # reverse proxy (which terminates TLS). Comment back in for direct
     # debugging access if needed.
