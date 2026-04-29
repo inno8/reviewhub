@@ -103,8 +103,12 @@ def _render_invitation_html(org_name: str, invite_url: str) -> str:
     """
     safe_org = escape(org_name)
     safe_url = escape(invite_url, quote=True)
-    # Logo served from the public frontend nginx — same site the CTA links to.
-    base_url = getattr(settings, 'FRONTEND_URL', '').rstrip('/')
+    # Logo URL must be absolute and publicly reachable (Gmail proxies all
+    # remote images through Google's image cache). FRONTEND_URL must be
+    # set in production .env (e.g. https://on-boardia.com); falling back
+    # to a hard-coded prod domain so the logo isn't broken if the env var
+    # is missing — better a stale link than a 404.
+    base_url = (getattr(settings, 'FRONTEND_URL', '') or 'https://on-boardia.com').rstrip('/')
     logo_url = f"{base_url}/logo/leera-wordmark-primary-512.png"
 
     return f"""<!DOCTYPE html>
@@ -120,27 +124,30 @@ def _render_invitation_html(org_name: str, invite_url: str) -> str:
       <td align="center" style="padding:40px 20px;">
 
         <!-- Logo -->
-        <img src="{logo_url}" alt="LEERA" width="120" height="auto" style="display:block;border:0;outline:none;text-decoration:none;margin-bottom:32px;max-width:120px;">
+        <a href="{base_url}" style="text-decoration:none;display:inline-block;margin-bottom:32px;">
+          <img src="{logo_url}" alt="LEERA" width="140" style="display:block;border:0;outline:none;text-decoration:none;max-width:140px;height:auto;">
+        </a>
 
         <!-- Card -->
-        <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="max-width:520px;margin:0 auto;background:{_SURFACE};border:1px solid {_BORDER};border-radius:16px;">
+        <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="max-width:560px;margin:0 auto;background:{_SURFACE};border:1px solid {_BORDER};border-radius:16px;">
           <tr>
-            <td style="padding:40px 32px;">
+            <td style="padding:40px 36px;">
               <p style="margin:0 0 12px;font-size:11px;letter-spacing:1.5px;text-transform:uppercase;color:{_PRIMARY};font-weight:600;">UITNODIGING</p>
-              <h1 style="margin:0 0 20px;font-size:24px;font-weight:700;color:{_TEXT};line-height:1.3;">
-                Welkom bij {safe_org}
+              <h1 style="margin:0 0 24px;font-size:26px;font-weight:700;color:{_TEXT};line-height:1.25;">
+                Je bent uitgenodigd om mee te doen op<br>
+                <span style="color:{_PRIMARY};">{safe_org}</span>
               </h1>
 
-              <p style="margin:0 0 20px;font-size:15px;line-height:1.6;color:{_TEXT_MUTED};">
-                <strong style="color:{_TEXT};">{safe_org}</strong> heeft je uitgenodigd om mee te doen op LEERA — Nakijken Copilot voor het MBO. Klas-niveau feedback op elke pull request, met de docent altijd in de regie.
+              <p style="margin:0 0 24px;font-size:15px;line-height:1.65;color:{_TEXT_MUTED};">
+                <strong style="color:{_TEXT};">{safe_org}</strong> gebruikt LEERA — Nakijken Copilot voor het MBO. Klas-niveau feedback op elke pull request, met de docent altijd in de regie.
               </p>
 
-              <p style="margin:0 0 32px;font-size:15px;line-height:1.6;color:{_TEXT_MUTED};">
-                Klik op de knop hieronder om je account in te stellen.
+              <p style="margin:0 0 28px;font-size:15px;line-height:1.65;color:{_TEXT_MUTED};">
+                Klik op de knop hieronder om je account in te stellen en aan de slag te gaan.
               </p>
 
               <!-- CTA -->
-              <table role="presentation" cellpadding="0" cellspacing="0" border="0" style="margin:0 0 8px;">
+              <table role="presentation" cellpadding="0" cellspacing="0" border="0" style="margin:0 0 12px;">
                 <tr>
                   <td style="border-radius:10px;background:{_PRIMARY};">
                     <a href="{safe_url}" style="display:inline-block;padding:14px 32px;font-size:15px;font-weight:700;color:{_ON_PRIMARY};text-decoration:none;border-radius:10px;">
@@ -150,13 +157,17 @@ def _render_invitation_html(org_name: str, invite_url: str) -> str:
                 </tr>
               </table>
 
-              <p style="margin:32px 0 0;font-size:13px;line-height:1.6;color:{_TEXT_DIM};">
+              <p style="margin:28px 0 0;font-size:13px;line-height:1.6;color:{_TEXT_DIM};">
                 Werkt de knop niet? Plak deze link in je browser:<br>
                 <a href="{safe_url}" style="color:{_PRIMARY};word-break:break-all;text-decoration:underline;">{safe_url}</a>
               </p>
 
-              <hr style="border:0;border-top:1px solid {_BORDER};margin:32px 0;">
+              <hr style="border:0;border-top:1px solid {_BORDER};margin:32px 0 28px;">
 
+              <!-- Sign-off -->
+              <p style="margin:0 0 6px;font-size:14px;line-height:1.5;color:{_TEXT};font-weight:600;">
+                — Het LEERA team
+              </p>
               <p style="margin:0;font-size:12px;line-height:1.5;color:{_TEXT_DIM};">
                 Deze uitnodiging verloopt over 7 dagen. Heb je deze e-mail per ongeluk ontvangen, dan kun je deze veilig negeren.
               </p>
@@ -179,11 +190,11 @@ def _render_invitation_html(org_name: str, invite_url: str) -> str:
 def _render_invitation_text(org_name: str, invite_url: str) -> str:
     """Plain-text fallback for clients that strip or refuse HTML."""
     return (
-        f"Welkom bij {org_name}\n"
+        f"Je bent uitgenodigd om mee te doen op {org_name}\n"
         f"\n"
-        f"{org_name} heeft je uitgenodigd om mee te doen op LEERA — "
-        f"Nakijken Copilot voor het MBO. Klas-niveau feedback op elke "
-        f"pull request, met de docent altijd in de regie.\n"
+        f"{org_name} gebruikt LEERA — Nakijken Copilot voor het MBO. "
+        f"Klas-niveau feedback op elke pull request, met de docent "
+        f"altijd in de regie.\n"
         f"\n"
         f"Klik op deze link om je account in te stellen:\n"
         f"\n"
