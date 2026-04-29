@@ -174,6 +174,18 @@ export const api = {
         update: (id, data) => client.patch(`/users/me/git-connections/${id}/`, data),
         delete: (id) => client.delete(`/users/me/git-connections/${id}/`),
     },
+    github: {
+        // Returns the install URL the frontend should redirect to.
+        // 503 if the App isn't configured server-side.
+        installUrl: () => client.get('/github/install-url/'),
+        // Lists current user's GitHub App installations + repos.
+        installations: () => client.get('/github/installations/'),
+        // Called by /dev-profile/connected after GitHub redirects back
+        // with installation_id in the query string. Upserts the
+        // GitHubInstallation + StudentRepo rows.
+        syncInstallation: (installationId) =>
+            client.post('/github/installations/sync/', { installation_id: installationId }),
+    },
     llmConfig: {
         get: () => client.get('/users/me/llm-config/'),
         save: (data) => client.post('/users/me/llm-config/', data),

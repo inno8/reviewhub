@@ -68,8 +68,21 @@ const learningStyle = ref('');
 // Step 7 – Optional
 const proudCode = ref('');
 const struggledCode = ref('');
-const repoUrl = ref('');
-const connectingRepo = ref(false);
+
+// GitHub App connection state. Loaded on mount alongside the existing
+// dev profile load. Three observable values:
+//   - installUrl: the URL to redirect to when "Install LEERA" is
+//     clicked. null until /api/github/install-url returns.
+//   - installUrlError: human message if the App isn't configured
+//     server-side (env vars missing). Surfaced under the button.
+//   - connectedRepos: existing StudentRepo rows for this user.
+//     Populated from /api/github/installations/. Drives the
+//     already-connected UI state.
+const installUrl = ref<string | null>(null);
+const installUrlError = ref<string | null>(null);
+const connectingGithub = ref(false);
+const connectedRepos = ref<{ full_name: string; default_branch: string }[]>([]);
+const connectedInstallationId = ref<number | null>(null);
 
 // ── Helpers ───────────────────────────────────────────────────────────────
 
@@ -155,9 +168,10 @@ async function loadExistingProfile() {
     if (data.current_goal) currentGoal.value = data.current_goal;
     if (data.learning_style) learningStyle.value = data.learning_style;
 
-    // Step 7 — proud_code/struggled_code are free-text; repoUrl is set in
-    // a separate flow (Settings → GitHub) and isn't part of the profile,
-    // so we don't prefill it here.
+    // Step 7 — proud_code/struggled_code are free-text. The GitHub
+    // App connection is loaded separately via loadGithubState() below;
+    // it lives in a different table (GitHubInstallation) not in the
+    // dev profile, so it persists independently of this form.
     if (data.proud_code) proudCode.value = data.proud_code;
     if (data.struggled_code) struggledCode.value = data.struggled_code;
   } catch (err: any) {
@@ -171,7 +185,76 @@ async function loadExistingProfile() {
   }
 }
 
-onMounted(loadExistingProfile);
+onMounted(async () => {
+  // Run both loads in parallel — they don't depend on each other and
+  // the user shouldn't wait for the GitHub call before seeing the form.
+  await Promise.all([loadExistingProfile(), loadGithubState()]);
+});
+
+// ── GitHub App connection ─────────────────────────────────────────────────
+
+async function loadGithubState() {
+  // Fetch the install URL (so the button has somewhere to send) and
+  // the existing installations + repos in parallel. Both calls fail
+  // gracefully — if /install-url returns 503 the App isn't configured
+  // server-side and we surface the message; if /installations is
+  // empty the user hasn't connected yet (button shows the install CTA).
+  try {
+    const { data } = await api.github.installUrl();
+    if (data?.configured && data?.install_url) {
+      installUrl.value = data.install_url;
+    } else {
+      installUrlError.value =
+        data?.detail ||
+        'GitHub connection is currently unavailable. Contact support.';
+    }
+  } catch (e: any) {
+    if (e?.response?.status === 503) {
+      installUrlError.value =
+        'GitHub App not configured on this server yet. ' +
+        'You can finish onboarding without connecting GitHub.';
+    } else {
+      installUrlError.value =
+        e?.response?.data?.detail || 'Could not reach GitHub connection service.';
+    }
+  }
+
+  try {
+    const { data } = await api.github.installations();
+    const installs = Array.isArray(data) ? data : [];
+    if (installs.length) {
+      connectedInstallationId.value = installs[0].installation_id;
+      connectedRepos.value = installs.flatMap((inst: any) =>
+        (inst.repos || []).map((r: any) => ({
+          full_name: r.full_name,
+          default_branch: r.default_branch,
+        })),
+      );
+    }
+  } catch {
+    // 404 / empty list = first-time user. Not an error.
+  }
+}
+
+function connectGithub() {
+  if (!installUrl.value) return;
+  connectingGithub.value = true;
+  // Open in the same tab so GitHub's redirect lands us back at
+  // /dev-profile/connected without a popup-blocker dance.
+  window.location.href = installUrl.value;
+}
+
+function manageOnGithub() {
+  if (connectedInstallationId.value) {
+    window.open(
+      `https://github.com/settings/installations/${connectedInstallationId.value}`,
+      '_blank',
+      'noopener',
+    );
+  } else {
+    window.open('https://github.com/settings/installations', '_blank', 'noopener');
+  }
+}
 
 // ── Submit ────────────────────────────────────────────────────────────────
 
@@ -200,63 +283,17 @@ async function submit() {
     });
 
     auth.markDevProfileCompleted();
-
-    let batchJobId: number | null = null;
-    if (repoUrl.value.trim()) {
-      batchJobId = await connectPastProject();
-    }
-
-    router.push({
-      name: 'dev-profile-results',
-      query: batchJobId != null ? { job: String(batchJobId) } : {},
-    });
+    // Repo analysis used to be triggered by a hand-pasted GitHub URL
+    // here. Now repos are tied through the LEERA GitHub App install
+    // (handled separately via the Connect button). No batch job kicked
+    // off at submit — calibration data flows from webhook PRs once
+    // the App is installed.
+    router.push({ name: 'dev-profile-results' });
   } catch (err: any) {
     toastMsg.value = 'Could not save profile. Please try again.';
     console.error(err);
   } finally {
     saving.value = false;
-  }
-}
-
-async function connectPastProject(): Promise<number | null> {
-  if (!repoUrl.value.trim()) return null;
-  connectingRepo.value = true;
-  try {
-    // Try the user's own GitHub username from a connected git provider so
-    // the analyzer scopes to their commits only. Falls back to "all
-    // commits in the repo" if no GitHub connection exists yet.
-    let targetUsername: string | undefined;
-    try {
-      const { data: connections } = await api.gitConnections.list();
-      const githubConn = (Array.isArray(connections) ? connections : [])
-        .find((c: any) => c?.provider === 'github' && c?.username);
-      if (githubConn?.username) targetUsername = githubConn.username;
-    } catch {
-      // Non-fatal — analyzer can run without it (just looks at all authors)
-    }
-
-    // "__all__" tells the backend to enumerate every active branch and
-    // pick whichever ones have commits matching the target user. Avoids
-    // hardcoding "main" which fails on repos whose default branch is
-    // "master" / "develop" / etc.
-    const { data: job } = await api.batch.createJob({
-      repo_url: repoUrl.value.trim(),
-      branch: '__all__',
-      max_commits: 20,
-      ...(targetUsername ? { target_github_username: targetUsername } : {}),
-    });
-    toastMsg.value = 'Past project queued for analysis!';
-    return typeof job?.id === 'number' ? job.id : null;
-  } catch (err: any) {
-    const msg =
-      err?.response?.data?.repo_url?.[0] ||
-      err?.response?.data?.branch?.[0] ||
-      err?.response?.data?.detail ||
-      'Repo connection failed — profile saved, analysis skipped.';
-    toastMsg.value = msg;
-    return null;
-  } finally {
-    connectingRepo.value = false;
   }
 }
 
@@ -590,20 +627,61 @@ function skipToEnd() {
             />
           </label>
 
+          <!-- ── Connect GitHub via the LEERA App ── -->
           <div class="p-4 bg-primary/5 rounded-xl border border-primary/15">
             <div class="flex items-center gap-2 mb-3">
-              <span class="material-symbols-outlined text-primary text-lg">folder_open</span>
-              <span class="text-sm font-bold text-on-surface">Connect a past project for analysis</span>
+              <span class="material-symbols-outlined text-primary text-lg">code</span>
+              <span class="text-sm font-bold text-on-surface">Connect your GitHub</span>
             </div>
-            <p class="text-xs text-outline mb-3">
-              Link a GitHub repository and we will analyse your recent commits to generate an accurate baseline.
-            </p>
-            <input
-              v-model="repoUrl"
-              type="url"
-              placeholder="https://github.com/you/your-project"
-              class="w-full bg-surface-container-lowest rounded-xl border border-outline-variant/20 px-4 py-3 text-sm text-on-surface focus:outline-none focus:ring-2 focus:ring-primary/50"
-            />
+
+            <!-- Already-connected state — shows the repos and lets you manage -->
+            <div v-if="connectedRepos.length" class="space-y-3">
+              <p class="text-xs text-on-surface-variant">
+                LEERA can read pull requests and post review comments on
+                <strong class="text-on-surface">{{ connectedRepos.length }}</strong>
+                {{ connectedRepos.length === 1 ? 'repository' : 'repositories' }}.
+              </p>
+              <ul class="bg-surface-container rounded-lg border border-outline-variant/10 max-h-32 overflow-y-auto">
+                <li
+                  v-for="repo in connectedRepos"
+                  :key="repo.full_name"
+                  class="px-3 py-2 border-b border-outline-variant/5 last:border-b-0 flex items-center gap-2"
+                >
+                  <span class="material-symbols-outlined text-xs text-primary">folder_open</span>
+                  <span class="font-mono text-xs text-on-surface">{{ repo.full_name }}</span>
+                </li>
+              </ul>
+              <button
+                type="button"
+                @click="manageOnGithub"
+                class="text-xs text-primary hover:underline inline-flex items-center gap-1"
+              >
+                Add or remove repos on GitHub
+                <span class="material-symbols-outlined text-xs">open_in_new</span>
+              </button>
+            </div>
+
+            <!-- Not yet connected — single CTA that opens GitHub install flow -->
+            <div v-else>
+              <p class="text-xs text-outline mb-3">
+                Install the LEERA GitHub App on the repos you want reviewed.
+                One install covers all your project repos — your teachers
+                never need to be collaborators.
+              </p>
+              <button
+                type="button"
+                @click="connectGithub"
+                :disabled="connectingGithub || !installUrl"
+                class="w-full bg-on-surface text-background px-4 py-3 rounded-lg font-bold text-sm flex items-center justify-center gap-2 hover:opacity-90 transition-opacity active:scale-95 disabled:opacity-50"
+              >
+                <svg v-if="!connectingGithub" width="16" height="16" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
+                  <path d="M12 .297c-6.63 0-12 5.373-12 12 0 5.303 3.438 9.8 8.205 11.385.6.113.82-.258.82-.577 0-.285-.01-1.04-.015-2.04-3.338.724-4.042-1.61-4.042-1.61-.546-1.385-1.335-1.755-1.335-1.755-1.087-.744.084-.729.084-.729 1.205.084 1.838 1.236 1.838 1.236 1.07 1.835 2.809 1.305 3.495.998.108-.776.417-1.305.76-1.605-2.665-.3-5.466-1.332-5.466-5.93 0-1.31.465-2.38 1.235-3.22-.135-.303-.54-1.523.105-3.176 0 0 1.005-.322 3.3 1.23.96-.267 1.98-.4 3-.405 1.02.005 2.04.138 3 .405 2.28-1.552 3.285-1.23 3.285-1.23.645 1.653.24 2.873.12 3.176.765.84 1.23 1.91 1.23 3.22 0 4.61-2.805 5.625-5.475 5.92.42.36.81 1.096.81 2.22 0 1.606-.015 2.896-.015 3.286 0 .315.21.69.825.57C20.565 22.092 24 17.592 24 12.297c0-6.627-5.373-12-12-12"/>
+                </svg>
+                <span v-else class="material-symbols-outlined text-sm animate-spin">progress_activity</span>
+                {{ connectingGithub ? 'Opening GitHub...' : 'Install LEERA on GitHub' }}
+              </button>
+              <p v-if="installUrlError" class="text-xs text-error mt-2">{{ installUrlError }}</p>
+            </div>
           </div>
         </div>
       </template>

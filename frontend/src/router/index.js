@@ -49,6 +49,15 @@ const router = createRouter({
         { path: '/onboard', name: 'onboard', component: OnboardView, meta: { public: true } },
         { path: '/dev-profile-setup', name: 'dev-profile-setup', component: DevProfileSetupView, meta: { skipProfileCheck: true } },
         { path: '/dev-profile/results', name: 'dev-profile-results', component: DevProfileResultsView, meta: { skipProfileCheck: true } },
+        // GitHub App install callback. GitHub redirects the student's
+        // browser here after a successful install; the view reads
+        // installation_id from ?query and POSTs to /api/github/installations/sync.
+        {
+            path: '/dev-profile/connected',
+            name: 'dev-profile-connected',
+            component: () => import('@/views/GitHubConnectedView.vue'),
+            meta: { skipProfileCheck: true },
+        },
         { path: '/', name: 'dashboard', component: DashboardView },
         { path: '/projects', name: 'projects', component: ProjectsView },
         { path: '/findings/:id', name: 'finding-detail', component: FindingDetailView, props: true },
