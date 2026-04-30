@@ -26,6 +26,11 @@ services:
       ALLOWED_HOSTS: "*"
       INTERNAL_API_KEY: ${INTERNAL_API_KEY:-dev-internal-key}
       CORS_ALLOWED_ORIGINS: http://localhost,http://localhost:80,http://frontend
+      # ai-engine reachable via the compose-internal hostname. Used by
+      # rubric_grader, batch.views, and the per-commit Code Review
+      # forwarder in grading.webhooks. Without this, calls fall back to
+      # localhost:8001 which from inside the django container is itself.
+      FASTAPI_URL: http://ai_engine:8001
       # GitHub App credentials. Used by Django to mint installation
       # JWTs (signed with PRIVATE_KEY), exchange them for short-lived
       # installation tokens, clone repos, and post PR comments under
