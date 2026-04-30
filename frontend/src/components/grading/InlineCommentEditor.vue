@@ -90,9 +90,13 @@
           </div>
         </div>
 
-        <!-- Suggested snippet (green accent) -->
+        <!-- Suggested snippet (green accent).
+             Editable for the docent: textarea when editable=true so the
+             docent can rewrite the AI's proposal before sending. The
+             syntax-highlighted shiki version only shows for the student's
+             read-only view (after Send) — see suggestedHtml computed. -->
         <div
-          v-if="hasSuggested"
+          v-if="hasSuggested || editable"
           class="flex flex-col gap-1 min-w-0"
           :data-testid="`suggested-snippet-${index}`"
         >
@@ -103,16 +107,33 @@
           <div
             class="rounded-md border-l-2 border border-emerald-500/50 bg-surface-container-lowest overflow-hidden max-h-[40vh] overflow-y-auto"
           >
-            <div
-              v-if="suggestedHtml"
-              class="inline-code"
-              v-html="suggestedHtml"
-            ></div>
-            <pre
-              v-else
-              class="p-3 text-[13px] leading-relaxed text-on-surface-variant whitespace-pre-wrap break-words m-0"
+            <!-- Editable docent view: textarea pre-filled with the AI's
+                 suggestion. Same monospace styling as the highlighted
+                 version below; live-updates via watch in the script. -->
+            <textarea
+              v-if="editable"
+              :id="`suggested-snippet-${index}`"
+              v-model="draftSuggested"
+              rows="6"
+              class="w-full block bg-transparent border-0 text-[13px] leading-relaxed text-on-surface p-3 resize-y focus:outline-none placeholder:text-outline/60"
               :style="codeFontStyle"
-            >{{ draftSuggested }}</pre>
+              placeholder="Geen suggestie van de LLM. Typ hier je eigen voorstel om de student een fix aan te bieden, of laat leeg om alleen tekstuele feedback te sturen."
+              :data-testid="`suggested-snippet-textarea-${index}`"
+            ></textarea>
+            <!-- Read-only student view: syntax-highlighted html when shiki
+                 produced it, plain pre as fallback. -->
+            <template v-else>
+              <div
+                v-if="suggestedHtml"
+                class="inline-code"
+                v-html="suggestedHtml"
+              ></div>
+              <pre
+                v-else
+                class="p-3 text-[13px] leading-relaxed text-on-surface-variant whitespace-pre-wrap break-words m-0"
+                :style="codeFontStyle"
+              >{{ draftSuggested }}</pre>
+            </template>
           </div>
         </div>
       </div>
