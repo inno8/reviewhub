@@ -79,6 +79,21 @@ class EvaluationListView(generics.ListAPIView):
             except ValueError:
                 pass
 
+        # Hide internal `pending` placeholders. ai-engine creates one
+        # placeholder Evaluation when a push webhook fires, then either
+        # updates it to `completed`/`failed` after analysis OR (current
+        # bug) creates a second row with the result and orphans the
+        # placeholder. Either way, pending rows in the user-facing
+        # timeline show as "no findings, no score" duplicates that
+        # confuse students.
+        #
+        # Admins via ?status=pending can still see them when debugging.
+        # Otherwise the timeline shows only evaluations the AI has
+        # actually finished grading.
+        explicit_status = self.request.query_params.get('status')
+        if not explicit_status:
+            qs = qs.exclude(status='pending')
+
         return qs
 
 
