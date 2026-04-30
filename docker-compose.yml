@@ -26,11 +26,31 @@ services:
       ALLOWED_HOSTS: "*"
       INTERNAL_API_KEY: ${INTERNAL_API_KEY:-dev-internal-key}
       CORS_ALLOWED_ORIGINS: http://localhost,http://localhost:80,http://frontend
+      # GitHub App credentials. Used by Django to mint installation
+      # JWTs (signed with PRIVATE_KEY), exchange them for short-lived
+      # installation tokens, clone repos, and post PR comments under
+      # the App's identity. ai-engine receives the short-lived token
+      # via Django's request payload — it doesn't need these directly.
+      # Webhook signature verification reuses GITHUB_WEBHOOK_SECRET.
+      GITHUB_APP_ID: ${GITHUB_APP_ID:-}
+      GITHUB_APP_CLIENT_ID: ${GITHUB_APP_CLIENT_ID:-}
+      GITHUB_APP_CLIENT_SECRET: ${GITHUB_APP_CLIENT_SECRET:-}
+      GITHUB_APP_SLUG: ${GITHUB_APP_SLUG:-leera}
+      GITHUB_APP_PRIVATE_KEY_PATH: ${GITHUB_APP_PRIVATE_KEY_PATH:-}
+      GITHUB_APP_PRIVATE_KEY: ${GITHUB_APP_PRIVATE_KEY:-}
+      GITHUB_WEBHOOK_SECRET: ${GITHUB_WEBHOOK_SECRET:-}
     ports:
       - "8000:8000"
     depends_on:
       db:
         condition: service_healthy
+    # Mount the host secrets/ folder read-only so the App private key
+    # is reachable at GITHUB_APP_PRIVATE_KEY_PATH=/app/secrets/leera.pem
+    # without baking it into the image. Keeps the .pem out of git and
+    # out of the image layers. Skip this mount if you're using the
+    # inline GITHUB_APP_PRIVATE_KEY env var instead.
+    volumes:
+      - ./secrets:/app/secrets:ro
     command: >
       sh -c "python manage.py migrate --noinput &&
              gunicorn reviewhub.wsgi:application --bind 0.0.0.0:8000 --workers 3"
