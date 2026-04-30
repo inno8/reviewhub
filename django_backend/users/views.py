@@ -1520,7 +1520,7 @@ class OrgMemberRemoveView(APIView):
         from grading.models import CohortMembership
         CohortMembership.objects.filter(
             student=target,
-            cohort__organization=request.user.organization,
+            cohort__org=request.user.organization,
         ).delete()
 
         target.organization = None
@@ -1650,10 +1650,10 @@ class OrgSubscriptionView(APIView):
         from grading.models import Cohort, CohortMembership
 
         active_cohorts = Cohort.objects.filter(
-            organization=org, archived_at__isnull=True,
+            org=org, archived_at__isnull=True,
         )
         cohort_count = active_cohorts.count()
-        total_cohort_count = Cohort.objects.filter(organization=org).count()
+        total_cohort_count = Cohort.objects.filter(org=org).count()
 
         seat_count = CohortMembership.objects.filter(
             cohort__in=active_cohorts,
