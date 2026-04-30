@@ -107,9 +107,14 @@
           <div
             v-for="s in filteredSessions"
             :key="s.session_id"
-            @click="openSession(s.session_id)"
+            @click="openSession(s.session_id, s.state)"
             :data-testid="`pr-card-${s.session_id}`"
-            :class="s.is_superseded ? 'opacity-60' : ''"
+            :class="[
+              s.is_superseded ? 'opacity-60' : '',
+              viewerIsStudent && !isVisibleToStudent(s.state)
+                ? 'cursor-not-allowed'
+                : 'cursor-pointer',
+            ]"
           >
             <div v-if="s.iteration_number > 1 || s.is_superseded" class="flex items-center gap-2 mb-1">
               <span class="text-[11px] uppercase tracking-widest text-on-surface-variant">
@@ -120,7 +125,39 @@
                 class="text-[10px] uppercase tracking-widest text-outline bg-surface-container rounded px-1.5 py-0.5"
               >vervangen</span>
             </div>
+
+            <!-- Student-side wachten-op-feedback wrapper.
+                 Visible "ja, je PR is binnen" affordance + locked card so
+                 the student can't open the docent's draft mid-review. -->
+            <div
+              v-if="viewerIsStudent && !isVisibleToStudent(s.state)"
+              class="relative pointer-events-none select-none"
+            >
+              <div class="opacity-50 grayscale">
+                <PRCard
+                  :pr-number="s.pr_number"
+                  :pr-title="s.pr_title"
+                  :repo-full-name="s.repo_full_name"
+                  :state="s.state"
+                  :submitted-at="s.submitted_at"
+                  :graded-at="s.graded_at"
+                  :rubric-score-avg="null"
+                  :course-name="s.course_name"
+                />
+              </div>
+              <div class="absolute inset-0 flex items-center justify-center">
+                <div class="bg-surface-container-low border border-outline-variant/30 rounded-lg px-4 py-2 shadow-lg flex items-center gap-2">
+                  <span class="material-symbols-outlined text-base text-primary">hourglass_empty</span>
+                  <span class="text-xs font-semibold text-on-surface">
+                    {{ studentBadgeLabel(s.state) }}
+                  </span>
+                </div>
+              </div>
+            </div>
+
+            <!-- Default card (teacher view, or student's posted sessions). -->
             <PRCard
+              v-else
               :pr-number="s.pr_number"
               :pr-title="s.pr_title"
               :repo-full-name="s.repo_full_name"
@@ -191,19 +228,60 @@ const studentId = computed(() => {
   return Number(user.value?.id ?? 0);
 });
 
+// True when the authed user is viewing their own PR list (the /my/prs route
+// without a :id param). Teachers viewing a student via /grading/students/:id/prs
+// see everything; students see only sessions a docent has actually sent.
+//
+// Student gate:
+//   - Cards for non-`posted` sessions render in a disabled state with a
+//     "Wachten op feedback van docent" badge — student knows LEERA noticed
+//     their PR but hasn't received feedback yet.
+//   - Clicking a non-`posted` card does nothing for students.
+//   - The state filter chip strip is replaced with student-friendly labels.
+//
+// We deliberately don't hide the rows. The student should see "yes, my push
+// arrived" — that's reassuring even when the docent hasn't reviewed yet.
+const viewerIsStudent = computed(() => {
+  const fromRoute = Number(route.params.id);
+  return !Number.isFinite(fromRoute) || fromRoute <= 0;
+});
+
 const student = ref<StudentInfo | null>(null);
 const sessions = ref<SessionEntry[]>([]);
 const loading = ref(false);
 const error = ref<string | null>(null);
 
-const stateChips: Array<{ label: string; value: string | null }> = [
-  { label: 'Alles', value: null },
-  { label: 'In afwachting', value: 'pending' },
-  { label: 'Klaar voor review', value: 'drafted' },
-  { label: 'Bezig met nakijken', value: 'reviewing' },
-  { label: 'Verstuurd', value: 'posted' },
-];
+// Teachers see the full lifecycle. Students only see two buckets:
+// "Wacht op feedback" (everything pre-posted) and "Feedback ontvangen" (posted).
+// We don't expose the internal state machine to students — they don't need
+// to know the difference between "drafted" and "reviewing".
+const stateChips = computed<Array<{ label: string; value: string | null }>>(() => {
+  if (viewerIsStudent.value) {
+    return [
+      { label: 'Alles', value: null },
+      { label: 'Wacht op feedback', value: '__pending_for_student' },
+      { label: 'Feedback ontvangen', value: 'posted' },
+    ];
+  }
+  return [
+    { label: 'Alles', value: null },
+    { label: 'In afwachting', value: 'pending' },
+    { label: 'Klaar voor review', value: 'drafted' },
+    { label: 'Bezig met nakijken', value: 'reviewing' },
+    { label: 'Verstuurd', value: 'posted' },
+  ];
+});
 const selectedState = ref<string | null>(null);
+
+// Student-side helpers.
+function isVisibleToStudent(state: string): boolean {
+  return state === 'posted';
+}
+function studentBadgeLabel(state: string): string {
+  if (state === 'posted') return 'Feedback ontvangen';
+  if (state === 'failed') return 'Probleem bij review — docent kijkt ernaar';
+  return 'Wacht op feedback van docent';
+}
 const sortDesc = ref(true);
 
 function toggleSort() {
@@ -257,7 +335,12 @@ watch(studentId, load);
 const filteredSessions = computed(() => {
   let list = sessions.value.slice();
   if (selectedState.value) {
-    list = list.filter(s => s.state === selectedState.value);
+    if (selectedState.value === '__pending_for_student') {
+      // Student-side virtual filter: everything that's NOT posted yet.
+      list = list.filter(s => !isVisibleToStudent(s.state));
+    } else {
+      list = list.filter(s => s.state === selectedState.value);
+    }
   }
   list.sort((a, b) => {
     const at = a.submitted_at ? new Date(a.submitted_at).getTime() : 0;
@@ -271,7 +354,11 @@ function goBack() {
   router.push({ name: 'grading-inbox' });
 }
 
-function openSession(sessionId: number) {
+function openSession(sessionId: number, state: string) {
+  // Students can only open sessions a docent has sent. Pre-`posted` sessions
+  // are visible (so they can see "ja, mijn push is binnengekomen") but
+  // non-clickable — clicking a "wacht op feedback" card does nothing.
+  if (viewerIsStudent.value && !isVisibleToStudent(state)) return;
   router.push({ name: 'grading-session-detail', params: { id: sessionId } });
 }
 </script>

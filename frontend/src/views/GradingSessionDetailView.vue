@@ -103,9 +103,40 @@
             De diff is afgekapt voor de AI-beoordeling. Controleer zorgvuldig.
           </div>
 
-          <!-- Auto-draft loading state (PENDING auto-fires, DRAFTING is in-progress) -->
+          <!-- Student-side gate: students must not see the docent's draft
+               during drafted / reviewing / sending states. They get a clear
+               "wachten op feedback" placeholder until the docent hits Send
+               and the session lands in `posted`. The list view also blocks
+               navigation to non-posted sessions, but a student could still
+               URL-hop here, so we gate at the detail level too. -->
           <div
             v-if="
+              readOnlyStudent
+                && !['posted', 'partial', 'discarded', 'failed', 'pending', 'drafting'].includes(store.activeSession.state)
+            "
+            class="glass-panel p-10 rounded-xl flex flex-col items-center justify-center gap-4 text-center"
+            data-testid="student-waiting-for-feedback"
+          >
+            <span
+              class="material-symbols-rounded text-5xl text-primary"
+              aria-hidden="true"
+            >hourglass_empty</span>
+            <div class="flex flex-col gap-2 max-w-md">
+              <p class="text-on-surface font-semibold text-lg">
+                Wacht op feedback van docent
+              </p>
+              <p class="text-sm text-on-surface-variant">
+                Je PR is binnengekomen en LEERA heeft een concept-feedback opgesteld voor je docent. Zodra je docent de feedback heeft nagekeken en verstuurd, zie je hem hier.
+              </p>
+              <p class="text-xs text-outline mt-2">
+                Status: {{ store.activeSession.state === 'drafted' ? 'klaar voor docent-review' : 'docent kijkt na' }}
+              </p>
+            </div>
+          </div>
+
+          <!-- Auto-draft loading state (PENDING auto-fires, DRAFTING is in-progress) -->
+          <div
+            v-else-if="
               store.activeSession.state === 'pending'
                 || store.activeSession.state === 'drafting'
             "
