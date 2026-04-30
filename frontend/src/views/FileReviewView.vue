@@ -445,28 +445,30 @@ const optimizedLineCount = computed(() =>
   mergedOptimizedText.value ? mergedOptimizedText.value.split(/\n/).length : 0,
 );
 
-/** Aligned side-by-side diff: full original vs merged optimized, inline char highlights. */
+/** Side-by-side diff of just the LLM's snippets (original_code vs
+ * suggested_code), no file-merge gymnastics.
+ *
+ * The earlier approach merged suggested_code back into the full file at
+ * a heuristic line range, then aligned that synthesized file against the
+ * original to produce a proper diff. Worked when the LLM returned
+ * accurate line_start/line_end, broke otherwise — which is most of the
+ * time with Haiku, which guesses line numbers. The merge would slot a
+ * 9-line suggestion in at the wrong location, making the Optimized
+ * panel show entire methods that the finding wasn't even about.
+ *
+ * Direct snippet rendering: the LLM said "this code → that code".
+ * That's what students should see. No reconstruction, no file context
+ * gymnastics. Worse for "see this in context of the file" but
+ * dramatically better for "is the suggested fix actually accurate".
+ */
 const diffView = computed(() => {
-  const oldStr = fileContent.value || '';
-  const newStr = mergedOptimizedText.value || '';
-  const selectedId = selectedFindingId.value;
-  const { rows, removalRows, additionRows } = buildSideBySideDiff(oldStr, newStr);
+  const sel = selectedFinding.value;
+  if (!sel) return { rows: [] as SideBySideRow[], removalRows: 0, additionRows: 0 };
 
-  const annotated = rows.map((row: SideBySideRow) => {
-    if (row.leftTint !== 'none') return row;
-    const ln = row.leftNum;
-    if (ln == null) return row;
-    const idx = ln - 1;
-    for (const [findingId, range] of findingLineRanges.value.entries()) {
-      if (findingId === selectedId) continue;
-      if (idx >= range.start && idx <= range.end) {
-        return { ...row, leftTint: 'other-issue' as const };
-      }
-    }
-    return row;
-  });
-
-  return { rows: annotated, removalRows, additionRows };
+  const origStr = (sel.originalCode || '').replace(/\r\n/g, '\n');
+  const suggStr = (sel.suggestedCode || '').replace(/\r\n/g, '\n');
+  const { rows, removalRows, additionRows } = buildSideBySideDiff(origStr, suggStr);
+  return { rows, removalRows, additionRows };
 });
 
 /** Row-level tint is in scoped CSS (`.diff-tr-*`); cells only get a left accent bar. */
@@ -1047,17 +1049,6 @@ function goBack() {
 
                 <!-- Actions -->
                 <div class="flex flex-col gap-3 items-end">
-                  <label class="flex items-center gap-2 cursor-pointer">
-                    <input
-                      type="checkbox"
-                      :checked="!!selectedFinding.markedUnderstood"
-                      :disabled="actionLoading"
-                      class="h-4 w-4 rounded border-outline-variant bg-surface-container text-primary"
-                      @change="markUnderstood"
-                    />
-                    <span class="text-sm text-on-surface-variant">Mark as understood</span>
-                  </label>
-                  
                   <div class="flex gap-2">
                     <button
                       class="px-4 py-2 bg-primary/10 text-primary text-sm font-bold rounded-lg hover:bg-primary/20 transition-all flex items-center gap-2"
