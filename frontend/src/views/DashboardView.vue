@@ -46,14 +46,15 @@ const adminTeam = ref<any>(null);
 
 async function loadAdminTeam() {
   try {
-    const axios = (await import('axios')).default;
-    const token = localStorage.getItem('reviewhub_token');
-    const { data } = await axios.get(
-      `${import.meta.env.VITE_API_URL}/skills/dashboard/admin-team/`,
-      { headers: token ? { Authorization: `Bearer ${token}` } : {} }
-    );
+    const { data } = await api.dashboard.adminTeam();
     adminTeam.value = data;
-  } catch { adminTeam.value = null; }
+  } catch (e) {
+    // Surface to console so DevTools shows the failure mode (401 / 500 / etc.).
+    // The earlier silent catch hid stale-token issues — dashboard would render
+    // empty with no signal that anything went wrong.
+    console.error('loadAdminTeam failed:', e);
+    adminTeam.value = null;
+  }
 }
 
 async function loadAdminData() {
@@ -112,17 +113,18 @@ async function loadDevHome(projectId?: number) {
   if (authStore.isAdmin) return;
   devHomeLoading.value = true;
   try {
-    const params: any = {};
-    if (projectId) params.project = projectId;
-    const axios = (await import('axios')).default;
-    const token = localStorage.getItem('reviewhub_token');
-    const { data } = await axios.get(
-      `${import.meta.env.VITE_API_URL}/skills/dashboard/developer-home/`,
-      { params, headers: token ? { Authorization: `Bearer ${token}` } : {} }
-    );
+    const { data } = await api.dashboard.developerHome(projectId);
     devHome.value = data;
-  } catch { devHome.value = null; }
-  finally { devHomeLoading.value = false; }
+  } catch (e) {
+    // Surface to console — bare axios + silent catch was masking 401s when
+    // the access token expired (~15 min after login). Dashboard appeared
+    // empty even though the backend had real data. The shared client now
+    // handles the silent refresh and retries the request automatically.
+    console.error('loadDevHome failed:', e);
+    devHome.value = null;
+  } finally {
+    devHomeLoading.value = false;
+  }
 }
 
 function setProjectFilter(projectId: number | null) {

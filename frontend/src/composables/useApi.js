@@ -220,6 +220,14 @@ export const api = {
         skills: (projectId, userId) => client.get('/skills/dashboard/skills/', { params: { project: projectId, user: userId } }),
         progress: (projectId, weeks, userId) => client.get('/skills/dashboard/progress/', { params: { project: projectId, weeks, user: userId } }),
         recent: (projectId, limit, userId) => client.get('/skills/dashboard/recent/', { params: { project: projectId, limit, user: userId } }),
+        // Unified developer home payload (level, skills, priorities, patterns,
+        // severity counts, improvement %) used by the student dashboard.
+        // Use the shared client so the 401→refresh interceptor fires; the
+        // older bare-axios call in DashboardView silently caught 401s and
+        // showed an empty dashboard whenever the access token was stale.
+        developerHome: (projectId) => client.get('/skills/dashboard/developer-home/', { params: { project: projectId } }),
+        // Teacher / admin team aggregate. Same reasoning as above.
+        adminTeam: () => client.get('/skills/dashboard/admin-team/'),
     },
     notifications: {
         list: (limit) => client.get('/notifications/', { params: { limit } }),
