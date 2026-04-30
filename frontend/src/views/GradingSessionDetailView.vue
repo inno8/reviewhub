@@ -134,20 +134,63 @@
             </div>
           </div>
 
-          <!-- Auto-draft loading state (PENDING auto-fires, DRAFTING is in-progress) -->
+          <!-- Auto-draft loading state (PENDING auto-fires, DRAFTING is in-progress).
+               Code-scanner aesthetic: monospace pseudo-code with a horizontal
+               scan beam sweeping down. No card, no background — just sits in
+               the middle of the page so it feels like Leera is literally
+               reading the diff in real time. -->
           <div
             v-else-if="
               store.activeSession.state === 'pending'
                 || store.activeSession.state === 'drafting'
             "
-            class="glass-panel p-10 rounded-xl flex flex-col items-center justify-center gap-4 text-center"
+            class="flex flex-col items-center justify-center gap-8 py-24"
             data-testid="draft-loading"
           >
-            <span
-              class="material-symbols-rounded text-5xl text-primary animate-spin"
-              aria-hidden="true"
-            >progress_activity</span>
-            <div class="flex flex-col gap-1.5 max-w-md">
+            <div class="leera-scanner" aria-hidden="true">
+              <div class="leera-scanner__line"></div>
+              <div class="leera-scanner__beam"></div>
+              <div class="leera-scanner__code">
+                <span class="leera-line">
+                  <span class="t-kw">class</span>
+                  <span class="t-cls">BookController</span>
+                  <span class="t-pn">{</span>
+                </span>
+                <span class="leera-line">
+                  <span class="i-1"></span>
+                  <span class="t-kw">public function</span>
+                  <span class="t-fn">index</span><span class="t-pn">()</span>
+                  <span class="t-pn">{</span>
+                </span>
+                <span class="leera-line">
+                  <span class="i-2"></span>
+                  <span class="t-var">$search</span>
+                  <span class="t-op">=</span>
+                  <span class="t-fn">request</span><span class="t-pn">(</span><span class="t-str">'search'</span><span class="t-pn">);</span>
+                </span>
+                <span class="leera-line">
+                  <span class="i-2"></span>
+                  <span class="t-var">$books</span>
+                  <span class="t-op">=</span>
+                  <span class="t-cls">DB</span><span class="t-pn">::</span><span class="t-fn">select</span><span class="t-pn">(...);</span>
+                </span>
+                <span class="leera-line">
+                  <span class="i-2"></span>
+                  <span class="t-kw">return</span>
+                  <span class="t-fn">view</span><span class="t-pn">(</span><span class="t-str">'books.index'</span><span class="t-pn">,</span>
+                  <span class="t-pn">[...]);</span>
+                </span>
+                <span class="leera-line">
+                  <span class="i-1"></span>
+                  <span class="t-pn">}</span>
+                </span>
+                <span class="leera-line">
+                  <span class="t-pn">}</span>
+                </span>
+              </div>
+            </div>
+
+            <div class="flex flex-col gap-1.5 max-w-md text-center">
               <p class="text-on-surface font-semibold">
                 Leera analyseert deze PR… dit duurt ongeveer 30 seconden.
               </p>
@@ -990,3 +1033,111 @@ function stateBadgeClass(state: SessionState): string {
   }
 }
 </script>
+
+<style scoped>
+/* Code-scanner loader. A faux PHP snippet with a horizontal beam sweeping
+   top→bottom and back. The beam is a translucent gradient bar that paints
+   over the code with a subtle glow, simulating Leera scanning the diff. */
+
+.leera-scanner {
+  position: relative;
+  font-family: ui-monospace, SFMono-Regular, "SF Mono", Menlo, Monaco, Consolas, monospace;
+  font-size: 13px;
+  line-height: 1.7;
+  color: rgba(255, 255, 255, 0.18);
+  width: min(440px, 90vw);
+  padding: 8px 16px;
+  user-select: none;
+}
+
+.leera-scanner__code {
+  display: flex;
+  flex-direction: column;
+}
+
+.leera-line {
+  white-space: pre;
+}
+
+/* Faux indentation widths */
+.i-1 { display: inline-block; width: 1ch; }
+.i-2 { display: inline-block; width: 2ch; }
+
+/* Token colors — all desaturated since the focus is the beam, not legibility */
+.t-kw  { color: rgba(180, 160, 230, 0.45); }
+.t-cls { color: rgba(180, 220, 240, 0.45); }
+.t-fn  { color: rgba(220, 200, 160, 0.45); }
+.t-var { color: rgba(220, 220, 220, 0.35); }
+.t-str { color: rgba(180, 230, 180, 0.45); }
+.t-op  { color: rgba(220, 220, 220, 0.35); }
+.t-pn  { color: rgba(220, 220, 220, 0.25); }
+
+/* The scanning beam — sweeps down then back up forever. */
+.leera-scanner__beam {
+  position: absolute;
+  left: 0;
+  right: 0;
+  height: 28px;
+  pointer-events: none;
+  background: linear-gradient(
+    180deg,
+    transparent 0%,
+    rgba(120, 180, 255, 0.0) 20%,
+    rgba(120, 180, 255, 0.18) 50%,
+    rgba(120, 180, 255, 0.0) 80%,
+    transparent 100%
+  );
+  filter: blur(0.5px);
+  animation: leera-scan 2.4s ease-in-out infinite;
+}
+
+/* A 1-pixel bright horizontal line at the center of the beam — the
+   "laser" the eye locks onto. */
+.leera-scanner__line {
+  position: absolute;
+  left: 0;
+  right: 0;
+  height: 1px;
+  pointer-events: none;
+  background: linear-gradient(
+    90deg,
+    transparent 0%,
+    rgba(150, 200, 255, 0.9) 30%,
+    rgba(150, 200, 255, 0.9) 70%,
+    transparent 100%
+  );
+  box-shadow: 0 0 12px rgba(150, 200, 255, 0.7);
+  animation: leera-scan-line 2.4s ease-in-out infinite;
+}
+
+@keyframes leera-scan {
+  0%   { top: -28px; opacity: 0; }
+  10%  { opacity: 1; }
+  50%  { top: calc(100% - 0px); opacity: 1; }
+  60%  { opacity: 1; }
+  100% { top: -28px; opacity: 0; }
+}
+
+@keyframes leera-scan-line {
+  0%   { top: 0; opacity: 0; }
+  10%  { opacity: 1; }
+  50%  { top: calc(100% - 1px); opacity: 1; }
+  60%  { opacity: 1; }
+  100% { top: 0; opacity: 0; }
+}
+
+/* When the beam passes over a code line, briefly tint the line — adds
+   the sense that Leera is "reading" each line. */
+.leera-scanner__code .leera-line {
+  position: relative;
+  z-index: 1;
+}
+
+/* Reduce motion respect */
+@media (prefers-reduced-motion: reduce) {
+  .leera-scanner__beam,
+  .leera-scanner__line {
+    animation-duration: 6s;
+  }
+}
+</style>
