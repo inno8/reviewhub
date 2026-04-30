@@ -18,4 +18,15 @@ RUN python manage.py collectstatic --noinput 2>/dev/null || true
 
 EXPOSE 8000
 
-CMD ["gunicorn", "reviewhub.wsgi:application", "--bind", "0.0.0.0:8000", "--workers", "3"]
+# --timeout 180 = give LLM-bound requests up to 3 minutes before the
+# worker is killed. Default gunicorn timeout is 30s; rubric grading on a
+# real PR diff regularly takes 30-60s end-to-end (diff fetch + Sonnet 4
+# inference + Django persist), and the response handler that flips
+# GradingSession from drafting → drafted runs AFTER the LLM returns.
+# At 30s, gunicorn kills the worker mid-LLM-call, the response never
+# reaches Django, and the session is stranded in `drafting` forever.
+#
+# 180s is generous headroom; it's a tactical fix until v1.1 moves the
+# grading kickoff into a Celery/RQ background worker, after which this
+# timeout becomes irrelevant (HTTP requests will return in <1s).
+CMD ["gunicorn", "reviewhub.wsgi:application", "--bind", "0.0.0.0:8000", "--workers", "3", "--timeout", "180"]

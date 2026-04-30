@@ -56,9 +56,12 @@ services:
     # inline GITHUB_APP_PRIVATE_KEY env var instead.
     volumes:
       - ./secrets:/app/secrets:ro
+    # --timeout 180 mirrors the Dockerfile CMD — see comment there for why.
+    # tl;dr: LLM-bound requests can take 30-60s; default gunicorn 30s timeout
+    # kills the worker mid-flight and strands GradingSessions in `drafting`.
     command: >
       sh -c "python manage.py migrate --noinput &&
-             gunicorn reviewhub.wsgi:application --bind 0.0.0.0:8000 --workers 3"
+             gunicorn reviewhub.wsgi:application --bind 0.0.0.0:8000 --workers 3 --timeout 180"
 
   ai_engine:
     build: ./ai_engine
