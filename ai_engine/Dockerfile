@@ -43,4 +43,7 @@ COPY . .
 
 EXPOSE 8001
 
-CMD ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8001"]
+# Entry point lives at top-level main.py (which imports from app/api/*).
+# Earlier scaffolds had main.py inside app/, hence the legacy "app.main:app"
+# reference — that path no longer exists and breaks ImportError-on-boot.
+CMD ["uvicorn", "main:app", "--host", "0.0.0.0", "--port", "8001"]
