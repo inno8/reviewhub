@@ -21,11 +21,22 @@ class Command(BaseCommand):
         "drafted before the skill_binding feature shipped)."
     )
 
+    # State filter default. Originally drafted-only, but in practice the
+    # binding is also useful for sessions that have already moved on
+    # (reviewing, partial, posted) — they all have ai_draft_scores and
+    # may have been drafted before a Skill seed change made the binding
+    # finally succeed. Empty string = all states with scores.
+    DEFAULT_STATES = "drafted,reviewing,partial,posted"
+
     def add_arguments(self, parser):
         parser.add_argument(
             "--state",
-            default=GradingSession.State.DRAFTED,
-            help="Session state to target (default: drafted).",
+            default=self.DEFAULT_STATES,
+            help=(
+                "Comma-separated list of session states to target. "
+                f"Default: {self.DEFAULT_STATES}. Pass --state=all to "
+                "ignore state and bind every session with scores."
+            ),
         )
         parser.add_argument(
             "--dry-run",
@@ -34,15 +45,19 @@ class Command(BaseCommand):
         )
 
     def handle(self, *args, **opts):
-        state = opts["state"]
+        state_arg = (opts["state"] or "").strip().lower()
         dry = opts["dry_run"]
 
-        qs = GradingSession.objects.filter(state=state).exclude(
-            ai_draft_scores={}
+        qs = GradingSession.objects.exclude(ai_draft_scores={}).exclude(
+            ai_draft_scores__isnull=True,
         )
+        if state_arg and state_arg != "all":
+            states = [s.strip() for s in state_arg.split(",") if s.strip()]
+            qs = qs.filter(state__in=states)
+
         total_sessions = qs.count()
         self.stdout.write(
-            f"Found {total_sessions} session(s) with state={state} "
+            f"Found {total_sessions} session(s) with state={state_arg or 'all'} "
             f"and non-empty ai_draft_scores."
         )
 

@@ -157,9 +157,47 @@ class Command(BaseCommand):
                 action = 'Created' if created else 'Updated'
                 self.stdout.write(f'    {action} skill: {skill.name}')
         
+        # ── Rubric-criterion Skills ──────────────────────────────────────
+        # The PR-level rubric grades against 8 category-level criteria
+        # (security, code_quality, etc. — see grading.services.skill_binding).
+        # bind_rubric_to_observations does Skill.objects.get(slug=criterion_id)
+        # — without these 8 rows, every PR draft binds 0 observations and
+        # the teacher's "Eindniveau" / "Per criterium" widgets stay empty.
+        # These are intentionally separate from the per-commit Skill granularity
+        # above (clean_code, input_validation, etc.) — they're aggregates that
+        # match the rubric's eight categories one-to-one.
+        rubric_criterion_skills = [
+            ('security',       'Beveiliging',      'security'),
+            ('code_quality',   'Code Kwaliteit',   'code_quality'),
+            ('architecture',   'Architectuur',     'design_patterns'),
+            ('testing',        'Testen',           'testing'),
+            ('performance',    'Performance',      'backend'),
+            ('documentation',  'Documentatie',     'code_quality'),
+            ('validation',     'Validatie',        'security'),
+            ('best_practices', 'Best Practices',   'code_quality'),
+        ]
+        for slug, name, cat_slug in rubric_criterion_skills:
+            category = SkillCategory.objects.filter(slug=cat_slug).first()
+            if not category:
+                self.stdout.write(self.style.WARNING(
+                    f'  rubric skill {slug}: category {cat_slug!r} not found, skipping'
+                ))
+                continue
+            skill, created = Skill.objects.update_or_create(
+                slug=slug,
+                defaults={
+                    'category': category,
+                    'name': name,
+                    'description': f'Rubric criterium: {name}',
+                    'order': 100,  # sort after per-commit skills in the radar
+                },
+            )
+            action = 'Created' if created else 'Updated'
+            self.stdout.write(f'  {action} rubric skill: {skill.slug} → {category.name}')
+
         total_categories = SkillCategory.objects.count()
         total_skills = Skill.objects.count()
-        
+
         self.stdout.write(self.style.SUCCESS(
             f'\nDone! {total_categories} categories, {total_skills} skills.'
         ))
