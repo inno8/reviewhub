@@ -247,7 +247,16 @@ def forward_push_to_ai_engine(
         )
         return {"forwarded": False, "reason": "no_project_match", "repo_url": repo_html_url}
 
-    ai_engine_url = getattr(settings, "AI_ENGINE_URL", "http://localhost:8001")
+    # Resolve ai-engine URL. AI_ENGINE_URL is honored if set (legacy
+    # name), otherwise fall back to FASTAPI_URL which is what every
+    # other call site uses (rubric_grader, batch.views, projects.models).
+    # Without this fallback the per-commit Code Review fan-out reaches
+    # localhost:8001 from inside the django container — i.e. itself —
+    # and gets ECONNREFUSED, even when the rest of the stack works.
+    ai_engine_url = (
+        getattr(settings, "AI_ENGINE_URL", None)
+        or getattr(settings, "FASTAPI_URL", "http://localhost:8001")
+    )
     forward_url = f"{ai_engine_url.rstrip('/')}/api/v1/webhook/github/{project_id}"
 
     # Headers: forward the signature verbatim so ai_engine's HMAC check
