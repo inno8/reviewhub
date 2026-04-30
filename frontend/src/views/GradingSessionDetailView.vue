@@ -134,44 +134,19 @@
             </div>
           </div>
 
-          <!-- Auto-draft loading state (PENDING auto-fires, DRAFTING is in-progress).
-               Skeleton-shimmer aesthetic: a faux list of "findings being
-               written" — two rows with a square icon block + title/subtitle
-               lines, each pulsing with a diagonal shimmer sweep. Sits in
-               the middle of the page, no card, no background. Reads as
-               "Leera is drafting your feedback right now". -->
+          <!-- Auto-draft loading state. Centered spinner, no card, no background. -->
           <div
             v-else-if="
               store.activeSession.state === 'pending'
                 || store.activeSession.state === 'drafting'
             "
-            class="flex flex-col items-center justify-center gap-8 py-24"
+            class="flex flex-col items-center justify-center gap-4 py-24"
             data-testid="draft-loading"
           >
-            <div class="leera-skel" aria-hidden="true">
-              <div class="leera-skel__row">
-                <div class="leera-skel__icon"></div>
-                <div class="leera-skel__lines">
-                  <div class="leera-skel__line leera-skel__line--lg"></div>
-                  <div class="leera-skel__line leera-skel__line--md"></div>
-                </div>
-              </div>
-              <div class="leera-skel__row">
-                <div class="leera-skel__icon"></div>
-                <div class="leera-skel__lines">
-                  <div class="leera-skel__line leera-skel__line--md"></div>
-                  <div class="leera-skel__line leera-skel__line--lg"></div>
-                </div>
-              </div>
-              <div class="leera-skel__row">
-                <div class="leera-skel__icon"></div>
-                <div class="leera-skel__lines">
-                  <div class="leera-skel__line leera-skel__line--lg"></div>
-                  <div class="leera-skel__line leera-skel__line--sm"></div>
-                </div>
-              </div>
-            </div>
-
+            <span
+              class="material-symbols-rounded text-5xl text-primary animate-spin"
+              aria-hidden="true"
+            >progress_activity</span>
             <div class="flex flex-col gap-1.5 max-w-md text-center">
               <p class="text-on-surface font-semibold">
                 Leera analyseert deze PR… dit duurt ongeveer 30 seconden.
@@ -1016,85 +991,3 @@ function stateBadgeClass(state: SessionState): string {
 }
 </script>
 
-<style scoped>
-/* Skeleton-shimmer loader. Three rows, each: square icon + 2 lines of
-   varying widths. A diagonal shimmer sweep moves left→right across the
-   whole block, giving the "content is being drafted" feel. No card, no
-   background — sits transparent on the page. */
-
-.leera-skel {
-  position: relative;
-  display: flex;
-  flex-direction: column;
-  gap: 18px;
-  width: min(360px, 80vw);
-  overflow: hidden;
-  user-select: none;
-  padding: 4px 0;
-}
-
-.leera-skel__row {
-  display: flex;
-  align-items: center;
-  gap: 14px;
-}
-
-.leera-skel__icon {
-  flex: 0 0 auto;
-  width: 38px;
-  height: 38px;
-  border-radius: 8px;
-  background: rgba(255, 255, 255, 0.06);
-}
-
-.leera-skel__lines {
-  flex: 1 1 auto;
-  display: flex;
-  flex-direction: column;
-  gap: 6px;
-  min-width: 0;
-}
-
-.leera-skel__line {
-  height: 12px;
-  border-radius: 6px;
-  background: rgba(255, 255, 255, 0.06);
-}
-
-.leera-skel__line--lg { width: 80%; }
-.leera-skel__line--md { width: 55%; }
-.leera-skel__line--sm { width: 35%; }
-
-/* Shimmer sweep — a diagonal gradient slab moves L→R over the whole
-   skeleton. We layer it as an absolute pseudo-element on the container
-   so it brightens every block proportionally as it passes. */
-.leera-skel::before {
-  content: "";
-  position: absolute;
-  inset: 0;
-  background: linear-gradient(
-    100deg,
-    transparent 0%,
-    transparent 35%,
-    rgba(255, 255, 255, 0.08) 50%,
-    transparent 65%,
-    transparent 100%
-  );
-  background-size: 200% 100%;
-  background-position: -100% 0;
-  animation: leera-shimmer 1.6s ease-in-out infinite;
-  pointer-events: none;
-}
-
-@keyframes leera-shimmer {
-  0%   { background-position: -100% 0; }
-  100% { background-position: 100% 0; }
-}
-
-/* Respect reduced motion */
-@media (prefers-reduced-motion: reduce) {
-  .leera-skel::before {
-    animation-duration: 4s;
-  }
-}
-</style>
