@@ -53,6 +53,20 @@ async function handleSubmit() {
     auth.setUser(data.user);
     success.value = true;
 
+    // Backend sets `returning: true` when the user previously existed
+    // and had Submissions — typical case is being re-added after a
+    // school-admin removal. Stash a flag in localStorage so the
+    // dashboard can show "Welkom terug" once instead of the default
+    // first-time copy.
+    if (data.returning) {
+      try {
+        localStorage.setItem(
+          'leera.welcomeBack',
+          JSON.stringify({ orgName: orgName.value, ts: Date.now() }),
+        );
+      } catch { /* localStorage may be disabled in private mode */ }
+    }
+
     // Role-aware landing:
     //   teacher → /grading (their primary surface)
     //   admin   → /org-dashboard

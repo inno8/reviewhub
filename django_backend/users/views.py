@@ -1379,9 +1379,19 @@ class AcceptInviteView(APIView):
             invitation.save(update_fields=['status'])
             return Response({'token': 'This invitation has expired.'}, status=400)
 
-        # Check if user already exists (could have registered separately)
+        # Check if user already exists (could have registered separately
+        # OR could have been previously removed from this/another org —
+        # in which case is_active is False and login is blocked).
         existing_user = User.objects.filter(email__iexact=invitation.email).first()
+        was_returning = False  # signals the welcome-back toast on the dashboard
         if existing_user:
+            # Returning user: re-attach to the org and unblock login.
+            # We track "returning" specifically when the user had prior
+            # activity (Submissions, GradingSessions) so the dashboard
+            # can show "Welkom terug" rather than treating them as new.
+            from grading.models import Submission
+            was_returning = Submission.objects.filter(student=existing_user).exists()
+
             # Assign to org AND promote to the invited role.
             # Guardrail: never DEMOTE an admin (rare edge case — an admin
             # of org A accepted an invite from org B as a teacher). If they
@@ -1389,7 +1399,10 @@ class AcceptInviteView(APIView):
             existing_user.organization = invitation.organization
             if existing_user.role != 'admin':
                 existing_user.role = invitation.role
-            existing_user.save(update_fields=['organization', 'role'])
+            # Re-activate. If they were soft-removed from a previous org,
+            # is_active was set to False; flip it back so they can log in.
+            existing_user.is_active = True
+            existing_user.save(update_fields=['organization', 'role', 'is_active'])
             user = existing_user
         else:
             # Create new user
@@ -1420,6 +1433,11 @@ class AcceptInviteView(APIView):
                 'refresh': str(refresh),
                 'access': str(refresh.access_token),
             },
+            # True when the user previously existed AND had activity
+            # (Submissions). The frontend uses this to render a
+            # "Welkom terug" toast on the dashboard instead of the
+            # default "Welkom" first-time copy.
+            'returning': was_returning,
         }, status=status.HTTP_201_CREATED)
 
 
@@ -1523,13 +1541,40 @@ class OrgMemberRemoveView(APIView):
             cohort__org=request.user.organization,
         ).delete()
 
+        # Block login. Django's auth backend refuses authentication for
+        # users with is_active=False, so the removed user can't sign in
+        # to LEERA again until a re-invite re-activates them. Historical
+        # FKs (Submissions, Evaluations, etc.) stay intact.
+        target.is_active = False
         target.organization = None
-        target.save(update_fields=['organization'])
+        target.save(update_fields=['organization', 'is_active'])
+
+        # Deactivate the user's GitHub App installations + repos so the
+        # webhook chain stops processing their pushes. The install on
+        # github.com itself still exists (we can't uninstall it from
+        # outside the user's GitHub session), but our webhook handler
+        # treats inactive rows as no-ops, and on re-invite the user
+        # will need to re-install — doubling as fresh consent renewal.
+        from .models import GitHubInstallation, StudentRepo
+        from .github_app import invalidate_token_cache
+
+        installations = GitHubInstallation.objects.filter(
+            user=target, deleted_at__isnull=True,
+        )
+        # Grab the IDs before update() so we can drop their cached tokens.
+        install_ids = list(installations.values_list('installation_id', flat=True))
+        installations.update(deleted_at=timezone.now())
+        StudentRepo.objects.filter(
+            user=target, is_active=True,
+        ).update(is_active=False, removed_at=timezone.now())
+        for iid in install_ids:
+            invalidate_token_cache(iid)
 
         return Response({
             'id': target.id,
             'email': target.email,
             'message': 'Member removed from organization.',
+            'github_installs_deactivated': len(install_ids),
         })
 
 
