@@ -1396,6 +1396,17 @@ class GradingSessionViewSet(
                         "state", "posted_at", "partial_post_error", "updated_at",
                         *mirrored,
                     ])
+                    # Re-bind from docent's final_scores even on the
+                    # summary-failed-but-inline-succeeded recovery path —
+                    # the docent's edits still need to reach the skill graph.
+                    try:
+                        from .services.skill_binding import bind_rubric_to_observations
+                        bind_rubric_to_observations(s, prefer_final=True)
+                    except Exception as bind_err:
+                        log.warning(
+                            "send (recovered): skill rebind failed session=%s: %s",
+                            s.id, bind_err, exc_info=True,
+                        )
                     return Response(
                         {
                             "state": s.state,
@@ -1435,6 +1446,26 @@ class GradingSessionViewSet(
                 "state", "posted_at", "partial_post_error", "updated_at",
                 *mirrored,
             ])
+
+        # Re-bind SkillObservations using the docent's final_scores so the
+        # student's skill graph reflects what the docent actually approved,
+        # not just what the AI suggested at draft time. The first bind at
+        # draft time used ai_draft_scores; this second bind on Send replaces
+        # those observations with the docent's edited verdict (when they
+        # changed any rubric scores). Wrapped in try/except: a binding
+        # failure must never undo a successful post.
+        try:
+            from .services.skill_binding import bind_rubric_to_observations
+            obs_count = bind_rubric_to_observations(s, prefer_final=True)
+            log.info(
+                "send: re-bound %d observations on POSTED for session=%s "
+                "(prefer_final=True)", obs_count, s.id,
+            )
+        except Exception as e:  # defensive — never fail Send on a skill bind
+            log.warning(
+                "send: skill rebind failed for session=%s: %s", s.id, e,
+                exc_info=True,
+            )
 
         return Response(
             {

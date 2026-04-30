@@ -77,21 +77,46 @@ def _pick_representative_evaluation(grading_session):
     return link.evaluation if link else None
 
 
-def bind_rubric_to_observations(grading_session) -> int:
+def bind_rubric_to_observations(grading_session, prefer_final: bool = False) -> int:
     """
     Create/update SkillObservation rows for each rubric criterion in the
-    GradingSession's ai_draft_scores.
+    GradingSession's scores.
+
+    Args:
+        grading_session: the GradingSession to bind.
+        prefer_final: when True, use grading_session.final_scores
+            (the docent's edited version) if it's non-empty; otherwise
+            fall back to ai_draft_scores. When False (default),
+            always use ai_draft_scores.
+
+            Why this flag exists: at draft time, only ai_draft_scores
+            is populated and binding fires once for the trajectory view.
+            On Send (after the docent has reviewed and possibly
+            overridden the AI's scores), we re-bind with prefer_final
+            so the SkillObservations reflect the docent's verdict, not
+            just the AI's first guess. Without this flag the docent's
+            edits never propagate to the student's skill graph —
+            "docent has the eindstem" was undermined.
 
     Returns the count of observations created or updated. Returns 0
     (without raising) on any of:
-      * grading_session.ai_draft_scores is empty / falsy
+      * scores is empty / falsy
       * no Skill matches a criterion slug (per-criterion skip, warning)
       * no Evaluation linked to the session (entire binding skipped)
     """
     from skills.models import Skill, SkillObservation
     from skills.services.metric_recompute import recompute_metric
 
-    scores = grading_session.ai_draft_scores or {}
+    # Resolve which score map to use. final_scores takes priority on Send;
+    # ai_draft_scores is the only source at draft time.
+    if prefer_final and (grading_session.final_scores or {}):
+        scores = grading_session.final_scores
+        log.info(
+            "skill_binding: session=%s using docent final_scores",
+            grading_session.id,
+        )
+    else:
+        scores = grading_session.ai_draft_scores or {}
     if not scores:
         return 0
 
