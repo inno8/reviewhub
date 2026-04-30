@@ -79,8 +79,13 @@ services:
       # to wherever you've placed the file. Container will fail to
       # start if the host path doesn't exist — that's by design (better
       # to fail loud than read a missing key at runtime).
-      # volumes:
-      #   - /etc/leera/github-app.pem:/run/secrets/github-app.pem:ro
+    # Mount the host secrets/ folder read-only so the App private key
+    # is reachable at GITHUB_APP_PRIVATE_KEY_PATH=/app/secrets/leera.pem
+    # without baking it into the image. Operators using the inline
+    # GITHUB_APP_PRIVATE_KEY env var can ignore the mount; it's a
+    # no-op when secrets/ is empty.
+    volumes:
+      - ./secrets:/app/secrets:ro
     # No host port mapping — only reachable via the frontend nginx
     # reverse proxy (which terminates TLS). Comment back in for direct
     # debugging access if needed.
