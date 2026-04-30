@@ -1455,6 +1455,138 @@ class OrgInvitationsView(APIView):
         return Response(list(invitations))
 
 
+class OrgMemberRemoveView(APIView):
+    """
+    DELETE /api/users/org/members/<user_id>/
+
+    Remove a user from the school admin's organization. Soft-remove only:
+    sets user.organization = None and clears their CohortMembership rows.
+    Preserves historical Submissions, GradingSessions, Evaluations etc. so
+    the org's reporting integrity stays intact (e.g. teacher's PR-review
+    history doesn't vanish from cost dashboards when they leave the school).
+
+    Permissions: school admin (role='admin') or platform superuser.
+    Teachers cannot remove members — that would let them kick peers.
+
+    Guardrails:
+      - Cannot remove yourself (orphans the org if you're sole admin).
+      - Cannot remove the last admin in an org (would lock everyone out).
+    """
+    permission_classes = [permissions.IsAuthenticated]
+
+    def delete(self, request, user_id):
+        if not request.user.organization:
+            return Response({'error': 'You must belong to an organization.'}, status=400)
+
+        is_admin = (
+            getattr(request.user, 'role', None) == 'admin'
+            or getattr(request.user, 'is_superuser', False)
+        )
+        if not is_admin:
+            return Response(
+                {'error': 'Only organization admins can remove members.'},
+                status=403,
+            )
+
+        try:
+            target = User.objects.get(
+                pk=user_id, organization=request.user.organization,
+            )
+        except User.DoesNotExist:
+            return Response({'error': 'Member not found.'}, status=404)
+
+        if target.id == request.user.id:
+            return Response(
+                {'error': "You can't remove yourself. Ask another admin to do it."},
+                status=400,
+            )
+
+        # Last-admin guard. Without it, an admin could remove the only
+        # other admin and then themselves, leaving the org un-administered.
+        if target.role == 'admin':
+            other_admins = User.objects.filter(
+                organization=request.user.organization,
+                role='admin',
+            ).exclude(pk=target.pk).count()
+            if other_admins == 0:
+                return Response(
+                    {'error': 'This is the last admin in the organization. Promote another member first.'},
+                    status=400,
+                )
+
+        # Soft-remove. The user still exists; they're just no longer in
+        # this org. Cohort memberships are scoped per-cohort-per-student
+        # and have to go too.
+        from grading.models import CohortMembership
+        CohortMembership.objects.filter(
+            student=target,
+            cohort__organization=request.user.organization,
+        ).delete()
+
+        target.organization = None
+        target.save(update_fields=['organization'])
+
+        return Response({
+            'id': target.id,
+            'email': target.email,
+            'message': 'Member removed from organization.',
+        })
+
+
+class CancelInvitationView(APIView):
+    """
+    DELETE /api/users/org/invitations/<invitation_id>/
+
+    Cancel a pending invitation. Sets status='cancelled' (preserves
+    audit trail) rather than deleting the row.
+
+    Permissions: mirrors ResendInvitationView's ladder:
+      - Admin can cancel any pending invitation in their org
+      - Teacher can cancel only student/viewer invitations
+    """
+    permission_classes = [permissions.IsAuthenticated]
+
+    def delete(self, request, invitation_id):
+        if not request.user.organization:
+            return Response({'error': 'You must belong to an organization.'}, status=400)
+
+        if request.user.role not in ('admin', 'teacher'):
+            return Response(
+                {'error': 'Only admins and teachers can cancel invitations.'},
+                status=403,
+            )
+
+        try:
+            invitation = Invitation.objects.get(
+                id=invitation_id,
+                organization=request.user.organization,
+            )
+        except Invitation.DoesNotExist:
+            return Response({'error': 'Invitation not found.'}, status=404)
+
+        if invitation.status != 'pending':
+            return Response(
+                {'error': f'Cannot cancel a {invitation.status} invitation.'},
+                status=400,
+            )
+
+        if invitation.role == 'teacher' and request.user.role != 'admin':
+            return Response(
+                {'error': 'Only organization admins can cancel teacher invitations.'},
+                status=403,
+            )
+
+        invitation.status = 'cancelled'
+        invitation.save(update_fields=['status'])
+
+        return Response({
+            'id': invitation.id,
+            'email': invitation.email,
+            'status': invitation.status,
+            'message': 'Invitation cancelled.',
+        })
+
+
 class OrgSubscriptionView(APIView):
     """
     GET /api/users/org/subscription/

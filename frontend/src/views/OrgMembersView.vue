@@ -262,6 +262,80 @@ function canResendRow(row: Row): boolean {
   return canInviteStudent.value;
 }
 
+// ── Cancel invitation / Remove member ─────────────────────────────
+// Both destructive — require explicit confirmation. We use a single
+// confirm-modal pattern instead of native confirm() so the copy is
+// Dutch and consistent with the rest of the app.
+interface ConfirmAction {
+  kind: 'cancel-invite' | 'remove-member';
+  rowId: number;        // the invite id or user id depending on kind
+  rowEmail: string;
+  rowRole: string;
+}
+const pendingAction = ref<ConfirmAction | null>(null);
+const actionInflight = ref(false);
+const actionError = ref<string | null>(null);
+
+function askCancelInvite(row: Row) {
+  if (!row.rawInvite) return;
+  pendingAction.value = {
+    kind: 'cancel-invite',
+    rowId: row.rawInvite.id,
+    rowEmail: row.email,
+    rowRole: row.role,
+  };
+}
+
+function askRemoveMember(row: Row) {
+  if (!row.rawMember) return;
+  pendingAction.value = {
+    kind: 'remove-member',
+    rowId: row.rawMember.id,
+    rowEmail: row.email,
+    rowRole: row.role,
+  };
+}
+
+function dismissConfirm() {
+  pendingAction.value = null;
+  actionError.value = null;
+}
+
+async function confirmAction() {
+  if (!pendingAction.value) return;
+  actionInflight.value = true;
+  actionError.value = null;
+  try {
+    if (pendingAction.value.kind === 'cancel-invite') {
+      await api.org.cancelInvitation(pendingAction.value.rowId);
+    } else {
+      await api.org.removeMember(pendingAction.value.rowId);
+    }
+    // Refresh both lists since cancelling an invite + removing a member
+    // can each affect counts in the tab badges.
+    await loadData();
+    pendingAction.value = null;
+  } catch (e: any) {
+    const data = e?.response?.data;
+    actionError.value =
+      data?.error ||
+      data?.detail ||
+      (typeof data === 'string' ? data : null) ||
+      'Actie mislukt.';
+  } finally {
+    actionInflight.value = false;
+  }
+}
+
+function canRemoveRow(row: Row): boolean {
+  if (row.kind !== 'member') return false;
+  if (!auth.isSchoolAdmin && !auth.isSuperuser) return false;
+  // Don't show the remove button for self — confusing UX, the API
+  // would 400 anyway.
+  if (row.rawMember?.id === auth.user?.id) return false;
+  return true;
+}
+
 function roleBadgeClass(role: string) {
   if (role === 'admin') return 'bg-primary/10 text-primary border-primary/20';
   if (role === 'teacher')
@@ -273,8 +347,8 @@ function roleBadgeClass(role: string) {
 
 function roleLabel(role: string) {
   if (role === 'developer') return 'Student';
-  if (role === 'admin') return 'Admin';
-  if (role === 'teacher') return 'Teacher';
+  if (role === 'admin') return 'Beheerder';
+  if (role === 'teacher') return 'Docent';
   return role;
 }
 
@@ -303,7 +377,7 @@ onMounted(loadData);
               class="bg-surface-container-highest text-on-surface px-5 py-2.5 rounded-lg font-bold flex items-center gap-2 hover:bg-surface-container-high transition-colors active:scale-95"
             >
               <span class="material-symbols-outlined text-sm">person_add</span>
-              Invite Teacher
+              Docent uitnodigen
             </button>
             <button
               v-if="canInviteStudent"
@@ -311,7 +385,7 @@ onMounted(loadData);
               class="primary-gradient text-on-primary px-5 py-2.5 rounded-lg font-bold flex items-center gap-2 shadow-lg shadow-primary/10 hover:shadow-primary/20 transition-all active:scale-95"
             >
               <span class="material-symbols-outlined text-sm">person_add</span>
-              Invite Student
+              Student uitnodigen
             </button>
           </div>
         </div>
@@ -350,7 +424,7 @@ onMounted(loadData);
             <input
               v-model="searchQuery"
               type="text"
-              placeholder="Search by name or email..."
+              placeholder="Zoek op naam of e-mail..."
               class="w-64 bg-surface-container-lowest border-none rounded-lg text-on-surface placeholder:text-outline/40 focus:ring-1 focus:ring-primary/50 py-2.5 pl-9 pr-4 text-sm"
             />
           </div>
@@ -419,43 +493,72 @@ onMounted(loadData);
                       class="inline-flex items-center gap-1.5 text-xs text-primary"
                     >
                       <span class="h-1.5 w-1.5 rounded-full bg-primary"></span>
-                      Active
+                      Actief
                     </span>
                     <span
                       v-else
                       class="inline-flex items-center gap-1.5 text-xs text-tertiary"
                     >
                       <span class="h-1.5 w-1.5 rounded-full bg-tertiary"></span>
-                      Pending invite
+                      Uitnodiging open
                     </span>
                   </td>
                   <td class="px-6 py-5 text-xs text-on-surface-variant">
                     {{ row.joined }}
                   </td>
                   <td class="px-6 py-5 text-right">
-                    <!-- Resend invitation: only on pending-invite rows
-                         the current user is allowed to invite. -->
-                    <button
-                      v-if="row.kind === 'invite' && canResendRow(row)"
-                      @click="resendInvite(row.rawInvite!.id)"
-                      :disabled="resendingIds.has(row.rawInvite!.id)"
-                      class="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-md text-xs font-semibold border border-outline-variant/20 text-on-surface-variant hover:bg-surface-container-high hover:text-on-surface disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
-                      :title="`Re-send the invitation email to ${row.email} with a fresh 7-day token`"
-                    >
-                      <span
-                        v-if="resendingIds.has(row.rawInvite!.id)"
-                        class="material-symbols-outlined text-sm animate-spin"
-                        >progress_activity</span
+                    <div class="flex items-center justify-end gap-1.5">
+                      <!-- Resend invitation: only on pending-invite rows
+                           the current user is allowed to invite. -->
+                      <button
+                        v-if="row.kind === 'invite' && canResendRow(row)"
+                        @click="resendInvite(row.rawInvite!.id)"
+                        :disabled="resendingIds.has(row.rawInvite!.id)"
+                        class="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-md text-xs font-semibold border border-outline-variant/20 text-on-surface-variant hover:bg-surface-container-high hover:text-on-surface disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+                        :title="`Stuur de uitnodigingsmail opnieuw naar ${row.email} met een nieuwe 7-daagse link`"
                       >
-                      <span
-                        v-else-if="recentlyResentIds.has(row.rawInvite!.id)"
-                        class="material-symbols-outlined text-sm text-primary"
-                        >check_circle</span
+                        <span
+                          v-if="resendingIds.has(row.rawInvite!.id)"
+                          class="material-symbols-outlined text-sm animate-spin"
+                          >progress_activity</span
+                        >
+                        <span
+                          v-else-if="recentlyResentIds.has(row.rawInvite!.id)"
+                          class="material-symbols-outlined text-sm text-primary"
+                          >check_circle</span
+                        >
+                        <span v-else class="material-symbols-outlined text-sm">forward_to_inbox</span>
+                        <span v-if="recentlyResentIds.has(row.rawInvite!.id)">Verzonden</span>
+                        <span v-else>Opnieuw versturen</span>
+                      </button>
+
+                      <!-- Cancel pending invitation. Same gate as Resend
+                           (admin can cancel any, teacher only student
+                           invites). -->
+                      <button
+                        v-if="row.kind === 'invite' && canResendRow(row)"
+                        @click="askCancelInvite(row)"
+                        class="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-md text-xs font-semibold border border-error/20 text-error hover:bg-error/10 transition-colors"
+                        :title="`Trek deze uitnodiging in zodat ${row.email} hem niet meer kan accepteren`"
                       >
-                      <span v-else class="material-symbols-outlined text-sm">forward_to_inbox</span>
-                      <span v-if="recentlyResentIds.has(row.rawInvite!.id)">Sent</span>
-                      <span v-else>Resend</span>
-                    </button>
+                        <span class="material-symbols-outlined text-sm">close</span>
+                        <span>Intrekken</span>
+                      </button>
+
+                      <!-- Remove active member from the org. School admin
+                           only; not shown for self-row to avoid the
+                           "remove yourself" footgun (backend would 400
+                           anyway). -->
+                      <button
+                        v-if="canRemoveRow(row)"
+                        @click="askRemoveMember(row)"
+                        class="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-md text-xs font-semibold border border-error/20 text-error hover:bg-error/10 transition-colors"
+                        :title="`Verwijder ${row.email} uit de organisatie`"
+                      >
+                        <span class="material-symbols-outlined text-sm">person_remove</span>
+                        <span>Verwijderen</span>
+                      </button>
+                    </div>
                   </td>
                 </tr>
                 <tr v-if="!filteredRows.length">
@@ -468,13 +571,76 @@ onMounted(loadData);
                     >
                     {{
                       searchQuery
-                        ? 'No members match your search.'
-                        : 'No members in this tab yet.'
+                        ? 'Geen leden gevonden voor deze zoekopdracht.'
+                        : 'Nog geen leden in dit tabblad.'
                     }}
                   </td>
                 </tr>
               </tbody>
             </table>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Confirm modal — used for both "cancel invitation" and
+         "remove member". Lightweight; reuses the same shell. -->
+    <div
+      v-if="pendingAction"
+      class="fixed inset-0 z-[100] flex items-center justify-center p-6 bg-background/80 backdrop-blur-sm"
+      @click.self="dismissConfirm"
+    >
+      <div class="glass-panel w-full max-w-md rounded-xl overflow-hidden shadow-2xl">
+        <div class="p-6 space-y-4">
+          <div class="flex items-start gap-4">
+            <div class="w-12 h-12 rounded-xl bg-error/15 flex items-center justify-center shrink-0">
+              <span class="material-symbols-outlined text-error text-2xl">
+                {{ pendingAction.kind === 'cancel-invite' ? 'mail_off' : 'person_remove' }}
+              </span>
+            </div>
+            <div class="flex-1">
+              <h3 class="text-lg font-bold text-on-surface mb-1">
+                {{ pendingAction.kind === 'cancel-invite' ? 'Uitnodiging intrekken?' : 'Lid verwijderen?' }}
+              </h3>
+              <p class="text-sm text-on-surface-variant">
+                <template v-if="pendingAction.kind === 'cancel-invite'">
+                  Weet je zeker dat je de uitnodiging voor
+                  <strong class="text-on-surface">{{ pendingAction.rowEmail }}</strong>
+                  wilt intrekken? De link in hun e-mail werkt daarna niet meer.
+                </template>
+                <template v-else>
+                  Weet je zeker dat je
+                  <strong class="text-on-surface">{{ pendingAction.rowEmail }}</strong>
+                  uit deze organisatie wilt verwijderen? Hun cohort-lidmaatschappen
+                  worden verwijderd, maar historische data (PR's, beoordelingen)
+                  blijven bewaard.
+                </template>
+              </p>
+            </div>
+          </div>
+
+          <p v-if="actionError" class="text-sm text-error bg-error/10 border border-error/20 rounded-lg p-3">
+            {{ actionError }}
+          </p>
+
+          <div class="flex gap-3 pt-2">
+            <button
+              type="button"
+              :disabled="actionInflight"
+              @click="dismissConfirm"
+              class="flex-1 py-2.5 bg-surface-container-highest text-on-surface font-bold rounded-lg hover:bg-outline-variant transition-colors disabled:opacity-50"
+            >
+              Annuleren
+            </button>
+            <button
+              type="button"
+              :disabled="actionInflight"
+              @click="confirmAction"
+              class="flex-1 py-2.5 bg-error/90 text-on-primary font-bold rounded-lg hover:bg-error transition-colors disabled:opacity-50 flex items-center justify-center gap-2"
+            >
+              <span v-if="actionInflight" class="material-symbols-outlined text-sm animate-spin">progress_activity</span>
+              {{ actionInflight ? 'Bezig…' : (pendingAction.kind === 'cancel-invite' ? 'Intrekken' : 'Verwijderen') }}
+            </button>
           </div>
         </div>
       </div>
