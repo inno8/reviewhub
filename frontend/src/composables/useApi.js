@@ -24,16 +24,76 @@ let skipAuthRedirect = false;
 export function setSkipAuthRedirect(skip) {
     skipAuthRedirect = skip;
 }
-client.interceptors.response.use((response) => response, (error) => {
-    if (error?.response?.status === 401) {
-        // Don't redirect if we're on a public page or during bootstrap
+
+/**
+ * Singleton refresh promise — when multiple requests fire in parallel and all
+ * get 401, we want exactly ONE refresh call. Other requests await this same
+ * promise instead of racing N refreshes which would invalidate each other on
+ * the Django side (refresh tokens rotate on use when ROTATE_REFRESH_TOKENS
+ * is on; even if it isn't, parallel refreshes cause unnecessary load).
+ */
+let refreshInFlight = null;
+
+function refreshAccessToken() {
+    if (refreshInFlight) return refreshInFlight;
+    const refresh = localStorage.getItem('reviewhub_refresh_token');
+    if (!refresh) return Promise.reject(new Error('no refresh token'));
+    // Use a bare axios call so we don't recurse through the interceptor.
+    refreshInFlight = axios
+        .post(`${client.defaults.baseURL}/auth/token/refresh/`, { refresh })
+        .then((response) => {
+            const newAccess = response.data?.access;
+            if (!newAccess) throw new Error('refresh response missing access token');
+            localStorage.setItem('reviewhub_token', newAccess);
+            // Django Simple JWT may also rotate the refresh token (when
+            // ROTATE_REFRESH_TOKENS=True). If a new refresh comes back, save it.
+            if (response.data.refresh) {
+                localStorage.setItem('reviewhub_refresh_token', response.data.refresh);
+            }
+            return newAccess;
+        })
+        .finally(() => {
+            refreshInFlight = null;
+        });
+    return refreshInFlight;
+}
+
+client.interceptors.response.use((response) => response, async (error) => {
+    const originalRequest = error?.config;
+    const status = error?.response?.status;
+
+    // 401 path: try to refresh and retry once. Each request is retried at
+    // most once (_retry flag) so we don't infinite-loop on a permanently
+    // bad token. Skip refresh attempts on public pages and on the refresh
+    // endpoint itself (otherwise a failed refresh would recurse forever).
+    if (
+        status === 401 &&
+        originalRequest &&
+        !originalRequest._retry &&
+        !originalRequest.url?.includes('/auth/token/refresh') &&
+        !originalRequest.url?.includes('/auth/token/') // login itself
+    ) {
         const publicPaths = ['/login', '/onboard', '/org-signup', '/accept-invite'];
         const isPublicPage = publicPaths.some(p => window.location.pathname.startsWith(p));
+
         if (!isPublicPage && !skipAuthRedirect) {
-            localStorage.removeItem('reviewhub_token');
-            window.location.href = '/login';
+            originalRequest._retry = true;
+            try {
+                const newAccess = await refreshAccessToken();
+                originalRequest.headers = originalRequest.headers || {};
+                originalRequest.headers.Authorization = `Bearer ${newAccess}`;
+                return client(originalRequest);
+            } catch (refreshErr) {
+                // Refresh failed — refresh token is gone, expired, or invalid.
+                // Now we genuinely log the user out.
+                localStorage.removeItem('reviewhub_token');
+                localStorage.removeItem('reviewhub_refresh_token');
+                window.location.href = '/login';
+                return Promise.reject(refreshErr);
+            }
         }
     }
+
     return Promise.reject(error);
 });
 export const api = {
@@ -45,10 +105,16 @@ export const api = {
     auth: {
         // Django JWT authentication
         login: (email, password) => client.post('/auth/token/', { email, password }),
+        // SimpleJWT refresh — exposed for cases where code wants to force a
+        // refresh outside the 401 retry path (e.g. proactive refresh timer).
+        // The interceptor handles the common case; you usually don't need to
+        // call this directly.
+        refresh: (refreshToken) => client.post('/auth/token/refresh/', { refresh: refreshToken }),
         register: (data) => client.post('/users/register/', data),
         me: () => client.get('/users/me/'),
         logout: () => {
             localStorage.removeItem('reviewhub_token');
+            localStorage.removeItem('reviewhub_refresh_token');
             return Promise.resolve({ data: { message: 'Logged out' } });
         },
     },

@@ -79,6 +79,13 @@ export const useAuthStore = defineStore('auth', () => {
         token.value = newToken;
         localStorage.setItem('reviewhub_token', newToken);
       }
+      // SimpleJWT returns both access AND refresh on /auth/token/. Saving the
+      // refresh token enables the axios 401 interceptor (in useApi.js) to
+      // silently refresh expired access tokens — without this, every 15-min
+      // access expiry would log the user out, even mid-PR-review.
+      if (data.refresh) {
+        localStorage.setItem('reviewhub_refresh_token', data.refresh);
+      }
       const meResponse = await api.auth.me();
       const userData = meResponse.data.user || meResponse.data;
       user.value = mapUserData(userData);
@@ -96,6 +103,7 @@ export const useAuthStore = defineStore('auth', () => {
     token.value = null;
     user.value = null;
     localStorage.removeItem('reviewhub_token');
+    localStorage.removeItem('reviewhub_refresh_token');
   }
 
   async function bootstrap() {
