@@ -280,7 +280,7 @@ function calculateLineRanges() {
       start,
       end,
       finding.originalCode,
-      finding.optimizedCode,
+      finding.suggestedCode,
     );
     start = grown.start;
     end = Math.min(len - 1, grown.end);
@@ -427,7 +427,7 @@ const mergedOptimizedText = computed(() => {
 
   const baseLines = base.split('\n');
   const range = findingLineRanges.value.get(sel.id);
-  const suggestedRaw = sel.optimizedCode || '';
+  const suggestedRaw = sel.suggestedCode || '';
   const suggestedLines = suggestedRaw.length ? suggestedRaw.split(/\r?\n/) : [];
 
   if (range == null) return base;
