@@ -46,6 +46,16 @@ const router = createRouter({
     routes: [
         { path: '/login', name: 'login', component: LoginView, meta: { public: true } },
         { path: '/welcome', name: 'welcome', component: LandingView, meta: { public: true } },
+        { path: '/landing', name: 'landing', component: LandingView, meta: { public: true } },
+        // Public rubric page — explains how LEERA grades for school admins,
+        // docenten, students, and parents. No auth required so a school
+        // admin can share the link before any account exists.
+        {
+            path: '/rubric',
+            name: 'rubric',
+            component: () => import('@/views/RubricPublicView.vue'),
+            meta: { public: true },
+        },
         { path: '/onboard', name: 'onboard', component: OnboardView, meta: { public: true } },
         { path: '/dev-profile-setup', name: 'dev-profile-setup', component: DevProfileSetupView, meta: { skipProfileCheck: true } },
         { path: '/dev-profile/results', name: 'dev-profile-results', component: DevProfileResultsView, meta: { skipProfileCheck: true } },
