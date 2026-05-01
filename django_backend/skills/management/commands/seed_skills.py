@@ -157,26 +157,32 @@ class Command(BaseCommand):
                 action = 'Created' if created else 'Updated'
                 self.stdout.write(f'    {action} skill: {skill.name}')
         
-        # ── Rubric-criterion Skills ──────────────────────────────────────
-        # The PR-level rubric grades against 8 category-level criteria
-        # (security, code_quality, etc. — see grading.services.skill_binding).
-        # bind_rubric_to_observations does Skill.objects.get(slug=criterion_id)
-        # — without these 8 rows, every PR draft binds 0 observations and
-        # the teacher's "Eindniveau" / "Per criterium" widgets stay empty.
-        # These are intentionally separate from the per-commit Skill granularity
-        # above (clean_code, input_validation, etc.) — they're aggregates that
-        # match the rubric's eight categories one-to-one.
-        rubric_criterion_skills = [
-            ('security',       'Beveiliging',      'security'),
-            ('code_quality',   'Code Kwaliteit',   'code_quality'),
-            ('architecture',   'Architectuur',     'design_patterns'),
-            ('testing',        'Testen',           'testing'),
-            ('performance',    'Performance',      'backend'),
-            ('documentation',  'Documentatie',     'code_quality'),
-            ('validation',     'Validatie',        'security'),
-            ('best_practices', 'Best Practices',   'code_quality'),
+        # ── CREBO 25604 rubric-criterion Skills ──────────────────────────
+        # The PR-level rubric grades against 6 Crebo werkproces aligned
+        # criteria (code_ontwerp / code_kwaliteit / veiligheid / testen /
+        # verbetering / samenwerking — canonical names per Crebo 25604
+        # MBO-4 ICT-developer kwalificatiedossier).
+        #
+        # bind_rubric_to_observations looks up Skill.objects.get(slug=criterion_id)
+        # for each rubric criterion. Without these 6 rows, every PR draft
+        # binds 0 observations and the teacher's "Eindniveau" / "Per criterium"
+        # widgets stay empty — also hardcoded as CREBO_SKILL_SLUGS in
+        # grading.views_student_intelligence which filters per_skill output
+        # to exactly these 6.
+        #
+        # Pre-May-2026 deployments may carry an interim 8-criterion English
+        # shape (security / code_quality / architecture / testing /
+        # performance / documentation / validation / best_practices). To
+        # consolidate, run: python manage.py migrate_data_to_crebo
+        crebo_rubric_skills = [
+            ('code_ontwerp',   'Code-ontwerp',  'design_patterns', 'B1-K1-W2'),
+            ('code_kwaliteit', 'Code-kwaliteit','code_quality',    'B1-K1-W3'),
+            ('veiligheid',     'Veiligheid',    'security',        'B1-K1-W3'),
+            ('testen',         'Testen',        'testing',         'B1-K1-W4'),
+            ('verbetering',    'Verbetering',   'code_quality',    'B1-K1-W5'),
+            ('samenwerking',   'Samenwerking',  'devops',          'B1-K2-W1+W3'),
         ]
-        for slug, name, cat_slug in rubric_criterion_skills:
+        for slug, name, cat_slug, kerntaak in crebo_rubric_skills:
             category = SkillCategory.objects.filter(slug=cat_slug).first()
             if not category:
                 self.stdout.write(self.style.WARNING(
@@ -188,12 +194,12 @@ class Command(BaseCommand):
                 defaults={
                     'category': category,
                     'name': name,
-                    'description': f'Rubric criterium: {name}',
+                    'description': f'CREBO werkproces {kerntaak}: {name}',
                     'order': 100,  # sort after per-commit skills in the radar
                 },
             )
             action = 'Created' if created else 'Updated'
-            self.stdout.write(f'  {action} rubric skill: {skill.slug} → {category.name}')
+            self.stdout.write(f'  {action} CREBO skill: {skill.slug} → {category.name}')
 
         total_categories = SkillCategory.objects.count()
         total_skills = Skill.objects.count()

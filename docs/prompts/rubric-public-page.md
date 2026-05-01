@@ -41,16 +41,17 @@ The page must work for all three without dumbing down for any.
 
 In rough priority order:
 
-1. **The 8 SkillCategories LEERA grades on**, each with:
-   - A short name in Dutch (the docent-facing name)
+1. **The 6 Crebo 25604 rubric criteria LEERA grades on**, each with:
+   - The canonical Dutch name from the Crebo werkproces (the docent-facing name)
    - A one-sentence description
-   - 4 niveau levels (1=onvoldoende, 2=zwak, 3=voldoende, 4=goed)
-     with concrete behavioral descriptions per level
+   - 4 niveau levels with the official labels:
+     1=Nog niet beheerst, 2=Gedeeltelijk beheerst, 3=Op opleidingsniveau,
+     4=Boven niveau — same labels every Dutch MBO docent already knows
    - One realistic code example per category (short, in PHP or Python
      — the languages MBO-4 ICT students use most)
-   - The MBO-4 Crebo werkproces code mapping where relevant
-     (e.g., B1-K1-W3 — "Werkt volgens veiligheidsrichtlijnen" maps
-     to SECURITY)
+   - The Crebo werkproces code (B1-K1-W2, B1-K1-W3, etc.) so the
+     curriculum coordinator can verify alignment with the
+     kwalificatiedossier
 
 2. **The grading philosophy**:
    - Rubric-aligned, not vibes-aligned. The teacher sets the rubric
@@ -88,82 +89,88 @@ In rough priority order:
    - Or: "Probeer het gratis voor je klas tot 1 september" → link to
      org-signup
 
-## The 8 categories (canonical content)
+## The 6 Crebo criteria (canonical content)
 
-These are stored in `grading.models.SkillCategory` in the codebase —
-use these names/colors. For copy below, this is the v1 content; refine
-wording where it improves but keep the substance.
+These are defined in `grading/rubric_defaults.py:CREBO_RUBRIC_CRITERIA`
+in the codebase — pull the canonical level definitions from there
+rather than retyping. The Skill rows are seeded by `seed_skills`.
 
-### 1. Beveiliging (SECURITY) — weight 1.5×
-**Wat we kijken:** Of de code geen ruimte laat voor SQL injection,
-XSS, IDOR, hardcoded secrets, of authenticatie-fouten.
-
-| Niveau | Wat dat betekent |
-|---|---|
-| 1 | Kritieke kwetsbaarheden: SQL injection, hardcoded wachtwoorden, gebruikers kunnen elkaars data wijzigen. Niet inleverbaar. |
-| 2 | Sommige beveiligingszorgen. Ontbrekende input-validatie of auth-checks. Werkt maar niet veilig genoeg om te live te gaan. |
-| 3 | Basis-beveiliging toegepast. Kleine zorgen blijven. Voldoende voor schoolwerk. |
-| 4 | Defense in depth. Threat modeling zichtbaar. Geen evidente kwetsbaarheden. Stage-rijp. |
-
-**Voorbeeld (PHP):** `DB::select("...title = '$search'")` is een niveau
-1 issue. `Book::where('title', $search)` is niveau 3. Crebo: B1-K1-W3.
-
-### 2. Code Kwaliteit (CODE_QUALITY) — weight 1.0×
-**Wat we kijken:** Leesbaarheid, naamgeving, consistentie, herhaling.
-
-| Niveau | Wat dat betekent |
-|---|---|
-| 1 | Moeilijk te lezen. Magic numbers. Copy-paste duplicatie. |
-| 2 | Inconsistente stijl. Onduidelijke namen. |
-| 3 | Leesbaar. Consistente stijl. Redelijke namen. |
-| 4 | Heldere intent overal. Goed gefactored. Makkelijk te onderhouden. |
-
-### 3. Architectuur (ARCHITECTURE) — weight 1.0×
+### 1. Code-ontwerp (`code_ontwerp`) — Crebo B1-K1-W2 "Ontwerpt software" — weight 15
 **Wat we kijken:** Scheiding van verantwoordelijkheden, lagen,
-abstracties.
+abstracties, herbruikbaarheid.
 
-| Niveau | Wat dat betekent |
-|---|---|
-| 1 | Strak gekoppeld. Geen scheiding. Controllers doen database én rendering. |
-| 2 | Wat structuur, maar laag-overschrijdingen. |
-| 3 | Heldere lagen. Dunne controllers. Sensibele grenzen. |
-| 4 | Idiomatisch voor het framework. Uitbreidbaar. SOLID toegepast. |
+| Niveau | Officiële label | Wat dat betekent |
+|---|---|---|
+| 1 | Nog niet beheerst | Geen duidelijke structuur; alles in één functie of bestand. |
+| 2 | Gedeeltelijk beheerst | Basis-structuur, maar abstractie ontbreekt; veel herhaling. |
+| 3 | Op opleidingsniveau | Logische opbouw, duidelijke scheiding van verantwoordelijkheden. |
+| 4 | Boven niveau | Doordacht ontwerp; herbruikbaar, uitbreidbaar, minimale coupling. |
 
-### 4. Testen (TESTING) — weight 1.2×
-**Wat we kijken:** Of er tests zijn, of ze de juiste dingen testen,
-of edge cases gedekt zijn.
+**Voorbeeld (PHP):** Een controller die een query bouwt, formatting doet
+én de view rendert is niveau 1. Een dunne controller die delegeert naar
+een service + een presenter is niveau 3.
 
-| Niveau | Wat dat betekent |
-|---|---|
-| 1 | Geen tests. |
-| 2 | Een paar happy-path tests. |
-| 3 | Edge cases gedekt voor hoofdfeatures. Tests zijn onafhankelijk. |
-| 4 | Brede dekking inclusief faalmodes. Integration én unit tests. |
+### 2. Code-kwaliteit (`code_kwaliteit`) — Crebo B1-K1-W3 "Realiseert software" — weight 20
+**Wat we kijken:** Leesbaarheid, naamgeving, consistentie, foutafhandeling.
 
-### 5. Performance (PERFORMANCE) — weight 0.8×
-**Wat we kijken:** Query-efficiency, caching waar nodig, geen
-voor-de-hand-liggende bottlenecks.
+| Niveau | Officiële label | Wat dat betekent |
+|---|---|---|
+| 1 | Nog niet beheerst | Moeilijk leesbaar; onduidelijke namen; geen foutafhandeling. |
+| 2 | Gedeeltelijk beheerst | Werkt, maar inconsistent; cryptische namen; fouten worden geslikt. |
+| 3 | Op opleidingsniveau | Leesbaar, idiomatic, fouten worden met context afgehandeld. |
+| 4 | Boven niveau | Professioneel niveau; zelf-documenterend, robuust, edge cases afgedekt. |
 
-| Niveau | Wat dat betekent |
-|---|---|
-| 1 | N+1 queries. Geen eager loading. Evidente bottlenecks. |
-| 2 | Wat inefficiëntie. Geen caching waar het ertoe doet. |
-| 3 | Eager loading waar nodig. Queries zijn redelijk. |
-| 4 | Geprofileerd, geoptimaliseerd, geïndexeerd. |
+### 3. Veiligheid (`veiligheid`) — Crebo B1-K1-W3 "Realiseert software (sub: veiligheid)" — weight 20
+**Wat we kijken:** SQL-injectie, XSS, IDOR, hardcoded secrets,
+authenticatie-fouten, input-validatie.
 
-### 6. Documentatie (DOCUMENTATION) — weight 0.6×
-**Wat we kijken:** README, inline documentatie van niet-triviale code.
+| Niveau | Officiële label | Wat dat betekent |
+|---|---|---|
+| 1 | Nog niet beheerst | Duidelijke kwetsbaarheden: hardcoded secrets, SQL-injectie, geen input-validatie. |
+| 2 | Gedeeltelijk beheerst | Bewust van veiligheid, maar met gaten; inconsistente input-checks. |
+| 3 | Op opleidingsniveau | Standaard praktijken: parameterized queries, input-validatie, geen secrets in code. |
+| 4 | Boven niveau | Threat-modeled, least-privilege, defense in depth; edge cases doordacht. |
 
-### 7. Validatie (VALIDATION) — weight 1.0×
-**Wat we kijken:** Of input gevalideerd wordt voordat het de
-business-logic raakt.
+**Voorbeeld:** `DB::select("...title = '$search'")` is niveau 1.
+`Book::where('title', $search)` is niveau 3.
 
-### 8. Best Practices (BEST_PRACTICES) — weight 0.8×
-**Wat we kijken:** Of de code de framework-conventies volgt en niet
-het wiel opnieuw uitvindt.
+### 4. Testen (`testen`) — Crebo B1-K1-W4 "Test software" — weight 20
+**Wat we kijken:** Of er tests zijn, of ze de juiste dingen testen, of
+edge cases gedekt zijn, of regressies gevangen worden.
 
-(Use the same niveau 1-4 structure for all 8. Above is the canonical
-short text per category for v1.)
+| Niveau | Officiële label | Wat dat betekent |
+|---|---|---|
+| 1 | Nog niet beheerst | Geen tests aanwezig. |
+| 2 | Gedeeltelijk beheerst | Alleen happy-path tests; edge cases en errors ongetest. |
+| 3 | Op opleidingsniveau | Happy- en error-paden getest; redelijke dekking. |
+| 4 | Boven niveau | Grondige dekking incl. edge cases en regressies; tests zijn zelf leesbaar. |
+
+### 5. Verbetering (`verbetering`) — Crebo B1-K1-W5 "Doet verbetervoorstellen" — weight 10
+**Wat we kijken:** Reactie op eerdere feedback, refactoring, performance,
+documentatie, eigen initiatief.
+
+| Niveau | Officiële label | Wat dat betekent |
+|---|---|---|
+| 1 | Nog niet beheerst | Geen reactie op eerdere feedback; TODOs blijven openstaan. |
+| 2 | Gedeeltelijk beheerst | Past feedback deels toe, zonder onderliggende patronen te herkennen. |
+| 3 | Op opleidingsniveau | Verwerkt feedback consistent; doet kleine verbeteringen uit eigen initiatief. |
+| 4 | Boven niveau | Refactored proactief; stelt verbeteringen voor die verder gaan dan de opdracht. |
+
+### 6. Samenwerking (`samenwerking`) — Crebo B1-K2-W1+W3 "Voert overleg & reflecteert" — weight 15
+**Wat we kijken:** Commit messages, PR-beschrijvingen, reactie op review,
+zelfreflectie.
+
+| Niveau | Officiële label | Wat dat betekent |
+|---|---|---|
+| 1 | Nog niet beheerst | Commit-messages onduidelijk; PR-beschrijving ontbreekt; geen reactie op review. |
+| 2 | Gedeeltelijk beheerst | Basis-beschrijving; reageert op reviews maar kort of defensief. |
+| 3 | Op opleidingsniveau | Duidelijke commit-messages, PR-beschrijving toont context, constructieve reactie. |
+| 4 | Boven niveau | PR-beschrijving documenteert keuzes en trade-offs; reflecteert zelfstandig. |
+
+(All 6 criteria use the same Crebo niveau labels: Nog niet beheerst,
+Gedeeltelijk beheerst, Op opleidingsniveau, Boven niveau. Pull the
+canonical level descriptions from `grading/rubric_defaults.py` rather
+than retyping — that file is the single source of truth.)
 
 ## Design system / brand voice
 

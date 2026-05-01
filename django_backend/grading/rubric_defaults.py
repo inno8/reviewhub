@@ -115,6 +115,29 @@ CREBO_RUBRIC_CRITERIA = [
 
 
 # A canonical criterion ID is considered "old-shape" (pre-Crebo) if it matches
-# one of these slugs. Used by migrate_rubrics_to_crebo to detect rubrics that
-# still carry the English 4-criterion structure.
-LEGACY_CRITERION_IDS = frozenset({"readability", "error_handling", "security", "testing"})
+# any of these slugs. Used by migrate_rubrics_to_crebo to detect rubrics that
+# still carry pre-Crebo structures and rewrite them to the canonical Crebo
+# 25604 6-criterion shape.
+#
+# Two historical shapes are tracked:
+#   1. The original 4-criterion English shape from the very first rubric
+#      seed (readability / error_handling / security / testing).
+#   2. The interim 8-criterion English shape that briefly shipped during
+#      the May 1 2026 rubric expansion (security / code_quality /
+#      architecture / testing / performance / documentation / validation /
+#      best_practices). Several of these merge under Crebo (security +
+#      validation -> veiligheid, code_quality + best_practices ->
+#      code_kwaliteit, performance + documentation -> verbetering,
+#      architecture -> code_ontwerp, testing -> testen).
+#
+# Detection is OR-ed across both sets — any rubric carrying any of these
+# IDs is migrated wholesale to CREBO_RUBRIC_CRITERIA.
+LEGACY_CRITERION_IDS = frozenset({
+    # 4-criterion shape
+    "readability", "error_handling", "security", "testing",
+    # 8-criterion shape (May 2026 interim — note "security" and "testing"
+    # overlap with the 4-criterion shape but the surrounding criteria
+    # disambiguate which migration path runs).
+    "code_quality", "architecture", "performance",
+    "documentation", "validation", "best_practices",
+})
