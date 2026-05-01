@@ -27,8 +27,16 @@ async function handleSubmit() {
 </script>
 
 <template>
-  <div class="min-h-screen flex flex-col items-center justify-center p-6 tonal-stacking-bg">
-    <main class="w-full max-w-md">
+  <!-- Three-row vertical layout: empty space top, centered card middle,
+       footer bottom. The earlier `min-h-screen flex justify-center` +
+       `<footer mt-auto>` combo fought each other — mt-auto pushed the
+       footer down which compressed the justify-center math, leaving
+       the brand+card sitting in the upper third of the viewport
+       instead of true center. Now main grows with flex-1 and centers
+       its child both axes; footer sits below as its own row. -->
+  <div class="min-h-screen flex flex-col tonal-stacking-bg">
+    <main class="flex-1 flex flex-col items-center justify-center w-full px-6 py-10">
+      <div class="w-full max-w-md">
       <!-- Brand Identity -->
       <div class="flex flex-col items-center mb-10">
         <img src="/logo/leera-wordmark-primary.svg" alt="LEERA" class="h-9 mb-3" />
@@ -116,10 +124,12 @@ async function handleSubmit() {
         </div>
       </div>
 
+      </div><!-- /max-w-md wrapper -->
     </main>
 
-    <!-- Footer -->
-    <footer class="mt-auto py-8 w-full max-w-4xl flex flex-col md:flex-row justify-between items-center px-6 gap-4">
+    <!-- Footer — sits at the bottom of the column without fighting
+         main's centering. -->
+    <footer class="py-8 w-full max-w-4xl mx-auto flex flex-col md:flex-row justify-between items-center px-6 gap-4">
       <div class="text-[10px] uppercase tracking-[0.2em] text-outline font-medium">
         © 2026 Leera
       </div>

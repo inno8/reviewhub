@@ -119,10 +119,22 @@ onMounted(() => {
 <template>
   <header class="flex justify-between items-center w-full px-6 h-16 fixed top-0 z-50 bg-background">
     <div class="flex items-center gap-8">
-      <!-- Wordmark — Leera (formerly ReviewHub, renamed Apr 26 2026) -->
-      <span class="text-xl font-bold bg-gradient-to-r from-primary to-primary-container bg-clip-text text-transparent tracking-tight">
-        Leera
-      </span>
+      <!-- Wordmark — Leera (formerly ReviewHub, renamed Apr 26 2026).
+           Uses the SVG wordmark to match LandingView + LoginView so the
+           brand stays consistent across logged-in vs logged-out states.
+           Click goes to the dashboard (or landing for unauthed users,
+           though Header doesn't render for unauthed). -->
+      <router-link
+        to="/"
+        class="flex items-center"
+        aria-label="Leera dashboard"
+      >
+        <img
+          src="/logo/leera-wordmark-primary.svg"
+          alt="LEERA"
+          class="h-7"
+        />
+      </router-link>
 
       <!-- Nav Links -->
       <nav class="hidden md:flex gap-6">
