@@ -293,6 +293,13 @@ async function loadStudentLatestFeedback() {
   }
 }
 
+// snapshot.skill_radar drives the "Sterke en zwakke plekken" radar — same
+// data shape and aggregation the teacher sees on TeacherStudentProfileView,
+// so a student looking at their own dashboard sees identical numbers to
+// the teacher's view of them. Hardcoded English "Skill Overview" was a
+// pre-Crebo artifact; aligned now to the Dutch label the docent uses.
+const studentSkillRadar = ref<Array<{ category: string; score: number }>>([]);
+
 async function loadStudentSnapshot() {
   const sid = authStore.user?.id;
   if (!sid) return;
@@ -306,9 +313,14 @@ async function loadStudentSnapshot() {
     const { data } = await api.grading.students.snapshot(sid);
     studentPerSkill.value = data.per_skill || [];
     studentCohortName.value = data.student?.cohort?.name || null;
+    studentSkillRadar.value = (data.skill_radar || []).map((r: any) => ({
+      category: r.category,
+      score: r.score,
+    }));
   } catch (e) {
     console.error('loadStudentSnapshot failed:', e);
     studentPerSkill.value = [];
+    studentSkillRadar.value = [];
   }
 }
 
@@ -1228,10 +1240,12 @@ function scoreColor(score: number) {
             <!-- RIGHT: Visual Column (1/3 width) -->
             <div class="space-y-6">
 
-              <!-- Skill Radar -->
-              <div v-if="devHome.radar?.length" class="bg-surface-container-low rounded-xl p-5 border border-outline-variant/10">
-                <h3 class="text-sm font-bold mb-3">Skill Overview</h3>
-                <SkillRadarChart :data="devHome.radar" />
+              <!-- Skill Radar — "Sterke en zwakke plekken" mirrors the
+                   teacher's view of this student. Pulled from
+                   snapshot.skill_radar (StudentSnapshotView) so student
+                   and teacher see the exact same numbers + axes. -->
+              <div v-if="studentSkillRadar.length >= 3" class="bg-surface-container-low rounded-xl p-5 border border-outline-variant/10">
+                <SkillRadarChart :data="studentSkillRadar" title="Sterke en zwakke plekken" />
               </div>
 
             </div>
