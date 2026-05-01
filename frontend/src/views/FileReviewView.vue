@@ -511,18 +511,18 @@ function rightGutterClass(row: SideBySideRow) {
 async function copyOriginalFile() {
   try {
     await navigator.clipboard.writeText(fileContent.value || '');
-    toastMessage.value = 'Original file copied.';
+    toastMessage.value = 'Origineel bestand gekopieerd.';
   } catch {
-    toastMessage.value = 'Could not copy.';
+    toastMessage.value = 'Kopiëren mislukt.';
   }
 }
 
 async function copyOptimizedFile() {
   try {
     await navigator.clipboard.writeText(mergedOptimizedText.value || '');
-    toastMessage.value = 'Optimized file copied.';
+    toastMessage.value = 'Voorgestelde versie gekopieerd.';
   } catch {
-    toastMessage.value = 'Could not copy.';
+    toastMessage.value = 'Kopiëren mislukt.';
   }
 }
 
@@ -530,7 +530,7 @@ async function copyOptimizedFile() {
 function getLineRange(findingId: number): string {
   const range = findingLineRanges.value.get(findingId);
   if (range) {
-    return `Lines ${range.start + 1}-${range.end + 1}`;
+    return `Regels ${range.start + 1}-${range.end + 1}`;
   }
   return '';
 }
@@ -543,7 +543,7 @@ const selectedIssueSpanLabel = computed(() => {
   if (!r) return '';
   const a = r.start + 1;
   const b = r.end + 1;
-  return a === b ? `Line ${a} in original file is replaced` : `Lines ${a}-${b} in original file are replaced`;
+  return a === b ? `Regel ${a} in het originele bestand wordt vervangen` : `Regels ${a}-${b} in het originele bestand worden vervangen`;
 });
 
 function getCategoryClass(category: string) {
@@ -599,7 +599,7 @@ async function markUnderstood() {
     const { data } = await api.findings.markUnderstood(selectedFindingId.value);
     const finding = findings.value.find(f => f.id === selectedFindingId.value);
     if (finding) finding.markedUnderstood = data.markedUnderstood;
-    toastMessage.value = 'Understanding state saved.';
+    toastMessage.value = 'Begripsstatus opgeslagen.';
   } finally {
     actionLoading.value = false;
   }
@@ -612,7 +612,7 @@ async function requestExplanation() {
     await api.findings.requestExplanation(selectedFindingId.value);
     const finding = findings.value.find(f => f.id === selectedFindingId.value);
     if (finding) finding.explanationRequested = true;
-    toastMessage.value = 'Explanation requested via Telegram.';
+    toastMessage.value = 'Uitleg aangevraagd via Telegram.';
   } finally {
     actionLoading.value = false;
   }
@@ -628,9 +628,9 @@ async function applyFix() {
       finding.prCreated = true;
       finding.prUrl = data.prUrl;
     }
-    toastMessage.value = 'Pull request created!';
+    toastMessage.value = 'Pull request aangemaakt!';
   } catch (e: any) {
-    toastMessage.value = e?.response?.data?.error || 'Failed to create PR';
+    toastMessage.value = e?.response?.data?.error || 'Aanmaken van PR mislukt';
   } finally {
     actionLoading.value = false;
   }
@@ -702,7 +702,7 @@ async function submitUnderstanding() {
   try {
     const filledGroups = fixLearnGroups.value.filter(g => g.explanation.trim());
     if (!filledGroups.length) {
-      toastMessage.value = 'Please write an explanation for at least one category.';
+      toastMessage.value = 'Schrijf een uitleg voor ten minste één categorie.';
       fixLearnLoading.value = false;
       return;
     }
@@ -738,7 +738,7 @@ async function submitUnderstanding() {
     }
     fixLearnStep.value = 'results';
   } catch (e: any) {
-    toastMessage.value = 'Failed to check understanding.';
+    toastMessage.value = 'Begripscontrole mislukt.';
   } finally {
     fixLearnLoading.value = false;
   }
@@ -748,10 +748,10 @@ async function copyFixToClipboard(finding: Finding) {
   const code = finding.suggestedCode || finding.originalCode || '';
   try {
     await navigator.clipboard.writeText(code);
-    toastMessage.value = `Copied fix for "${finding.title}" to clipboard!`;
+    toastMessage.value = `Oplossing voor "${finding.title}" gekopieerd naar klembord!`;
     setTimeout(() => { toastMessage.value = ''; }, 3000);
   } catch {
-    toastMessage.value = 'Failed to copy to clipboard.';
+    toastMessage.value = 'Kopiëren naar klembord mislukt.';
   }
 }
 
@@ -765,7 +765,7 @@ function promptMarkFixed(finding: Finding) {
   // Check understanding level
   const ul = (finding as any).understandingLevel || (finding as any).understanding_level || '';
   if (!ul || ul === 'not_yet') {
-    toastMessage.value = 'Please complete the Fix & Learn check first.';
+    toastMessage.value = 'Voltooi eerst de Oplossen & leren-controle.';
     return;
   }
   fixCommitFinding.value = finding;
@@ -784,9 +784,9 @@ async function confirmMarkFixed() {
       (f as any).fixedInCommit = fixCommitSha.value.trim();
     }
     showFixCommitDialog.value = false;
-    toastMessage.value = `"${fixCommitFinding.value.title}" marked as fixed!`;
+    toastMessage.value = `"${fixCommitFinding.value.title}" gemarkeerd als opgelost!`;
   } catch (e: any) {
-    toastMessage.value = e?.response?.data?.error || 'Failed to mark as fixed.';
+    toastMessage.value = e?.response?.data?.error || 'Markeren als opgelost mislukt.';
   } finally {
     fixCommitLoading.value = false;
   }
@@ -824,7 +824,7 @@ function goBack() {
                 <span class="material-symbols-outlined text-xs text-outline">account_tree</span>
                 <span class="text-xs text-primary-fixed-dim">{{ branch }}</span>
                 <span class="text-xs text-outline mx-2">•</span>
-                <span class="text-xs text-outline">{{ findings.length }} issues found</span>
+                <span class="text-xs text-outline">{{ findings.length }} bevindingen</span>
               </div>
             </div>
           </div>
@@ -837,7 +837,7 @@ function goBack() {
             class="w-64 flex-shrink-0 bg-surface-container-low rounded-xl border border-outline-variant/10 flex flex-col h-[70vh] max-h-[70vh] min-h-0"
           >
             <div class="p-3 border-b border-outline-variant/10 flex-shrink-0">
-              <h3 class="text-sm font-bold text-on-surface">Issues in this file</h3>
+              <h3 class="text-sm font-bold text-on-surface">Bevindingen in dit bestand</h3>
             </div>
             <div class="flex-1 min-h-0 overflow-y-auto overscroll-contain p-2">
               <button
@@ -854,7 +854,7 @@ function goBack() {
                 <div class="flex items-center gap-2 mb-2">
                   <span class="text-xs font-bold text-outline">#{{ idx + 1 }}</span>
                   <span :class="['px-1.5 py-0.5 rounded text-[9px] font-bold uppercase border', getCategoryClass(finding.category || finding.severity || '')]">
-                    {{ (finding.category || finding.severity || 'unknown').replace('_', ' ') }}
+                    {{ (finding.category || finding.severity || 'onbekend').replace('_', ' ') }}
                   </span>
                 </div>
                 <p class="text-xs text-on-surface-variant line-clamp-2">
@@ -862,7 +862,7 @@ function goBack() {
                 </p>
                 <div class="flex items-center gap-2 mt-2 text-[10px] text-outline">
                   <span>{{ getLineRange(finding.id) }}</span>
-                  <span v-if="finding.markedUnderstood" class="text-primary ml-auto">✓ Understood</span>
+                  <span v-if="finding.markedUnderstood" class="text-primary ml-auto">✓ Begrepen</span>
                 </div>
               </button>
             </div>
@@ -876,7 +876,7 @@ function goBack() {
                 class="px-3 py-1.5 rounded-lg border border-outline-variant/10 bg-surface-container/40 flex flex-wrap items-center gap-x-4 gap-y-1 text-[10px] text-outline"
               >
                 <span class="tabular-nums"
-                  >{{ originalLineCount }} → {{ optimizedLineCount }} lines</span
+                  >{{ originalLineCount }} → {{ optimizedLineCount }} regels</span
                 >
                 <span v-if="diffSourcePath" class="font-mono text-outline/70 truncate max-w-[14rem]" :title="diffSourcePath">{{
                   diffPrismLanguage
@@ -886,10 +886,10 @@ function goBack() {
                 v-if="selectedIssueSpanLabel"
                 class="text-[11px] text-on-surface-variant px-1"
               >
-                <span class="font-semibold text-red-400">Original:</span>
-                red row / token = removed or old.
-                <span class="font-semibold text-emerald-400 ml-2">Optimized:</span>
-                green = added or new. Panels scroll together.
+                <span class="font-semibold text-red-400">Origineel:</span>
+                rode rij / token = verwijderd of oud.
+                <span class="font-semibold text-emerald-400 ml-2">Voorgestelde versie:</span>
+                groen = toegevoegd of nieuw. Panelen scrollen samen.
                 {{ selectedIssueSpanLabel }}.
               </p>
               <div class="flex min-h-0 flex-1 gap-3">
@@ -901,9 +901,9 @@ function goBack() {
                     class="flex flex-shrink-0 flex-wrap items-center justify-between gap-2 border-b border-outline-variant/10 bg-surface-container/80 px-3 py-2"
                   >
                     <div class="flex items-center gap-2">
-                      <span class="text-xs font-bold uppercase tracking-widest text-outline">Original</span>
+                      <span class="text-xs font-bold uppercase tracking-widest text-outline">Origineel</span>
                       <span class="text-[11px] font-semibold text-red-400 tabular-nums">
-                        {{ diffView.removalRows }} removal{{ diffView.removalRows === 1 ? '' : 's' }}
+                        {{ diffView.removalRows }} {{ diffView.removalRows === 1 ? 'verwijdering' : 'verwijderingen' }}
                       </span>
                     </div>
                     <button
@@ -911,7 +911,7 @@ function goBack() {
                       class="text-[11px] rounded-md border border-outline-variant/30 px-2 py-1 hover:bg-surface-container transition-colors"
                       @click="copyOriginalFile"
                     >
-                      Copy
+                      Kopieer
                     </button>
                   </div>
                   <div
@@ -955,10 +955,10 @@ function goBack() {
                     <div class="flex items-center gap-2">
                       <span
                         class="text-xs font-bold uppercase tracking-widest text-emerald-800 dark:text-emerald-200"
-                        >Optimized</span
+                        >Voorgestelde versie</span
                       >
                       <span class="text-[11px] font-semibold text-emerald-500 tabular-nums">
-                        {{ diffView.additionRows }} addition{{ diffView.additionRows === 1 ? '' : 's' }}
+                        {{ diffView.additionRows }} {{ diffView.additionRows === 1 ? 'toevoeging' : 'toevoegingen' }}
                       </span>
                     </div>
                     <button
@@ -966,7 +966,7 @@ function goBack() {
                       class="text-[11px] rounded-md border border-emerald-500/35 px-2 py-1 text-emerald-800 hover:bg-emerald-500/15 dark:text-emerald-200 transition-colors"
                       @click="copyOptimizedFile"
                     >
-                      Copy
+                      Kopieer
                     </button>
                   </div>
                   <div
@@ -1010,20 +1010,20 @@ function goBack() {
                 <div class="flex-1">
                   <div class="flex items-center gap-3 mb-3">
                     <span :class="['px-2 py-1 rounded-full text-[10px] font-bold uppercase border', getCategoryClass(selectedFinding.category || selectedFinding.severity || '')]">
-                      {{ (selectedFinding.category || selectedFinding.severity || 'unknown').replace('_', ' ') }}
+                      {{ (selectedFinding.category || selectedFinding.severity || 'onbekend').replace('_', ' ') }}
                     </span>
-                    <span class="text-xs text-outline">by {{ selectedFinding.commitAuthor || 'unknown' }}</span>
+                    <span class="text-xs text-outline">door {{ selectedFinding.commitAuthor || 'onbekend' }}</span>
                     <span class="text-xs text-outline">{{ getLineRange(selectedFinding.id) }}</span>
                   </div>
                   
-                  <h3 class="text-lg font-bold text-on-surface mb-2">Why This Is Better</h3>
+                  <h3 class="text-lg font-bold text-on-surface mb-2">Waarom dit beter is</h3>
                   <p class="text-sm text-on-surface-variant leading-relaxed mb-3">
                     {{ selectedFinding.explanation }}
                   </p>
                   
                   <!-- References -->
                   <div v-if="selectedFinding.references?.length" class="flex items-center gap-4">
-                    <span class="text-xs font-bold uppercase tracking-wider text-outline">References:</span>
+                    <span class="text-xs font-bold uppercase tracking-wider text-outline">Referenties:</span>
                     <div class="flex flex-wrap gap-3">
                       <a
                         v-for="(ref, idx) in selectedFinding.references"
@@ -1041,8 +1041,8 @@ function goBack() {
                   <!-- PR Link -->
                   <div v-if="selectedFinding.prUrl" class="mt-3 p-2 bg-primary/10 rounded-lg border border-primary/20 inline-block">
                     <p class="text-xs text-primary">
-                      <span class="font-bold">PR Created:</span>
-                      <a :href="selectedFinding.prUrl" target="_blank" class="ml-1 underline">View on GitHub</a>
+                      <span class="font-bold">PR aangemaakt:</span>
+                      <a :href="selectedFinding.prUrl" target="_blank" class="ml-1 underline">Bekijk op GitHub</a>
                     </p>
                   </div>
                 </div>
@@ -1055,14 +1055,14 @@ function goBack() {
                       @click="openFixLearn"
                     >
                       <span class="material-symbols-outlined text-sm">school</span>
-                      Fix & Learn
+                      Oplossen & leren
                     </button>
                     <button
                       :disabled="actionLoading || selectedFinding.explanationRequested"
                       class="px-4 py-2 border border-outline-variant/30 rounded-lg text-sm font-medium text-on-surface-variant hover:bg-surface-container transition-all disabled:opacity-50"
                       @click="requestExplanation"
                     >
-                      {{ selectedFinding.explanationRequested ? '✓ Requested' : 'Request Help' }}
+                      {{ selectedFinding.explanationRequested ? '✓ Aangevraagd' : 'Hulp vragen' }}
                     </button>
                   </div>
                 </div>
@@ -1096,7 +1096,7 @@ function goBack() {
         <div class="px-6 py-4 border-b border-outline-variant/10 flex items-center justify-between">
           <div class="flex items-center gap-2">
             <span class="material-symbols-outlined text-primary">school</span>
-            <h3 class="text-lg font-bold">Fix & Learn</h3>
+            <h3 class="text-lg font-bold">Oplossen & leren</h3>
           </div>
           <button @click="showFixLearnDialog = false" class="p-1 rounded-lg hover:bg-surface-container-highest">
             <span class="material-symbols-outlined text-outline">close</span>
@@ -1109,8 +1109,8 @@ function goBack() {
           <!-- Step 1: Explain (grouped by category) -->
           <template v-if="fixLearnStep === 'explain'">
             <p class="text-sm text-on-surface-variant">
-              Before copying the fix, explain <strong>in your own words</strong> why the original code is problematic.
-              Issues are grouped by category — one explanation per group.
+              Voordat je de oplossing kopieert, leg <strong>in je eigen woorden</strong> uit waarom de originele code problematisch is.
+              Bevindingen zijn per categorie gegroepeerd — één uitleg per groep.
             </p>
 
             <div v-for="group in fixLearnGroups" :key="group.key" class="p-4 rounded-xl border border-outline-variant/10 bg-surface-container-lowest space-y-3">
@@ -1118,7 +1118,7 @@ function goBack() {
                 <span class="px-2 py-0.5 rounded text-[10px] font-bold uppercase bg-tertiary/10 text-tertiary">
                   {{ group.label }}
                 </span>
-                <span class="text-sm font-bold">{{ group.findings.length }} issue{{ group.findings.length > 1 ? 's' : '' }}</span>
+                <span class="text-sm font-bold">{{ group.findings.length }} {{ group.findings.length === 1 ? 'bevinding' : 'bevindingen' }}</span>
               </div>
               <ul class="text-xs text-outline space-y-1 pl-4 list-disc">
                 <li v-for="f in group.findings" :key="f.id">{{ f.title }}</li>
@@ -1129,11 +1129,11 @@ function goBack() {
                 rows="3"
                 class="w-full bg-surface-container border rounded-lg text-sm text-on-surface p-3 focus:ring-1 focus:ring-primary/50 placeholder:text-outline/40"
                 :class="copyPasteWarning[group.key] ? 'border-red-500/50' : 'border-outline-variant/30'"
-                :placeholder="`Why is ${group.label} problematic here? What could go wrong?`"
+                :placeholder="`Waarom is ${group.label} hier problematisch? Wat kan er misgaan?`"
               ></textarea>
               <p v-if="copyPasteWarning[group.key]" class="text-xs text-red-400 flex items-center gap-1">
                 <span class="material-symbols-outlined text-xs">warning</span>
-                This looks like a copy-paste. Please use your own words to explain the issue.
+                Dit lijkt op een copy-paste. Gebruik alsjeblieft je eigen woorden om het probleem uit te leggen.
               </p>
             </div>
           </template>
@@ -1150,7 +1150,7 @@ function goBack() {
               <div class="flex items-center justify-between">
                 <div class="flex items-center gap-2">
                   <span class="text-sm font-bold capitalize">{{ group.label }}</span>
-                  <span class="text-xs text-outline">({{ group.findings.length }} issue{{ group.findings.length > 1 ? 's' : '' }})</span>
+                  <span class="text-xs text-outline">({{ group.findings.length }} {{ group.findings.length === 1 ? 'bevinding' : 'bevindingen' }})</span>
                 </div>
                 <span v-if="group.result" class="px-2 py-0.5 rounded-full text-xs font-bold"
                   :class="{
@@ -1158,7 +1158,7 @@ function goBack() {
                     'bg-yellow-500/20 text-yellow-400': group.result.level === 'partial',
                     'bg-red-500/20 text-red-400': group.result.level === 'not_yet',
                   }">
-                  {{ group.result.level === 'got_it' ? 'Understood!' : group.result.level === 'partial' ? 'Almost' : 'Keep Learning' }}
+                  {{ group.result.level === 'got_it' ? 'Begrepen!' : group.result.level === 'partial' ? 'Bijna' : 'Blijf leren' }}
                 </span>
               </div>
 
@@ -1169,7 +1169,7 @@ function goBack() {
 
               <!-- Deeper explanation (not_yet only) -->
               <div v-if="group.result?.level === 'not_yet' && group.result?.deeper_explanation" class="p-3 bg-surface-container rounded-lg">
-                <p class="text-xs font-bold text-red-400 mb-1">Here's a clearer explanation:</p>
+                <p class="text-xs font-bold text-red-400 mb-1">Hier is een duidelijkere uitleg:</p>
                 <p class="text-sm text-on-surface">{{ group.result.deeper_explanation }}</p>
               </div>
 
@@ -1180,11 +1180,11 @@ function goBack() {
                   <div class="flex gap-1.5 shrink-0">
                     <button @click="copyFixToClipboard(f)"
                       class="flex items-center gap-1 px-2 py-1 bg-primary/10 text-primary text-xs font-bold rounded hover:bg-primary/20 transition-all">
-                      <span class="material-symbols-outlined text-xs">content_copy</span> Copy Fix
+                      <span class="material-symbols-outlined text-xs">content_copy</span> Kopieer oplossing
                     </button>
                     <button @click="promptMarkFixed(f)"
                       class="flex items-center gap-1 px-2 py-1 border border-green-500/30 text-green-400 text-xs rounded hover:bg-green-500/10 transition-all">
-                      <span class="material-symbols-outlined text-xs">check</span> Fixed
+                      <span class="material-symbols-outlined text-xs">check</span> Opgelost
                     </button>
                   </div>
                 </div>
@@ -1196,7 +1196,7 @@ function goBack() {
                   <span class="text-xs text-on-surface truncate flex-1">{{ f.title }}</span>
                   <button @click="copyFixToClipboard(f)"
                     class="flex items-center gap-1 px-2 py-1 border border-outline-variant/30 text-on-surface-variant text-xs rounded hover:bg-surface-container transition-all">
-                    <span class="material-symbols-outlined text-xs">content_copy</span> I Get It — Copy
+                    <span class="material-symbols-outlined text-xs">content_copy</span> Ik snap het — kopieer
                   </button>
                 </div>
               </div>
@@ -1207,15 +1207,15 @@ function goBack() {
         <!-- Footer -->
         <div class="px-6 py-4 border-t border-outline-variant/10 flex justify-between">
           <button @click="showFixLearnDialog = false" class="px-4 py-2 text-sm text-outline hover:text-on-surface">
-            Close
+            Sluiten
           </button>
           <button v-if="fixLearnStep === 'explain'" @click="submitUnderstanding" :disabled="fixLearnLoading || hasCopyPaste"
             class="px-6 py-2 primary-gradient text-on-primary text-sm font-bold rounded-lg disabled:opacity-50 flex items-center gap-2">
             <span v-if="fixLearnLoading" class="material-symbols-outlined text-sm animate-spin">progress_activity</span>
-            {{ fixLearnLoading ? 'Checking...' : 'Check My Understanding' }}
+            {{ fixLearnLoading ? 'Controleren...' : 'Controleer mijn begrip' }}
           </button>
           <button v-if="fixLearnStep === 'results'" @click="fixLearnStep = 'explain'" class="px-4 py-2 text-sm text-primary font-bold">
-            ← Try Again
+            ← Opnieuw proberen
           </button>
         </div>
       </div>
@@ -1227,27 +1227,27 @@ function goBack() {
     <div v-if="showFixCommitDialog" class="fixed inset-0 z-[100] flex items-center justify-center bg-black/60 backdrop-blur-sm">
       <div class="bg-surface-container w-full max-w-md rounded-2xl shadow-2xl border border-outline-variant/10">
         <div class="px-6 py-4 border-b border-outline-variant/10">
-          <h3 class="text-lg font-bold text-on-surface">Mark as Fixed</h3>
+          <h3 class="text-lg font-bold text-on-surface">Markeer als opgelost</h3>
           <p class="text-sm text-on-surface-variant mt-1">{{ fixCommitFinding?.title }}</p>
         </div>
         <div class="px-6 py-5 space-y-4">
           <div>
-            <label class="block text-sm font-medium text-on-surface mb-1.5">Commit SHA <span class="text-on-surface-variant font-normal">(optional)</span></label>
+            <label class="block text-sm font-medium text-on-surface mb-1.5">Commit-SHA <span class="text-on-surface-variant font-normal">(optioneel)</span></label>
             <input v-model="fixCommitSha" type="text" maxlength="40"
-              placeholder="e.g. a1b2c3d or full SHA"
+              placeholder="bv. a1b2c3d of volledige SHA"
               class="w-full px-3 py-2 bg-surface rounded-lg border border-outline-variant/20 text-on-surface text-sm placeholder:text-outline focus:outline-none focus:ring-2 focus:ring-primary/50 font-mono" />
-            <p class="text-xs text-on-surface-variant mt-1">Enter the commit SHA that fixes this issue so it can be tracked.</p>
+            <p class="text-xs text-on-surface-variant mt-1">Vul de commit-SHA in die deze bevinding oplost zodat dit getraceerd kan worden.</p>
           </div>
         </div>
         <div class="px-6 py-4 border-t border-outline-variant/10 flex justify-end gap-3">
           <button @click="showFixCommitDialog = false" class="px-4 py-2 text-sm text-outline hover:text-on-surface">
-            Cancel
+            Annuleren
           </button>
           <button @click="confirmMarkFixed" :disabled="fixCommitLoading"
             class="px-5 py-2 bg-green-600 hover:bg-green-500 text-white text-sm font-bold rounded-lg disabled:opacity-50 flex items-center gap-2 transition-all">
             <span v-if="fixCommitLoading" class="material-symbols-outlined text-sm animate-spin">progress_activity</span>
             <span class="material-symbols-outlined text-sm" v-else>check_circle</span>
-            Mark Fixed
+            Markeer als opgelost
           </button>
         </div>
       </div>
