@@ -414,6 +414,13 @@ class DeterministicFinding(models.Model):
     class Runner(models.TextChoices):
         RUFF = 'ruff', 'ruff (Python)'
         ESLINT = 'eslint', 'ESLint (JS/TS)'
+        # Added v1.1 (May 2 2026): PHP is the most-used MBO-4 ICT stack.
+        # ai_engine has shipped phpcs (PSR-12) + phpstan (level 5) runners
+        # for a while; before this enum entry their findings were silently
+        # dropped at the Django serializer because runner='phpcs' wasn't
+        # valid. v1.1 task F4.
+        PHPCS = 'phpcs', 'phpcs (PHP / PSR-12)'
+        PHPSTAN = 'phpstan', 'phpstan (PHP)'
 
     evaluation = models.ForeignKey(
         Evaluation,
