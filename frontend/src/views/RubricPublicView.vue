@@ -471,10 +471,22 @@ const dontGrade = [
             class="skill-card reveal"
             :class="{ expanded: expandedSkill === skill.id }"
             :data-skill="skill.id"
-            @click="toggleSkill(skill.id)"
           >
             <div class="skill-accent" :style="{ background: skill.color }"></div>
-            <div class="skill-header">
+            <!-- Click moved to the header only (was on the whole card,
+                 which caused the body's own clicks to bubble up and
+                 collapse the card the user just opened). The body uses
+                 @click.stop so reading / selecting text inside the
+                 expanded panel doesn't accidentally close it. -->
+            <div
+              class="skill-header"
+              role="button"
+              tabindex="0"
+              :aria-expanded="expandedSkill === skill.id"
+              @click="toggleSkill(skill.id)"
+              @keydown.enter.prevent="toggleSkill(skill.id)"
+              @keydown.space.prevent="toggleSkill(skill.id)"
+            >
               <div style="flex:1">
                 <div style="display:flex;align-items:center;gap:10px;margin-bottom:8px;flex-wrap:wrap">
                   <span class="material-symbols-outlined" :style="{ fontSize: '20px', color: skill.color }">{{ skill.icon }}</span>
@@ -504,7 +516,11 @@ const dontGrade = [
                 :style="{ transform: expandedSkill === skill.id ? 'rotate(180deg)' : 'rotate(0deg)' }"
               >expand_more</span>
             </div>
-            <div class="skill-body" v-show="expandedSkill === skill.id">
+            <div
+              class="skill-body"
+              v-show="expandedSkill === skill.id"
+              @click.stop
+            >
               <div class="level-table">
                 <div
                   v-for="level in skill.levels"
@@ -941,7 +957,6 @@ section {
   border-radius: 16px;
   overflow: hidden;
   transition: transform .3s, box-shadow .3s, border-color .3s;
-  cursor: pointer;
 }
 .skill-card:hover {
   transform: translateY(-2px);
@@ -962,6 +977,13 @@ section {
   display: flex;
   align-items: flex-start;
   gap: 16px;
+  cursor: pointer;
+  user-select: none;
+}
+.skill-header:focus-visible {
+  outline: 2px solid var(--primary);
+  outline-offset: -2px;
+  border-radius: 16px;
 }
 .skill-name {
   font-size: 18px;
