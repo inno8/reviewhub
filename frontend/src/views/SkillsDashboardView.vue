@@ -521,10 +521,10 @@ const filteredPatterns = computed(() =>
 const statCards = computed(() => {
   if (!overview.value) return [];
   return [
-    { label: 'Total Evaluations', value: overview.value.total_evaluations, icon: 'analytics', color: 'primary' },
-    { label: 'Total Findings', value: overview.value.total_findings, icon: 'bug_report', color: 'tertiary', sub: `${overview.value.critical_count} critical, ${overview.value.warning_count} warning` },
-    { label: 'Fix Rate', value: `${overview.value.fix_rate}%`, icon: 'check_circle', color: 'primary-container' },
-    { label: 'Average Score', value: `${overview.value.avg_score}%`, icon: 'school', color: 'secondary' },
+    { label: 'Totaal evaluaties', value: overview.value.total_evaluations, icon: 'analytics', color: 'primary' },
+    { label: 'Totaal bevindingen', value: overview.value.total_findings, icon: 'bug_report', color: 'tertiary', sub: `${overview.value.critical_count} kritiek, ${overview.value.warning_count} waarschuwing` },
+    { label: 'Fix-percentage', value: `${overview.value.fix_rate}%`, icon: 'check_circle', color: 'primary-container' },
+    { label: 'Gemiddelde score', value: `${overview.value.avg_score}%`, icon: 'school', color: 'secondary' },
   ];
 });
 
@@ -537,19 +537,19 @@ const selectedUserObj = computed(() => adminUsers.value.find(u => u.id === selec
       <!-- Header -->
       <section class="flex flex-col md:flex-row justify-between items-start md:items-end mb-12 gap-6">
         <div class="space-y-2">
-          <span class="text-primary font-bold uppercase tracking-[0.2em] text-xs">Skills & Metrics</span>
+          <span class="text-primary font-bold uppercase tracking-[0.2em] text-xs">Skills & metrieken</span>
           <h1 class="text-5xl font-black tracking-tighter text-on-surface">
-            {{ showUserList ? 'Team Skills' : 'Developer Dashboard' }}
+            {{ showUserList ? 'Team-skills' : 'Ontwikkelaars-dashboard' }}
           </h1>
           <p class="text-outline text-sm">
-            {{ showUserList ? 'Select a developer to view their skill metrics' : 'Track coding skills and progress over time' }}
+            {{ showUserList ? 'Kies een ontwikkelaar om de skill-metrieken te bekijken' : 'Volg coding-skills en voortgang in de tijd' }}
           </p>
         </div>
 
         <div class="flex items-center gap-3">
           <button v-if="authStore.isAdmin && selectedUserId" @click="backToList"
             class="flex items-center gap-2 px-4 py-2 bg-surface-container rounded-lg border border-outline-variant/20 text-sm text-on-surface hover:text-primary transition-colors">
-            <span class="material-symbols-outlined text-sm">arrow_back</span> All Users
+            <span class="material-symbols-outlined text-sm">arrow_back</span> Alle gebruikers
           </button>
           <div v-if="selectedUserId && selectedUserObj" class="flex items-center gap-2 px-4 py-2 bg-surface-container rounded-lg border border-outline-variant/20">
             <div class="w-6 h-6 rounded-full bg-secondary-container flex items-center justify-center text-xs font-bold text-primary">
@@ -571,16 +571,16 @@ const selectedUserObj = computed(() => adminUsers.value.find(u => u.id === selec
       <!-- ═══ Admin User List ═══ -->
       <template v-if="showUserList">
         <div class="flex flex-wrap items-center gap-3 mb-8">
-          <input v-model="adminSearch" type="text" placeholder="Search..."
+          <input v-model="adminSearch" type="text" placeholder="Zoeken..."
             class="w-56 bg-surface-container-lowest border-none rounded-lg text-on-surface placeholder:text-outline/40 focus:ring-1 focus:ring-primary/50 py-2.5 px-4 text-sm" />
           <select v-model="adminCategoryFilter"
             class="bg-surface-container-lowest border-none rounded-lg text-sm text-on-surface focus:ring-1 focus:ring-primary/50 py-2.5 px-4">
-            <option :value="null">All Categories</option>
+            <option :value="null">Alle categorieën</option>
             <option v-for="c in adminCategories" :key="c.id" :value="c.id">{{ c.name }}</option>
           </select>
           <select v-model="adminProjectFilter"
             class="bg-surface-container-lowest border-none rounded-lg text-sm text-on-surface focus:ring-1 focus:ring-primary/50 py-2.5 px-4">
-            <option :value="null">All Projects</option>
+            <option :value="null">Alle projecten</option>
             <option v-for="p in projectsStore.projects" :key="p.id" :value="p.id">{{ p.displayName }}</option>
           </select>
         </div>
@@ -604,11 +604,11 @@ const selectedUserObj = computed(() => adminUsers.value.find(u => u.id === selec
             <div class="grid grid-cols-3 gap-2 text-center">
               <div class="bg-surface-container-lowest rounded-lg p-2">
                 <p class="text-base font-black">{{ u.total_evaluations }}</p>
-                <p class="text-[8px] text-outline uppercase">Evaluations</p>
+                <p class="text-[8px] text-outline uppercase">Evaluaties</p>
               </div>
               <div class="bg-surface-container-lowest rounded-lg p-2">
                 <p class="text-base font-black">{{ u.total_findings }}</p>
-                <p class="text-[8px] text-outline uppercase">Findings</p>
+                <p class="text-[8px] text-outline uppercase">Bevindingen</p>
               </div>
               <div class="bg-surface-container-lowest rounded-lg p-2">
                 <p class="text-base font-black" :class="u.avg_score >= 70 ? 'text-green-400' : u.avg_score >= 50 ? 'text-yellow-400' : 'text-error'">{{ u.avg_score }}%</p>
@@ -618,7 +618,7 @@ const selectedUserObj = computed(() => adminUsers.value.find(u => u.id === selec
           </div>
           <div v-if="!adminUsers.length" class="col-span-full text-center py-16">
             <span class="material-symbols-outlined text-6xl text-outline mb-4">group</span>
-            <p class="text-outline">No developers found</p>
+            <p class="text-outline">Geen ontwikkelaars gevonden</p>
           </div>
         </div>
       </template>
@@ -640,8 +640,8 @@ const selectedUserObj = computed(() => adminUsers.value.find(u => u.id === selec
           </section>
 
           <section class="grid grid-cols-1 lg:grid-cols-2 gap-8 mb-12">
-            <SkillRadarChart :data="categoryScores" title="Skill Categories Overview" />
-            <ProgressChart :data="progressData" title="Weekly Progress (Last 8 Weeks)" />
+            <SkillRadarChart :data="categoryScores" title="Skill-overzicht" />
+            <ProgressChart :data="progressData" title="Wekelijkse voortgang (laatste 8 weken)" />
           </section>
 
           <!-- Recommendations: only shown for admin viewing a developer's skills. Developers use /recommendations page -->
@@ -649,8 +649,8 @@ const selectedUserObj = computed(() => adminUsers.value.find(u => u.id === selec
             <div class="flex items-center gap-3 mb-4">
               <span class="material-symbols-outlined text-primary text-2xl">route</span>
               <div>
-                <h3 class="text-xl font-bold">Learning Path</h3>
-                <p class="text-xs text-outline">Personalized recommendations based on code patterns and skill gaps</p>
+                <h3 class="text-xl font-bold">Leerpad</h3>
+                <p class="text-xs text-outline">Persoonlijke aanbevelingen op basis van codepatronen en kennishiaten</p>
               </div>
             </div>
             <RecommendationsWidget
@@ -661,18 +661,18 @@ const selectedUserObj = computed(() => adminUsers.value.find(u => u.id === selec
           <section class="grid grid-cols-1 lg:grid-cols-3 gap-8 mb-12">
             <div class="lg:col-span-2 max-h-[500px] overflow-y-auto"><RecentFindings :findings="recentFindings" /></div>
             <div class="bg-surface-container-low rounded-2xl p-6 border border-outline-variant/10">
-              <h4 class="text-xl font-bold mb-6">Quick Stats</h4>
+              <h4 class="text-xl font-bold mb-6">Snelle stats</h4>
               <div class="space-y-4">
                 <div class="flex items-center justify-between p-3 bg-surface-container-lowest rounded-lg">
-                  <div class="flex items-center gap-3"><span class="material-symbols-outlined text-error">error</span><span class="text-sm">Critical</span></div>
+                  <div class="flex items-center gap-3"><span class="material-symbols-outlined text-error">error</span><span class="text-sm">Kritiek</span></div>
                   <span class="text-xl font-black">{{ overview?.critical_count || 0 }}</span>
                 </div>
                 <div class="flex items-center justify-between p-3 bg-surface-container-lowest rounded-lg">
-                  <div class="flex items-center gap-3"><span class="material-symbols-outlined text-yellow-500">warning</span><span class="text-sm">Warnings</span></div>
+                  <div class="flex items-center gap-3"><span class="material-symbols-outlined text-yellow-500">warning</span><span class="text-sm">Waarschuwingen</span></div>
                   <span class="text-xl font-black">{{ overview?.warning_count || 0 }}</span>
                 </div>
                 <div class="flex items-center justify-between p-3 bg-surface-container-lowest rounded-lg">
-                  <div class="flex items-center gap-3"><span class="material-symbols-outlined text-primary">check_circle</span><span class="text-sm">Fixed</span></div>
+                  <div class="flex items-center gap-3"><span class="material-symbols-outlined text-primary">check_circle</span><span class="text-sm">Opgelost</span></div>
                   <span class="text-xl font-black">{{ overview?.fixed_count || 0 }}</span>
                 </div>
               </div>
@@ -680,7 +680,7 @@ const selectedUserObj = computed(() => adminUsers.value.find(u => u.id === selec
           </section>
 
           <section v-if="skillCategories.length" class="mb-12">
-            <h4 class="text-2xl font-black tracking-tight mb-6">Skill Breakdown by Category</h4>
+            <h4 class="text-2xl font-black tracking-tight mb-6">Skill-verdeling per categorie</h4>
             <div class="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-6">
               <CategoryRadarChart v-for="cat in skillCategories" :key="cat.id" :category="cat" @click-skill="openSkillBreakdown" />
             </div>
@@ -690,33 +690,33 @@ const selectedUserObj = computed(() => adminUsers.value.find(u => u.id === selec
           <section class="mb-12">
             <div class="flex items-center justify-between mb-5">
               <div>
-                <h4 class="text-2xl font-black tracking-tight">Pattern Tracker</h4>
-                <p class="text-sm text-outline mt-0.5">Recurring code issues detected across your evaluations</p>
+                <h4 class="text-2xl font-black tracking-tight">Patroon-tracker</h4>
+                <p class="text-sm text-outline mt-0.5">Terugkerende codeproblemen die in jouw evaluaties zijn gedetecteerd</p>
               </div>
               <label class="flex items-center gap-2 text-sm text-outline cursor-pointer">
                 <input type="checkbox" v-model="showResolved" class="accent-primary rounded" />
-                Show resolved
+                Opgeloste tonen
               </label>
             </div>
 
             <div v-if="patternsLoading" class="flex items-center gap-3 py-8 text-outline">
               <span class="material-symbols-outlined animate-spin text-2xl">progress_activity</span>
-              Loading patterns…
+              Patronen laden…
             </div>
 
             <div v-else-if="!filteredPatterns.length" class="p-8 bg-surface-container-low rounded-2xl border border-outline-variant/10 text-center">
               <span class="material-symbols-outlined text-4xl text-outline mb-2 block">verified</span>
-              <p class="text-sm text-outline">{{ showResolved ? 'No patterns found.' : 'No recurring issues detected.' }}</p>
+              <p class="text-sm text-outline">{{ showResolved ? 'Geen patronen gevonden.' : 'Geen terugkerende problemen gedetecteerd.' }}</p>
             </div>
 
             <div v-else class="bg-surface-container-low rounded-2xl border border-outline-variant/10 overflow-hidden">
               <table class="w-full text-sm">
                 <thead>
                   <tr class="border-b border-outline-variant/10 text-xs text-outline uppercase tracking-wider">
-                    <th class="px-5 py-3 text-left">Pattern</th>
-                    <th class="px-5 py-3 text-center">Frequency</th>
-                    <th class="px-5 py-3 text-left hidden md:table-cell">First seen</th>
-                    <th class="px-5 py-3 text-left hidden md:table-cell">Last seen</th>
+                    <th class="px-5 py-3 text-left">Patroon</th>
+                    <th class="px-5 py-3 text-center">Frequentie</th>
+                    <th class="px-5 py-3 text-left hidden md:table-cell">Eerst gezien</th>
+                    <th class="px-5 py-3 text-left hidden md:table-cell">Laatst gezien</th>
                     <th class="px-5 py-3 text-center">Status</th>
                     <th class="px-3 py-3"></th>
                   </tr>
@@ -738,7 +738,7 @@ const selectedUserObj = computed(() => adminUsers.value.find(u => u.id === selec
                           <p class="text-xs text-outline capitalize">{{ p.pattern_type }}</p>
                         </div>
                         <button @click.stop="openPatternInfo(p.pattern_key)"
-                          class="p-1 rounded-full hover:bg-surface-container-highest transition-colors" title="What is this?">
+                          class="p-1 rounded-full hover:bg-surface-container-highest transition-colors" title="Wat is dit?">
                           <span class="material-symbols-outlined text-sm text-outline hover:text-primary">info</span>
                         </button>
                       </div>
@@ -756,8 +756,8 @@ const selectedUserObj = computed(() => adminUsers.value.find(u => u.id === selec
                       {{ new Date(p.last_seen).toLocaleDateString() }}
                     </td>
                     <td class="px-5 py-3 text-center">
-                      <span v-if="p.is_resolved" class="px-2 py-0.5 rounded-full text-xs bg-emerald-500/15 text-emerald-500 font-semibold">Resolved</span>
-                      <span v-else class="px-2 py-0.5 rounded-full text-xs bg-error/10 text-error font-semibold">Active</span>
+                      <span v-if="p.is_resolved" class="px-2 py-0.5 rounded-full text-xs bg-emerald-500/15 text-emerald-500 font-semibold">Opgelost</span>
+                      <span v-else class="px-2 py-0.5 rounded-full text-xs bg-error/10 text-error font-semibold">Actief</span>
                     </td>
                     <td class="px-3 py-3 text-right">
                       <button
@@ -768,7 +768,7 @@ const selectedUserObj = computed(() => adminUsers.value.find(u => u.id === selec
                         @click="resolvePattern(p.id)"
                       >
                         <span v-if="resolvingId === p.id" class="material-symbols-outlined text-xs animate-spin">progress_activity</span>
-                        <span v-else>Mark resolved</span>
+                        <span v-else>Markeer als opgelost</span>
                       </button>
                     </td>
                   </tr>
@@ -779,8 +779,8 @@ const selectedUserObj = computed(() => adminUsers.value.find(u => u.id === selec
 
           <section v-if="!overview && !loading" class="text-center py-16">
             <span class="material-symbols-outlined text-6xl text-outline mb-4">insights</span>
-            <h3 class="text-xl font-bold mb-2">No Dashboard Data Yet</h3>
-            <p class="text-outline">Start pushing code to see skill metrics and progress!</p>
+            <h3 class="text-xl font-bold mb-2">Nog geen dashboard-data</h3>
+            <p class="text-outline">Push code om je skill-metrieken en voortgang te zien!</p>
           </section>
         </template>
       </template>
@@ -816,11 +816,11 @@ const selectedUserObj = computed(() => adminUsers.value.find(u => u.id === selec
             @click="openCodeExample((patternInfoData as any)?.slug)"
             class="px-4 py-2 text-sm font-bold bg-tertiary/10 text-tertiary rounded-lg hover:bg-tertiary/20 transition-colors flex items-center gap-2">
             <span class="material-symbols-outlined text-sm">code</span>
-            Code Example
+            Codevoorbeeld
           </button>
           <span v-else></span>
           <button @click="patternInfoOpen = false" class="px-4 py-2 text-sm text-primary font-bold hover:bg-primary/10 rounded-lg transition-colors">
-            Got it
+            Begrepen
           </button>
         </div>
       </div>
@@ -834,7 +834,7 @@ const selectedUserObj = computed(() => adminUsers.value.find(u => u.id === selec
         <div class="px-6 py-4 border-b border-outline-variant/10 flex items-center justify-between">
           <div class="flex items-center gap-2">
             <span class="material-symbols-outlined text-tertiary">code</span>
-            <h3 class="text-lg font-bold capitalize">{{ codeExampleData.name }} — Code Example</h3>
+            <h3 class="text-lg font-bold capitalize">{{ codeExampleData.name }} — Codevoorbeeld</h3>
           </div>
           <button @click="codeExampleOpen = false" class="p-1 rounded-lg hover:bg-surface-container-highest">
             <span class="material-symbols-outlined text-outline">close</span>
@@ -847,7 +847,7 @@ const selectedUserObj = computed(() => adminUsers.value.find(u => u.id === selec
             <div class="rounded-xl overflow-hidden border border-red-500/20">
               <div class="px-4 py-2 bg-red-500/10 flex items-center gap-2">
                 <span class="material-symbols-outlined text-sm text-red-400">close</span>
-                <span class="text-sm font-bold text-red-400">Bad Practice</span>
+                <span class="text-sm font-bold text-red-400">Slechte praktijk</span>
               </div>
               <pre class="p-4 bg-surface-container-lowest text-xs text-on-surface-variant overflow-x-auto whitespace-pre leading-relaxed"><code>{{ codeExampleData.example.bad }}</code></pre>
             </div>
@@ -856,20 +856,20 @@ const selectedUserObj = computed(() => adminUsers.value.find(u => u.id === selec
             <div class="rounded-xl overflow-hidden border border-green-500/20">
               <div class="px-4 py-2 bg-green-500/10 flex items-center gap-2">
                 <span class="material-symbols-outlined text-sm text-green-400">check</span>
-                <span class="text-sm font-bold text-green-400">Best Practice</span>
+                <span class="text-sm font-bold text-green-400">Goede praktijk</span>
               </div>
               <pre class="p-4 bg-surface-container-lowest text-xs text-on-surface-variant overflow-x-auto whitespace-pre leading-relaxed"><code>{{ codeExampleData.example.good }}</code></pre>
             </div>
           </div>
 
           <p class="text-xs text-outline text-center mt-4">
-            Language: <span class="text-on-surface font-mono">{{ codeExampleData.example.language }}</span>
+            Taal: <span class="text-on-surface font-mono">{{ codeExampleData.example.language }}</span>
           </p>
         </div>
 
         <div class="px-6 py-3 border-t border-outline-variant/10 flex justify-end">
           <button @click="codeExampleOpen = false" class="px-4 py-2 text-sm text-primary font-bold hover:bg-primary/10 rounded-lg transition-colors">
-            Close
+            Sluiten
           </button>
         </div>
       </div>
@@ -886,10 +886,10 @@ const selectedUserObj = computed(() => adminUsers.value.find(u => u.id === selec
             <div class="text-center mb-4">
               <span class="material-symbols-outlined text-5xl text-green-400">check_circle</span>
             </div>
-            <h3 class="text-lg font-bold text-center mb-2">Pattern Resolved!</h3>
+            <h3 class="text-lg font-bold text-center mb-2">Patroon opgelost!</h3>
             <p class="text-sm text-on-surface-variant text-center">{{ resolveDialogData.message }}</p>
             <div v-if="resolveDialogData.skillBoost" class="mt-3 p-3 bg-green-500/10 rounded-lg text-center">
-              <p class="text-sm text-green-400 font-bold">+{{ resolveDialogData.skillBoost }} skill points earned</p>
+              <p class="text-sm text-green-400 font-bold">+{{ resolveDialogData.skillBoost }} skill-punten verdiend</p>
             </div>
           </template>
 
@@ -898,7 +898,7 @@ const selectedUserObj = computed(() => adminUsers.value.find(u => u.id === selec
             <div class="text-center mb-4">
               <span class="material-symbols-outlined text-5xl text-orange-400">warning</span>
             </div>
-            <h3 class="text-lg font-bold text-center mb-2">Pattern Still Active</h3>
+            <h3 class="text-lg font-bold text-center mb-2">Patroon nog steeds actief</h3>
             <p class="text-sm text-on-surface-variant text-center mb-4">{{ resolveDialogData.reason }}</p>
 
             <!-- Affected files with links -->
@@ -916,7 +916,7 @@ const selectedUserObj = computed(() => adminUsers.value.find(u => u.id === selec
               </div>
             </div>
 
-            <p class="text-xs text-outline text-center mt-3">Click a finding to review and fix it using Fix & Learn</p>
+            <p class="text-xs text-outline text-center mt-3">Klik op een bevinding om hem te bekijken en op te lossen via Oplossen & leren</p>
           </template>
         </div>
 
@@ -929,7 +929,7 @@ const selectedUserObj = computed(() => adminUsers.value.find(u => u.id === selec
              auto-resolve on its own once 10 clean commits pass. -->
         <div class="px-6 py-4 border-t border-outline-variant/10 flex justify-end">
           <button @click="resolveDialogOpen = false" class="px-4 py-2 text-sm text-outline hover:text-on-surface">
-            Close
+            Sluiten
           </button>
         </div>
       </div>
