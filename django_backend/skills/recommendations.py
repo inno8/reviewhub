@@ -59,13 +59,13 @@ class LearningRecommendationsView(APIView):
                     'category': metric.skill.category.name
                 },
                 'current_score': metric.score,
-                'reason': f'Low score in {metric.skill.name}',
+                'reason': f'Lage score op {metric.skill.name}',
                 'priority': priority,
                 'issue_count': metric.issue_count,
                 'suggested_resources': self._get_resources_for_skill(metric.skill.slug, primary_language),
                 'improvement_tip': self._get_improvement_tip(metric.skill.slug, metric.issue_count, primary_language)
             })
-        
+
         # 2. Find skills with many recent issues (last 30 days)
         from evaluations.models import Evaluation
 
@@ -117,7 +117,7 @@ class LearningRecommendationsView(APIView):
                         (m.score for m in metrics if m.skill.id == skill.id),
                         0
                     ),
-                    'reason': f'{data["count"]} recent issues in {skill.name}',
+                    'reason': f'{data["count"]} recente bevindingen in {skill.name}',
                     'priority': priority,
                     'issue_count': data['count'],
                     'severity_breakdown': data['severity_counts'],
@@ -142,7 +142,7 @@ class LearningRecommendationsView(APIView):
                         'category': metric.skill.category.name
                     },
                     'current_score': metric.score,
-                    'reason': f'Declining trend in {metric.skill.name}',
+                    'reason': f'Dalende trend voor {metric.skill.name}',
                     'priority': 'medium',
                     'issue_count': metric.issue_count,
                     'trend': metric.trend,
@@ -171,15 +171,15 @@ class LearningRecommendationsView(APIView):
                     },
                     'current_score': None,
                     'reason': (
-                        f'Recurring pattern: {pattern.frequency} occurrences '
-                        f'of {pattern.pattern_type} issues'
+                        f'Terugkerend patroon: {pattern.frequency} keer '
+                        f'{pattern.pattern_type}-issues'
                     ),
                     'priority': 'high' if pattern.frequency >= 10 else 'medium',
                     'issue_count': pattern.frequency,
                     'pattern_key': pattern.pattern_key,
                     'improvement_tip': (
-                        f'You have {pattern.frequency} recurring {pattern.pattern_type} '
-                        f'issues. Focus on this area to see the biggest improvement.'
+                        f'Je hebt {pattern.frequency} terugkerende {pattern.pattern_type}-issues. '
+                        f'Focus op dit gebied voor de grootste verbetering.'
                     ),
                     'suggested_resources': self._get_resources_for_skill(
                         pattern.pattern_key.split(':')[0], primary_language
@@ -218,7 +218,7 @@ class LearningRecommendationsView(APIView):
                         'category': metric.skill.category.name,
                     },
                     'current_score': metric.score,
-                    'reason': f'Great progress! {metric.skill.name} improved from {metric.previous_score:.0f} to {metric.score:.0f}',
+                    'reason': f'Mooie vooruitgang! {metric.skill.name} ging van {metric.previous_score:.0f} naar {metric.score:.0f}',
                     'priority': 'mastered',
                     'issue_count': metric.issue_count,
                     'suggested_resources': self._get_advanced_resources(metric.skill.slug, primary_language),
@@ -245,7 +245,7 @@ class LearningRecommendationsView(APIView):
                             'category': metric.skill.category.name,
                         },
                         'current_score': metric.score,
-                        'reason': f'Good at {metric.skill.name} ({metric.score:.0f}/100) — push to expert level',
+                        'reason': f'Sterk in {metric.skill.name} ({metric.score:.0f}/100) — push naar expert-niveau',
                         'priority': 'growth',
                         'issue_count': metric.issue_count,
                         'suggested_resources': self._get_advanced_resources(metric.skill.slug, primary_language),
@@ -347,28 +347,28 @@ class LearningRecommendationsView(APIView):
         """Get a targeted improvement tip for a skill."""
         lang = (primary_language or '').lower()
         tips_map = {
-            'clean_code': f'Your code has naming and formatting issues. Follow {lang.upper() or "language"} style conventions consistently.',
-            'code_structure': 'Break large functions into smaller, focused ones. Each function should do one thing well.',
-            'dry_principle': 'Look for repeated patterns in your code. Extract shared logic into reusable functions.',
-            'input_validation': 'Never trust user input. Always validate and sanitize before using in queries or rendering.',
-            'secrets_management': 'Move all secrets (API keys, passwords) to environment variables. Never commit them to git.',
-            'error_handling': 'Wrap risky operations in try/except blocks. Handle specific exceptions, not bare except.',
-            'edge_cases': 'Think about what happens with empty input, None values, or unexpected types.',
-            'html_semantics': 'Use semantic HTML tags (<header>, <nav>, <main>, <section>) instead of generic <div>.',
-            'accessibility': 'Add alt text to images, use ARIA labels on interactive elements, ensure keyboard navigation.',
-            'css_organization': 'Avoid inline styles. Use CSS classes and combine shared properties to reduce duplication.',
-            'responsive_design': 'Use relative units (rem, %) and media queries for layouts that adapt to screen size.',
-            'xss_csrf_prevention': 'Never use innerHTML with user data. Use textContent or a sanitization library.',
-            'database_queries': 'Use parameterized queries with ? placeholders. Never build SQL with string concatenation.',
-            'comments_docs': 'Add docstrings to functions explaining what they do, their parameters, and return values.',
+            'clean_code': f'Je code heeft naamgevings- en opmaak-issues. Volg de {lang.upper() or "taal"}-stijlconventies consequent.',
+            'code_structure': 'Splits grote functies op in kleine, gefocuste functies. Elke functie doet één ding goed.',
+            'dry_principle': 'Zoek herhaalde patronen in je code. Extract gedeelde logica in herbruikbare functies.',
+            'input_validation': 'Vertrouw nooit op gebruikersinvoer. Valideer en saneer altijd voordat je het gebruikt in queries of rendert.',
+            'secrets_management': 'Verplaats alle geheimen (API-keys, wachtwoorden) naar environment variables. Commit ze nooit naar git.',
+            'error_handling': 'Wrap riskante operaties in try/except blokken. Vang specifieke exceptions, geen bare except.',
+            'edge_cases': 'Denk na over wat er gebeurt bij lege invoer, None-waarden of onverwachte types.',
+            'html_semantics': 'Gebruik semantische HTML-tags (<header>, <nav>, <main>, <section>) in plaats van generieke <div>.',
+            'accessibility': 'Voeg alt-tekst toe aan afbeeldingen, gebruik ARIA-labels op interactieve elementen, zorg voor toetsenbordnavigatie.',
+            'css_organization': 'Vermijd inline styles. Gebruik CSS-classes en combineer gedeelde eigenschappen om duplicatie te verminderen.',
+            'responsive_design': 'Gebruik relatieve units (rem, %) en media queries voor layouts die zich aanpassen aan schermformaat.',
+            'xss_csrf_prevention': 'Gebruik nooit innerHTML met gebruikersdata. Gebruik textContent of een sanitization-library.',
+            'database_queries': 'Gebruik parameterized queries met ? placeholders. Bouw SQL nooit op met string-concatenatie.',
+            'comments_docs': 'Voeg docstrings toe aan functies die uitleggen wat ze doen, hun parameters en retourwaarden.',
         }
 
-        base_tip = tips_map.get(skill_slug, f'Review recent issues and identify common patterns in your {skill_slug.replace("_", " ")} code.')
+        base_tip = tips_map.get(skill_slug, f'Bekijk recente bevindingen en identificeer veelvoorkomende patronen in je {skill_slug.replace("_", " ")}-code.')
 
         if issue_count > 10:
-            return f'{base_tip} You have {issue_count} issues — start with the most critical ones first.'
+            return f'{base_tip} Je hebt {issue_count} bevindingen — begin met de meest kritieke.'
         elif issue_count > 5:
-            return f'{base_tip} Focus on preventing similar issues in new code.'
+            return f'{base_tip} Focus op het voorkomen van vergelijkbare issues in nieuwe code.'
         else:
             return base_tip
 
@@ -403,18 +403,18 @@ class LearningRecommendationsView(APIView):
     }
 
     NEXT_LEVEL_TIPS = {
-        'clean_code': 'You write clean code consistently. Level up by applying design patterns and teaching others through code reviews.',
-        'code_structure': 'Your code structure is solid. Focus on architectural patterns — how modules communicate and system boundaries.',
-        'dry_principle': 'You avoid duplication well. Now focus on the right abstractions — over-DRY code can be harder to read than some repetition.',
-        'error_handling': 'Your error handling is strong. Advance to resilience patterns: retries, circuit breakers, graceful degradation.',
-        'input_validation': 'Validation is on point. Explore fuzz testing and security-first design to proactively find edge cases.',
-        'edge_cases': 'You handle edge cases well. Push further with property-based testing to discover cases you haven\'t thought of.',
-        'secrets_management': 'Secrets are managed well. Look into secret rotation, audit logging, and zero-trust architecture.',
-        'database_queries': 'Your queries are safe. Level up with query optimization, explain plans, and indexing strategies.',
-        'xss_csrf_prevention': 'Security fundamentals are solid. Advance to Content Security Policy, security headers, and penetration testing.',
-        'accessibility': 'Great accessibility practices. Push to WCAG AA/AAA compliance and screen reader testing.',
-        'responsive_design': 'Responsive design is strong. Explore container queries, progressive enhancement, and performance budgets.',
-        'comments_docs': 'Documentation is good. Consider architecture decision records (ADRs) and automated doc generation.',
+        'clean_code': 'Je schrijft consistent schone code. Level up met design patterns en door anderen te onderwijzen via code reviews.',
+        'code_structure': 'Je codestructuur is solide. Focus op architectuur-patronen — hoe modules met elkaar communiceren en systeemgrenzen.',
+        'dry_principle': 'Je vermijdt duplicatie goed. Focus nu op de juiste abstracties — over-DRY-code kan lastiger te lezen zijn dan wat herhaling.',
+        'error_handling': 'Je error handling is sterk. Ga door naar resilience-patronen: retries, circuit breakers, graceful degradation.',
+        'input_validation': 'Validatie is op orde. Verken fuzz-testing en security-first design om proactief edge cases te vinden.',
+        'edge_cases': 'Je handelt edge cases goed af. Push verder met property-based testing om cases te ontdekken waar je niet aan dacht.',
+        'secrets_management': 'Geheimen worden goed beheerd. Verdiep je in secret rotation, audit logging en zero-trust architectuur.',
+        'database_queries': 'Je queries zijn veilig. Level up met query-optimalisatie, explain plans en indexing-strategieën.',
+        'xss_csrf_prevention': 'Security-fundamenten zijn solide. Ga door naar Content Security Policy, security headers en penetration testing.',
+        'accessibility': 'Sterke accessibility-praktijken. Push naar WCAG AA/AAA compliance en screen reader testing.',
+        'responsive_design': 'Responsive design is sterk. Verken container queries, progressive enhancement en performance budgets.',
+        'comments_docs': 'Documentatie is goed. Overweeg architecture decision records (ADRs) en automatische doc-generatie.',
     }
 
     def _get_advanced_resources(self, skill_slug, primary_language=None):
@@ -433,4 +433,4 @@ class LearningRecommendationsView(APIView):
         if tip:
             return tip
         readable = skill_slug.replace('_', ' ').title()
-        return f'You\'re doing well at {readable} ({current_score:.0f}/100). Look for advanced patterns and teach this skill to solidify your expertise.'
+        return f'Je doet het goed op {readable} ({current_score:.0f}/100). Zoek geavanceerde patronen en leer deze skill aan anderen om je expertise te verstevigen.'
