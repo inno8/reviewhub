@@ -422,7 +422,7 @@ watch(id, load);
             class="bg-surface-container-low rounded-xl border border-outline-variant/10 overflow-hidden"
           >
             <div class="px-6 py-4 border-b border-outline-variant/10">
-              <h2 class="text-base font-bold text-on-surface m-0">Edit</h2>
+              <h2 class="text-base font-bold text-on-surface m-0">Bewerken</h2>
             </div>
             <form @submit.prevent="save" class="px-6 py-5 space-y-5">
 

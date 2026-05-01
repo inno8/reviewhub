@@ -625,8 +625,8 @@ const tabs = computed(() => {
   // Existing LLM Config UI code below is preserved (tab just hidden) so the
   // /ops page can lift it over in Phase 3.
   const t = [
-    { id: 'profile', label: 'Profile', icon: 'person' },
-    { id: 'notifications', label: 'Notifications', icon: 'notifications' },
+    { id: 'profile', label: 'Profiel', icon: 'person' },
+    { id: 'notifications', label: 'Notificaties', icon: 'notifications' },
   ];
   // Student-only "My Cohort" tab (cohort name, teachers, courses). Was a
   // top-level nav item; relocated here Apr 26 2026 because it's reference
@@ -635,7 +635,7 @@ const tabs = computed(() => {
   // (common for early-bootstrap accounts created before role flipped)
   // doesn't see a self-referential cohort tab in their settings.
   if (auth.isStudent && !auth.isSuperuser) {
-    t.push({ id: 'cohort', label: 'My Cohort', icon: 'groups' });
+    t.push({ id: 'cohort', label: 'Mijn klas', icon: 'groups' });
   }
   if (auth.isSuperuser) {
     // Platform ops can still access LLM Config from here if they land on
@@ -643,7 +643,7 @@ const tabs = computed(() => {
     t.push({ id: 'llm', label: 'LLM Config', icon: 'smart_toy' });
   }
   if (!auth.isAdmin) {
-    t.push({ id: 'git', label: 'Git account', icon: 'link' });
+    t.push({ id: 'git', label: 'Git-account', icon: 'link' });
     t.push({ id: 'webhooks', label: 'Webhooks', icon: 'webhook' });
   }
   return t;
@@ -653,8 +653,8 @@ const tabs = computed(() => {
 <template>
   <AppShell>
     <div class="p-6 max-w-4xl mx-auto">
-      <h1 class="text-2xl font-bold text-on-surface mb-2">Settings</h1>
-      <p class="text-on-surface-variant mb-6">Manage your account and preferences</p>
+      <h1 class="text-2xl font-bold text-on-surface mb-2">Instellingen</h1>
+      <p class="text-on-surface-variant mb-6">Beheer je account en voorkeuren</p>
 
       <!-- Tabs -->
       <div class="flex gap-1 mb-8 bg-surface-container-lowest rounded-lg p-1 w-fit">
@@ -672,7 +672,7 @@ const tabs = computed(() => {
         <div class="glass-panel rounded-xl p-6 mb-6">
           <div class="flex items-center gap-3 mb-6">
             <span class="material-symbols-outlined text-primary">person</span>
-            <h2 class="text-lg font-bold text-on-surface">Profile</h2>
+            <h2 class="text-lg font-bold text-on-surface">Profiel</h2>
           </div>
           <div class="grid grid-cols-1 md:grid-cols-2 gap-4 mb-6">
             <div>
@@ -869,12 +869,12 @@ const tabs = computed(() => {
                 <span v-if="c.email" class="block text-xs text-outline mt-1">{{ c.email }}</span>
               </div>
               <button type="button" @click="removeGitConnection(c.id)" :disabled="loading"
-                class="text-xs text-error hover:underline">Remove</button>
+                class="text-xs text-error hover:underline">Verwijderen</button>
             </div>
           </div>
-          <p v-else class="text-sm text-outline mb-6">No Git connections yet. Add at least one for the host you use.</p>
+          <p v-else class="text-sm text-outline mb-6">Nog geen Git-verbindingen. Voeg er minstens één toe voor de host die je gebruikt.</p>
 
-          <h3 class="text-sm font-bold text-on-surface mb-4">Add connection</h3>
+          <h3 class="text-sm font-bold text-on-surface mb-4">Verbinding toevoegen</h3>
           <div class="space-y-4 max-w-xl">
             <div>
               <label class="text-xs font-bold uppercase tracking-widest text-outline block mb-2">Provider</label>

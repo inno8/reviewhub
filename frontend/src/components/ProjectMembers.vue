@@ -1,21 +1,21 @@
 <template>
   <div class="bg-gray-800 rounded-lg p-6">
     <div class="flex justify-between items-center mb-6">
-      <h3 class="text-lg font-medium text-white">Team Members</h3>
+      <h3 class="text-lg font-medium text-white">Teamleden</h3>
       <button
         v-if="canManage"
         @click="showInviteModal = true"
         class="px-4 py-2 bg-indigo-600 text-white rounded-md hover:bg-indigo-700 text-sm"
       >
-        Invite Member
+        Lid uitnodigen
       </button>
     </div>
-    
+
     <!-- Members List -->
-    <div v-if="loading" class="text-gray-400 text-center py-8">Loading...</div>
-    
+    <div v-if="loading" class="text-gray-400 text-center py-8">Laden…</div>
+
     <div v-else-if="members.length === 0" class="text-gray-400 text-center py-8">
-      No members yet. Invite someone to get started.
+      Nog geen leden. Nodig iemand uit om te beginnen.
     </div>
     
     <div v-else class="space-y-3">

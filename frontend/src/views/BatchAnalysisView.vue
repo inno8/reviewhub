@@ -364,22 +364,18 @@ const trendIcons: Record<string, string> = {
 
 // Methods
 async function loadData() {
-  console.log('[Batch] loadData started, loading=', loading.value);
   loading.value = true;
   error.value = '';
-  
+
   try {
-    console.log('[Batch] Fetching jobs and stats...');
     const [jobsRes, statsRes] = await Promise.all([
       api.batch.listJobs(),
       api.batch.getStats(),
     ]);
-    console.log('[Batch] Got jobs:', jobsRes.data);
-    console.log('[Batch] Got stats:', statsRes.data);
     // Handle paginated response from Django REST Framework
     jobs.value = jobsRes.data?.results || jobsRes.data || [];
     stats.value = statsRes.data;
-    
+
     try {
       const profileRes = await api.batch.getProfile();
       const raw = profileRes.data;
@@ -390,12 +386,11 @@ async function loadData() {
     }
   } catch (e: any) {
     console.error('[Batch] Failed to load batch data:', e);
-    error.value = e.response?.data?.detail || 'Failed to load data';
+    error.value = e.response?.data?.detail || 'Kon data niet laden';
     jobs.value = [];
     stats.value = null;
   }
-  
-  console.log('[Batch] loadData finished, setting loading=false');
+
   loading.value = false;
   await loadInsightSummary();
 }

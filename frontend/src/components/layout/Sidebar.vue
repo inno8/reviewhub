@@ -764,7 +764,7 @@ function toggleAllBranches(selected: boolean) {
         ]"
       >
         <span class="material-symbols-outlined">settings</span>
-        <span>Settings</span>
+        <span>Instellingen</span>
       </router-link>
       <router-link
         v-if="!auth.isAdmin"
@@ -1141,11 +1141,11 @@ function toggleAllBranches(selected: boolean) {
 
         <div class="flex gap-3 pt-2">
           <button @click="showAddProjectModal = false"
-            class="flex-1 py-3 bg-surface-container-highest text-on-surface font-bold rounded-lg hover:bg-outline-variant transition-colors">Cancel</button>
+            class="flex-1 py-3 bg-surface-container-highest text-on-surface font-bold rounded-lg hover:bg-outline-variant transition-colors">Annuleer</button>
           <button @click="createProject" :disabled="projectLoading || !newProjectName.trim()"
             class="flex-1 py-3 primary-gradient text-on-primary font-bold rounded-lg disabled:opacity-50 flex items-center justify-center gap-2">
             <span v-if="projectLoading" class="material-symbols-outlined text-sm animate-spin">progress_activity</span>
-            {{ projectLoading ? 'Creating...' : 'Create Project' }}
+            {{ projectLoading ? 'Bezig met aanmaken…' : 'Project aanmaken' }}
           </button>
         </div>
       </div>
