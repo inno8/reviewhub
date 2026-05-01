@@ -326,6 +326,11 @@ const niveauColumns = [
   },
 ];
 
+// Three "what we DON'T do" cards. The third was previously a vague
+// promise that schools "bepaal jij wat belangrijk is" — true for the
+// data model but false for the experience (no rubric-edit UI today).
+// Replaced with an honest Crebo-compliance card. v1.1 brings per-vak
+// weight customization on top of the locked Crebo werkprocessen.
 const dontGrade = [
   {
     icon: 'palette',
@@ -338,9 +343,9 @@ const dontGrade = [
     description: 'Als je Laravel gebruikt, graadt LEERA op Laravel-conventies. Als je vanilla PHP schrijft, graadt het daarop. Geen rigide "je moet X gebruiken".',
   },
   {
-    icon: 'block',
-    title: 'Niets buiten de rubric',
-    description: 'Als een skill niet in jouw rubric zit, graadt LEERA er niet op. Jij bepaalt wat belangrijk is voor jouw klas.',
+    icon: 'rule',
+    title: 'Geen losgeslagen rubric',
+    description: 'Elke school graadt op dezelfde zes Crebo-werkprocessen — vergelijkbaar voor de inspectie. In v1.1 kun je gewichten per vak aanpassen binnen die zes; de werkprocessen zelf blijven gelijk over het hele MBO.',
   },
 ];
 </script>
@@ -580,8 +585,8 @@ const dontGrade = [
         <div style="max-width:800px;margin:0 auto">
           <div style="text-align:center;margin-bottom:40px">
             <div class="kicker">Wat we NIET graderen</div>
-            <h2 class="section-title">Geen FAANG-meningen</h2>
-            <p class="section-sub">LEERA graadt volgens jouw rubric, niet volgens wat Silicon Valley "clean code" noemt.</p>
+            <h2 class="section-title">Crebo-aligned, geen FAANG-meningen</h2>
+            <p class="section-sub">LEERA graadt volgens het kwalificatiedossier MBO-4 ICT-developer, niet volgens wat Silicon Valley "clean code" noemt. Identiek over heel Nederland — vergelijkbaar voor de inspectie.</p>
           </div>
 
           <div style="display:flex;flex-direction:column;gap:16px">
