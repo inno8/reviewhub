@@ -126,7 +126,10 @@ class LearningRecommendationsView(APIView):
                 })
         
         # 3. Skills with negative trends
-        declining_metrics = metrics.filter(trend='declining').order_by('score')[:2]
+        # NOTE: SkillMetric.trend choices are 'up'|'down'|'stable' (see migration 0001).
+        # This filter previously used 'declining' which never matched, so layer 3
+        # of the recommendation engine never fired. Fixed May 2 2026.
+        declining_metrics = metrics.filter(trend='down').order_by('score')[:2]
         
         for metric in declining_metrics:
             # Check if not already in recommendations
