@@ -999,6 +999,72 @@ class DeveloperHomeView(APIView):
     permission_classes = [permissions.IsAuthenticated]
 
     @staticmethod
+    def _build_pattern_chart(user):
+        """
+        Aggregate Pattern rows by skill_slug (pattern_type) so the
+        Recurring Patterns chart shows one row per underlying mistake,
+        not one row per (mistake, severity) pair.
+
+        Returns a list of dicts ordered by frequency desc, capped at 10:
+            {
+                "slug": "input_validation",
+                "name": "Input Validation",
+                "frequency": 11,        # summed across severity variants
+                "resolved": False,      # True only if ALL variants resolved
+                "category": "Security", # SkillCategory.name
+                "category_color": "#...", # SkillCategory.color (or "" if missing)
+            }
+        """
+        from collections import defaultdict
+        from evaluations.models import Pattern
+        from .models import Skill
+
+        # Group by pattern_type (= skill_slug). frequency sums across
+        # severity variants; resolved is the AND across variants
+        # (any unresolved variant keeps the aggregate "active").
+        agg: dict[str, dict] = defaultdict(lambda: {
+            "frequency": 0,
+            "resolved": True,
+            "name": None,
+        })
+        for p in Pattern.objects.filter(user=user):
+            slot = agg[p.pattern_type]
+            slot["frequency"] += p.frequency
+            if not p.is_resolved:
+                slot["resolved"] = False
+            if slot["name"] is None:
+                slot["name"] = p.pattern_type.replace("_", " ").title()
+
+        if not agg:
+            return []
+
+        # Look up category metadata for each unique slug — single bulk
+        # query, joined by Skill.slug.
+        slugs = list(agg.keys())
+        skill_meta = {
+            s.slug: {
+                "category_name": s.category.name if s.category_id else "Algemeen",
+                "category_color": getattr(s.category, "color", "") or "",
+            }
+            for s in Skill.objects.filter(slug__in=slugs).select_related("category")
+        }
+
+        out = []
+        for slug, data in agg.items():
+            meta = skill_meta.get(slug, {"category_name": "Algemeen", "category_color": ""})
+            out.append({
+                "slug": slug,
+                "name": data["name"],
+                "frequency": data["frequency"],
+                "resolved": data["resolved"],
+                "category": meta["category_name"],
+                "category_color": meta["category_color"],
+            })
+
+        out.sort(key=lambda x: x["frequency"], reverse=True)
+        return out[:10]
+
+    @staticmethod
     def _calculate_streak(evals):
         """Count consecutive recent commits with score >= 70 and no critical findings."""
         streak = 0
@@ -1172,15 +1238,23 @@ class DeveloperHomeView(APIView):
             'patterns': patterns,
             'patternsResolved': Pattern.objects.filter(user=user, is_resolved=True).count(),
             'patternsActive': pattern_qs.count(),
-            # Pattern breakdown for chart — all patterns with frequency and status
-            'patternChart': [
-                {
-                    'name': p.pattern_type.replace('_', ' ').title(),
-                    'frequency': p.frequency,
-                    'resolved': p.is_resolved,
-                }
-                for p in Pattern.objects.filter(user=user).order_by('-frequency')[:10]
-            ],
+            # Pattern breakdown for chart, deduplicated by skill_slug.
+            #
+            # Pattern rows are keyed `{skill_slug}:{severity}` so the same
+            # underlying mistake (e.g. raw SQL with user input) splits across
+            # multiple rows when the LLM tags it differently per occurrence
+            # (input_validation:warning vs input_validation:critical). The
+            # old chart rendered "Input Validation 7x" + "Input Validation 4x"
+            # as TWO bars — student saw a duplicated list, not a clear "this
+            # one mistake recurs 11 times" signal.
+            #
+            # Aggregate by pattern_type (= skill_slug without severity), sum
+            # frequencies, mark resolved only when EVERY underlying pattern
+            # for that skill is resolved (any open variant means the student
+            # hasn't fully cleared the pattern). Enrich with category name +
+            # color so the frontend can group by category and use the
+            # canonical SkillCategory accent without a second roundtrip.
+            'patternChart': self._build_pattern_chart(user),
             'recentCommits': recent_commits,
             # Visuals
             'radar': radar,

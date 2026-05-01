@@ -358,6 +358,56 @@ interface FocusItem {
   trend_label: string;
   observation_count: number;
 }
+// Recurring Patterns — group by category for the bullet-row chart on the
+// dashboard. Backend already deduplicates by skill_slug (DeveloperHomeView
+// _build_pattern_chart) so each entry is one underlying mistake. We just
+// bucket them under their SkillCategory so the eye lands on the biggest
+// cluster first, then drills down.
+interface PatternEntry {
+  slug: string;
+  name: string;
+  frequency: number;
+  resolved: boolean;
+  category: string;
+  category_color?: string;
+}
+interface PatternCategoryGroup {
+  name: string;
+  color: string;
+  totalFrequency: number;
+  patterns: PatternEntry[];
+}
+const patternsByCategory = computed<PatternCategoryGroup[]>(() => {
+  const raw = (devHome.value?.patternChart || []) as PatternEntry[];
+  if (!raw.length) return [];
+  const groups = new Map<string, PatternCategoryGroup>();
+  for (const p of raw) {
+    const key = p.category || 'Algemeen';
+    const existing = groups.get(key);
+    if (existing) {
+      existing.totalFrequency += p.frequency;
+      existing.patterns.push(p);
+    } else {
+      groups.set(key, {
+        name: key,
+        color: p.category_color || '',
+        totalFrequency: p.frequency,
+        patterns: [p],
+      });
+    }
+  }
+  // Sort categories by total frequency desc; patterns within already sorted
+  // by frequency desc from the backend.
+  return Array.from(groups.values()).sort(
+    (a, b) => b.totalFrequency - a.totalFrequency,
+  );
+});
+
+const maxPatternFrequency = computed<number>(() => {
+  const raw = (devHome.value?.patternChart || []) as PatternEntry[];
+  return Math.max(1, ...raw.map(p => p.frequency));
+});
+
 const focus = computed<FocusItem | null>(() => {
   const rows = studentPerSkill.value.filter(
     r => r.bayesian_score !== null && r.observation_count >= 2,
@@ -1173,35 +1223,80 @@ function scoreColor(score: number) {
                 </div>
               </div>
 
-              <!-- Pattern Findings & Resolution Chart -->
-              <div v-if="devHome.patternChart?.length" class="bg-surface-container-low rounded-xl border border-outline-variant/10 overflow-hidden">
+              <!-- Recurring Patterns — category-grouped bullet rows.
+                   Patterns are deduplicated by skill_slug on the backend
+                   (was duplicated as e.g. "Input Validation 7x + 4x" when
+                   the LLM tagged the same issue at different severities).
+                   Now grouped under SkillCategory headers so the eye lands
+                   on biggest cluster first, then drills to individual
+                   patterns. Per-category color accent uses
+                   SkillCategory.color from the snapshot data. -->
+              <div v-if="patternsByCategory.length" class="bg-surface-container-low rounded-xl border border-outline-variant/10 overflow-hidden">
                 <div class="flex items-center justify-between p-4 border-b border-outline-variant/10">
                   <div class="flex items-center gap-2">
                     <span class="material-symbols-outlined text-tertiary">repeat</span>
-                    <h3 class="text-sm font-bold">Recurring Patterns</h3>
+                    <h3 class="text-sm font-bold">Terugkerende patronen</h3>
                   </div>
                   <div class="flex items-center gap-3 text-[10px]">
-                    <span class="flex items-center gap-1"><span class="w-3 h-3 rounded-sm bg-tertiary"></span> Active</span>
-                    <span class="flex items-center gap-1"><span class="w-3 h-3 rounded-sm bg-green-500"></span> Resolved</span>
+                    <span class="flex items-center gap-1"><span class="w-3 h-3 rounded-sm bg-tertiary"></span> Actief</span>
+                    <span class="flex items-center gap-1"><span class="w-3 h-3 rounded-sm bg-green-500"></span> Opgelost</span>
                     <span v-if="devHome.patternsResolved || devHome.patternsActive" class="text-outline">
-                      {{ devHome.patternsResolved }} resolved · {{ devHome.patternsActive }} active
+                      {{ devHome.patternsResolved }} opgelost · {{ devHome.patternsActive }} actief
                     </span>
                   </div>
                 </div>
 
-                <!-- Horizontal bar chart -->
-                <div class="p-4 space-y-2.5">
-                  <div v-for="p in devHome.patternChart" :key="p.name" class="flex items-center gap-3">
-                    <span class="text-[10px] font-medium w-24 truncate text-right">{{ p.name }}</span>
-                    <div class="flex-1 bg-surface-container-lowest rounded-full h-5 overflow-hidden relative">
-                      <div class="h-full rounded-full transition-all flex items-center"
-                        :class="p.resolved ? 'bg-green-500/70' : 'bg-tertiary/70'"
-                        :style="{ width: Math.max(10, (p.frequency / devHome.patternChart[0].frequency * 100)) + '%' }">
-                        <span class="text-[9px] font-bold text-white pl-2">{{ p.frequency }}x</span>
-                      </div>
+                <div class="p-4 space-y-4">
+                  <div
+                    v-for="cat in patternsByCategory"
+                    :key="cat.name"
+                    class="space-y-1.5"
+                  >
+                    <!-- Category header — total + colored accent bar -->
+                    <div class="flex items-center gap-2">
+                      <span
+                        class="inline-block w-1 h-4 rounded-sm"
+                        :style="{ backgroundColor: cat.color || 'rgb(var(--color-tertiary) / 0.7)' }"
+                      ></span>
+                      <span class="text-[11px] font-bold uppercase tracking-widest text-on-surface">
+                        {{ cat.name }}
+                      </span>
+                      <span class="text-[10px] text-outline">
+                        {{ cat.totalFrequency }}× totaal · {{ cat.patterns.length }} patroon{{ cat.patterns.length === 1 ? '' : 'en' }}
+                      </span>
                     </div>
-                    <span v-if="p.resolved" class="material-symbols-outlined text-xs text-green-400">check_circle</span>
-                    <router-link v-else to="/skills" class="text-[10px] text-primary font-semibold">Fix</router-link>
+                    <!-- Per-pattern thin rows -->
+                    <div
+                      v-for="p in cat.patterns"
+                      :key="p.slug"
+                      class="flex items-center gap-3 pl-3"
+                    >
+                      <span class="text-[11px] font-medium w-28 truncate text-right text-on-surface-variant">
+                        {{ p.name }}
+                      </span>
+                      <div class="flex-1 bg-surface-container-lowest rounded-full h-3.5 overflow-hidden relative">
+                        <div
+                          class="h-full rounded-full transition-all flex items-center"
+                          :style="{
+                            width: Math.max(10, (p.frequency / maxPatternFrequency * 100)) + '%',
+                            backgroundColor: p.resolved
+                              ? 'rgb(34 197 94 / 0.7)'
+                              : (cat.color ? cat.color + 'b3' : 'rgb(var(--color-tertiary) / 0.7)'),
+                          }"
+                        >
+                          <span class="text-[9px] font-bold text-white pl-2">{{ p.frequency }}×</span>
+                        </div>
+                      </div>
+                      <span
+                        v-if="p.resolved"
+                        class="material-symbols-outlined text-xs text-green-400"
+                      >check_circle</span>
+                      <router-link
+                        v-else
+                        to="/skills"
+                        class="text-[10px] text-primary font-semibold"
+                      >Fix</router-link>
+                    </div>
                   </div>
                 </div>
               </div>
