@@ -1290,12 +1290,13 @@ function scoreColor(score: number) {
                       <span
                         v-if="p.resolved"
                         class="material-symbols-outlined text-xs text-green-400"
+                        :title="`Patroon ${p.name} is opgelost`"
                       >check_circle</span>
-                      <router-link
-                        v-else
-                        to="/skills"
-                        class="text-[10px] text-primary font-semibold"
-                      >Fix</router-link>
+                      <!-- No "Fix" CTA per row. Patterns auto-resolve when
+                           the skill stops appearing in the last 10 commits.
+                           A click-to-fix here implied a one-action fix that
+                           doesn't exist — the actual flow is "go open the
+                           failing PR + write better code", not a button. -->
                     </div>
                   </div>
                 </div>

@@ -508,19 +508,11 @@ async function resolvePattern(id: number) {
   } catch { /* ignore */ } finally { resolvingId.value = null; }
 }
 
-async function forceResolvePattern() {
-  if (!resolveDialogData.value?.patternId) return;
-  resolveDialogLoading.value = true;
-  try {
-    const { data } = await api.evaluations.resolvePattern(resolveDialogData.value.patternId, true);
-    if (data.resolved) {
-      patterns.value = patterns.value.map(p =>
-        p.id === resolveDialogData.value.patternId ? { ...p, is_resolved: true } : p
-      );
-      resolveDialogData.value = { success: true, message: data.message, skillBoost: data.skill_boost };
-    }
-  } catch { /* ignore */ } finally { resolveDialogLoading.value = false; }
-}
+// forceResolvePattern removed alongside the "Resolve Anyway" button.
+// Patterns are behavioral signals — a force-resolve undermines the
+// integrity of the skill graph. The honest path when an issue still
+// recurs in the last 3 commits is "fix the underlying code"; LEERA
+// then auto-resolves once 10 clean commits pass.
 
 const filteredPatterns = computed(() =>
   showResolved.value ? patterns.value : patterns.value.filter(p => !p.is_resolved)
@@ -928,15 +920,16 @@ const selectedUserObj = computed(() => adminUsers.value.find(u => u.id === selec
           </template>
         </div>
 
-        <!-- Footer -->
-        <div class="px-6 py-4 border-t border-outline-variant/10 flex justify-between">
+        <!-- Footer.
+             Removed the "Resolve Anyway" button. Patterns are
+             behavioral signals — a force-resolve undermines that.
+             If the issue still appears in the last 3 commits, the
+             dialog explains where, and the only honest path is to
+             actually fix the underlying code. The pattern will
+             auto-resolve on its own once 10 clean commits pass. -->
+        <div class="px-6 py-4 border-t border-outline-variant/10 flex justify-end">
           <button @click="resolveDialogOpen = false" class="px-4 py-2 text-sm text-outline hover:text-on-surface">
             Close
-          </button>
-          <button v-if="resolveDialogData && !resolveDialogData.success"
-            @click="forceResolvePattern" :disabled="resolveDialogLoading"
-            class="px-4 py-2 border border-outline-variant/30 text-on-surface-variant text-sm rounded-lg hover:bg-surface-container transition-all disabled:opacity-50">
-            {{ resolveDialogLoading ? 'Resolving...' : 'Resolve Anyway' }}
           </button>
         </div>
       </div>
