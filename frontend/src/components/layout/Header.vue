@@ -75,12 +75,12 @@ function formatTimestamp(timestamp: string) {
   const diffMins = Math.floor(diffMs / 60000);
   const diffHours = Math.floor(diffMs / 3600000);
   const diffDays = Math.floor(diffMs / 86400000);
-  
-  if (diffMins < 1) return 'Just now';
-  if (diffMins < 60) return `${diffMins}m ago`;
-  if (diffHours < 24) return `${diffHours}h ago`;
-  if (diffDays < 7) return `${diffDays}d ago`;
-  return date.toLocaleDateString();
+
+  if (diffMins < 1) return 'Net nu';
+  if (diffMins < 60) return `${diffMins}m geleden`;
+  if (diffHours < 24) return `${diffHours}u geleden`;
+  if (diffDays < 7) return `${diffDays}d geleden`;
+  return date.toLocaleDateString('nl-NL');
 }
 
 function getNotificationIcon(type: string) {
@@ -99,8 +99,8 @@ function logout() {
 }
 
 const navItems = [
-  { name: 'Dashboard', path: '/' },
-  { name: 'Projects', path: '/projects' },
+  { name: 'Vandaag', path: '/' },
+  { name: 'Projecten', path: '/projects' },
 ];
 
 function isActive(path: string) {
@@ -176,13 +176,13 @@ onMounted(() => {
           class="absolute right-0 top-full mt-2 w-96 bg-surface-container-low rounded-lg border border-outline-variant/20 shadow-xl max-h-96 overflow-hidden flex flex-col"
         >
           <div class="flex justify-between items-center px-4 py-3 border-b border-outline-variant/10">
-            <h3 class="text-sm font-semibold text-on-surface">Notifications</h3>
-            <button 
+            <h3 class="text-sm font-semibold text-on-surface">Notificaties</h3>
+            <button
               v-if="unreadCount > 0"
-              @click="markAllRead" 
+              @click="markAllRead"
               class="text-xs text-primary hover:underline"
             >
-              Mark all read
+              Alles als gelezen markeren
             </button>
           </div>
 
@@ -192,7 +192,7 @@ onMounted(() => {
             </div>
 
             <div v-else-if="notifications.length === 0" class="p-8 text-center text-on-surface-variant text-sm">
-              No notifications yet
+              Nog geen meldingen
             </div>
 
             <button
@@ -224,11 +224,11 @@ onMounted(() => {
           </div>
 
           <div class="border-t border-outline-variant/10 p-2">
-            <button 
+            <button
               @click="viewAllNotifications"
               class="w-full text-center text-sm text-primary hover:bg-primary/5 py-2 rounded transition-colors"
             >
-              View all notifications
+              Alle meldingen bekijken
             </button>
           </div>
         </div>
@@ -253,7 +253,7 @@ onMounted(() => {
             class="w-full px-4 py-2 text-left text-sm text-error hover:bg-error/10 transition-colors flex items-center gap-2"
           >
             <span class="material-symbols-outlined text-sm">logout</span>
-            Sign out
+            Uitloggen
           </button>
         </div>
       </div>

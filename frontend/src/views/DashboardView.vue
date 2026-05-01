@@ -683,13 +683,13 @@ function scoreColor(score: number) {
             <div class="px-5 py-3 border-b border-outline-variant/10 flex items-center justify-between gap-2">
               <div class="flex items-center gap-2">
                 <span class="material-symbols-outlined text-primary text-sm">rate_review</span>
-                <h3 class="text-sm font-bold">Next up</h3>
+                <h3 class="text-sm font-bold">Volgende</h3>
               </div>
               <button
                 @click="router.push('/grading')"
                 class="text-[11px] text-primary font-semibold hover:underline"
               >
-                Open inbox →
+                Open nakijken →
               </button>
             </div>
             <div v-if="inboxSummary.next_up.length === 0" class="p-8 text-center text-on-surface-variant text-sm">

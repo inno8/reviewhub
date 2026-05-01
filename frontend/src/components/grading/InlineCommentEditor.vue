@@ -16,7 +16,7 @@
         class="px-2 py-0.5 rounded-full bg-primary/15 text-primary text-[10px] uppercase tracking-widest font-semibold"
         :data-testid="`suggestion-badge-${index}`"
         title="Bevat een voorgestelde code-fix"
-      >Suggestion</span>
+      >Suggestie</span>
       <span v-if="dirty" class="ml-auto text-[11px] text-tertiary">niet opgeslagen</span>
       <button
         v-if="editable"

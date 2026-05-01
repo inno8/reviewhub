@@ -183,7 +183,7 @@
             v-else-if="!store.activeSession.ai_draft_generated_at"
             class="glass-panel p-6 text-center rounded-xl"
           >
-            <p class="text-on-surface-variant mb-3">No AI draft yet.</p>
+            <p class="text-on-surface-variant mb-3">Nog geen AI-concept opgesteld voor deze PR.</p>
             <button
               @click="onGenerateDraft"
               :disabled="draftInFlight"
