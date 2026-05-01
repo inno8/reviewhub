@@ -6,20 +6,18 @@
  * students/parents. The MBO-4 readiness signal: schools that visit the
  * booth on May 7 will scan this before signing.
  *
- * Design source: docs/prompts/rubric-public-page.md + Claude Design
- * handoff at .claude/design-rubric/leera-ui/project/Rubric.html.
+ * Aligned with the canonical Crebo 25604 rubric (MBO-4 ICT-developer
+ * kwalificatiedossier) — 6 werkprocessen with their official weight
+ * percentages and niveau labels. Mirrors
+ * grading/rubric_defaults.py:CREBO_RUBRIC_CRITERIA so the public page
+ * and the backend speak the same vocabulary.
  *
- * The design ships with 8 English skill ids (security, code_quality,
+ * The earlier 8-skill English version (security, code_quality,
  * architecture, testing, performance, documentation, validation,
- * best_practices) and per-skill weights (1.5×, 1.2×, etc.). The current
- * backend rubric was migrated to 6 Crebo Dutch ids (code_ontwerp,
- * code_kwaliteit, veiligheid, testen, verbetering, samenwerking) per
- * Option A. We're rendering the design as-designed for the May 7
- * launch — the public page can drift slightly from the per-cohort
- * rubric without confusing teachers, since the cohort rubric is what
- * actually grades the code. v1.1 todo: align this page to the 6 Crebo
- * criteria so the public-facing copy and the backend speak the same
- * vocabulary.
+ * best_practices) shipped from the Claude Design handoff and was
+ * realigned in this commit. School admins now see the same six
+ * werkproces names on the public page that they'll see in their
+ * cohort's rubric.
  *
  * Nav + footer copied verbatim from LandingView so navigation between
  * /landing and /rubric feels seamless.
@@ -92,6 +90,8 @@ interface SkillLevel {
 interface Skill {
   id: string;
   name: string;
+  kerntaak: string;
+  kerntaakLabel: string;
   weight: string;
   description: string;
   icon: string;
@@ -101,199 +101,227 @@ interface Skill {
   example?: { lines: { kind: 'comment' | 'bad' | 'good'; text: string }[] };
 }
 
+// Crebo 25604 — MBO-4 ICT-developer kwalificatiedossier rubric criteria.
+// Mirrors grading/rubric_defaults.py:CREBO_RUBRIC_CRITERIA so the public
+// page and the backend speak the same vocabulary. Six criteria, each
+// mapped to a real Crebo werkproces code; weights are integer percentages
+// summing to 100 (15+20+20+20+10+15).
+//
+// Level labels follow the MBO niveau-aanduidingen every Dutch docent
+// already uses: Nog niet beheerst, Gedeeltelijk beheerst, Op
+// opleidingsniveau, Boven niveau.
 const skills: Skill[] = [
   {
-    id: 'security',
-    name: 'Beveiliging',
-    weight: '1.5×',
-    description: 'Of de code geen ruimte laat voor SQL injection, XSS, IDOR, hardcoded secrets, of authenticatie-fouten.',
-    icon: 'shield',
-    color: '#ff6b6b',
-    colorRgb: '255,107,107',
+    id: 'code_ontwerp',
+    name: 'Code-ontwerp',
+    kerntaak: 'B1-K1-W2',
+    kerntaakLabel: 'Ontwerpt software',
+    weight: '15%',
+    description: 'Scheiding van verantwoordelijkheden, lagen, abstracties, herbruikbaarheid.',
+    icon: 'account_tree',
+    color: '#a2c9ff',
+    colorRgb: '162,201,255',
     levels: [
-      { niveau: 1, label: 'Onvoldoende', description: 'Kritieke kwetsbaarheden: SQL injection, hardcoded wachtwoorden, gebruikers kunnen elkaars data wijzigen. Niet inleverbaar.' },
-      { niveau: 2, label: 'Zwak', description: 'Sommige beveiligingszorgen. Ontbrekende input-validatie of auth-checks. Werkt maar niet veilig genoeg om te live te gaan.' },
-      { niveau: 3, label: 'Voldoende', description: 'Basis-beveiliging toegepast. Kleine zorgen blijven. Voldoende voor schoolwerk.' },
-      { niveau: 4, label: 'Goed — Stage-rijp', description: 'Defense in depth. Threat modeling zichtbaar. Geen evidente kwetsbaarheden. Stage-rijp.' },
+      { niveau: 1, label: 'Nog niet beheerst', description: 'Geen duidelijke structuur; alles in één functie of bestand.' },
+      { niveau: 2, label: 'Gedeeltelijk beheerst', description: 'Basis-structuur, maar abstractie ontbreekt; veel herhaling.' },
+      { niveau: 3, label: 'Op opleidingsniveau', description: 'Logische opbouw, duidelijke scheiding van verantwoordelijkheden.' },
+      { niveau: 4, label: 'Boven niveau', description: 'Doordacht ontwerp; herbruikbaar, uitbreidbaar, minimale coupling.' },
     ],
     example: {
       lines: [
-        { kind: 'comment', text: '// Niveau 1 — SQL injection mogelijk' },
-        { kind: 'bad', text: "DB::select(\"SELECT * FROM books WHERE title = '$search'\")" },
+        { kind: 'comment', text: '// Niveau 1 — controller doet alles' },
+        { kind: 'bad', text: 'public function index() {' },
+        { kind: 'bad', text: '    $books = DB::select("..."); // query, format, render' },
+        { kind: 'bad', text: '    foreach ($books as $b) { $b->title = strtoupper($b->title); }' },
+        { kind: 'bad', text: '    return view("books", compact("books"));' },
+        { kind: 'bad', text: '}' },
         { kind: 'comment', text: '' },
-        { kind: 'comment', text: '// Niveau 3 — Query builder beschermt tegen injection' },
-        { kind: 'good', text: "Book::where('title', $search)->get()" },
-        { kind: 'comment', text: '' },
-        { kind: 'comment', text: '// Crebo: B1-K1-W3 "Werkt volgens veiligheidsrichtlijnen"' },
+        { kind: 'comment', text: '// Niveau 3 — dunne controller, gedelegeerd' },
+        { kind: 'good', text: 'public function index(BookRepository $repo) {' },
+        { kind: 'good', text: '    return view("books", ["books" => $repo->forIndex()]);' },
+        { kind: 'good', text: '}' },
       ],
     },
   },
   {
-    id: 'code-quality',
-    name: 'Code Kwaliteit',
-    weight: '1.0×',
-    description: 'Leesbaarheid, naamgeving, consistentie, herhaling.',
+    id: 'code_kwaliteit',
+    name: 'Code-kwaliteit',
+    kerntaak: 'B1-K1-W3',
+    kerntaakLabel: 'Realiseert software',
+    weight: '20%',
+    description: 'Leesbaarheid, naamgeving, consistentie, foutafhandeling.',
     icon: 'auto_awesome',
     color: '#4ecdc4',
     colorRgb: '78,205,196',
     levels: [
-      { niveau: 1, label: 'Onvoldoende', description: 'Moeilijk te lezen. Magic numbers. Copy-paste duplicatie.' },
-      { niveau: 2, label: 'Zwak', description: 'Inconsistente stijl. Onduidelijke namen.' },
-      { niveau: 3, label: 'Voldoende', description: 'Leesbaar. Consistente stijl. Redelijke namen.' },
-      { niveau: 4, label: 'Goed — Stage-rijp', description: 'Heldere intent overal. Goed gefactored. Makkelijk te onderhouden.' },
+      { niveau: 1, label: 'Nog niet beheerst', description: 'Moeilijk leesbaar; onduidelijke namen; geen foutafhandeling.' },
+      { niveau: 2, label: 'Gedeeltelijk beheerst', description: 'Werkt, maar inconsistent; cryptische namen; fouten worden geslikt.' },
+      { niveau: 3, label: 'Op opleidingsniveau', description: 'Leesbaar, idiomatic, fouten worden met context afgehandeld.' },
+      { niveau: 4, label: 'Boven niveau', description: 'Professioneel niveau; zelf-documenterend, robuust, edge cases afgedekt.' },
     ],
     example: {
       lines: [
-        { kind: 'comment', text: '# Niveau 1 — magic number, onduidelijke naam' },
+        { kind: 'comment', text: '# Niveau 1 — magic number, geen foutafhandeling' },
         { kind: 'bad', text: 'def calc(x): return x * 0.21' },
         { kind: 'comment', text: '' },
-        { kind: 'comment', text: '# Niveau 3 — heldere intentie' },
+        { kind: 'comment', text: '# Niveau 3 — heldere intentie + validation' },
         { kind: 'good', text: 'BTW_TARIEF = 0.21' },
-        { kind: 'good', text: 'def bereken_btw(bedrag_excl):' },
+        { kind: 'good', text: 'def bereken_btw(bedrag_excl: float) -> float:' },
+        { kind: 'good', text: '    if bedrag_excl < 0:' },
+        { kind: 'good', text: '        raise ValueError("bedrag mag niet negatief zijn")' },
         { kind: 'good', text: '    return bedrag_excl * BTW_TARIEF' },
       ],
     },
   },
   {
-    id: 'architecture',
-    name: 'Architectuur',
-    weight: '1.0×',
-    description: 'Scheiding van verantwoordelijkheden, lagen, abstracties.',
-    icon: 'account_tree',
-    color: '#a2c9ff',
-    colorRgb: '162,201,255',
+    id: 'veiligheid',
+    name: 'Veiligheid',
+    kerntaak: 'B1-K1-W3',
+    kerntaakLabel: 'Realiseert software (sub: veiligheid)',
+    weight: '20%',
+    description: 'SQL-injectie, XSS, IDOR, hardcoded secrets, authenticatie, input-validatie.',
+    icon: 'shield',
+    color: '#ff6b6b',
+    colorRgb: '255,107,107',
     levels: [
-      { niveau: 1, label: 'Onvoldoende', description: 'Strak gekoppeld. Geen scheiding. Controllers doen database én rendering.' },
-      { niveau: 2, label: 'Zwak', description: 'Wat structuur, maar laag-overschrijdingen.' },
-      { niveau: 3, label: 'Voldoende', description: 'Heldere lagen. Dunne controllers. Sensibele grenzen.' },
-      { niveau: 4, label: 'Goed — Stage-rijp', description: 'Idiomatisch voor het framework. Uitbreidbaar. SOLID toegepast.' },
+      { niveau: 1, label: 'Nog niet beheerst', description: 'Duidelijke kwetsbaarheden: hardcoded secrets, SQL-injectie, geen input-validatie.' },
+      { niveau: 2, label: 'Gedeeltelijk beheerst', description: 'Bewust van veiligheid, maar met gaten; inconsistente input-checks.' },
+      { niveau: 3, label: 'Op opleidingsniveau', description: 'Standaard praktijken: parameterized queries, input-validatie, geen secrets in code.' },
+      { niveau: 4, label: 'Boven niveau', description: 'Threat-modeled, least-privilege, defense in depth; edge cases doordacht.' },
     ],
+    example: {
+      lines: [
+        { kind: 'comment', text: '// Niveau 1 — SQL injection mogelijk' },
+        { kind: 'bad', text: 'DB::select("SELECT * FROM books WHERE title = \'$search\'")' },
+        { kind: 'comment', text: '' },
+        { kind: 'comment', text: '// Niveau 3 — query builder beschermt tegen injection' },
+        { kind: 'good', text: "Book::where('title', $search)->get()" },
+      ],
+    },
   },
   {
-    id: 'testing',
+    id: 'testen',
     name: 'Testen',
-    weight: '1.2×',
+    kerntaak: 'B1-K1-W4',
+    kerntaakLabel: 'Test software',
+    weight: '20%',
     description: 'Of er tests zijn, of ze de juiste dingen testen, of edge cases gedekt zijn.',
     icon: 'science',
     color: '#95e1d3',
     colorRgb: '149,225,211',
     levels: [
-      { niveau: 1, label: 'Onvoldoende', description: 'Geen tests.' },
-      { niveau: 2, label: 'Zwak', description: 'Een paar happy-path tests.' },
-      { niveau: 3, label: 'Voldoende', description: 'Edge cases gedekt voor hoofdfeatures. Tests zijn onafhankelijk.' },
-      { niveau: 4, label: 'Goed — Stage-rijp', description: 'Brede dekking inclusief faalmodes. Integration én unit tests.' },
+      { niveau: 1, label: 'Nog niet beheerst', description: 'Geen tests aanwezig.' },
+      { niveau: 2, label: 'Gedeeltelijk beheerst', description: 'Alleen happy-path tests; edge cases en errors ongetest.' },
+      { niveau: 3, label: 'Op opleidingsniveau', description: 'Happy- en error-paden getest; redelijke dekking.' },
+      { niveau: 4, label: 'Boven niveau', description: 'Grondige dekking incl. edge cases en regressies; tests zijn zelf leesbaar.' },
     ],
   },
   {
-    id: 'performance',
-    name: 'Performance',
-    weight: '0.8×',
-    description: 'Query-efficiency, caching waar nodig, geen voor-de-hand-liggende bottlenecks.',
-    icon: 'speed',
+    id: 'verbetering',
+    name: 'Verbetering',
+    kerntaak: 'B1-K1-W5',
+    kerntaakLabel: 'Doet verbetervoorstellen voor de software',
+    weight: '10%',
+    description: 'Reactie op eerdere feedback, refactoring, performance, documentatie, eigen initiatief.',
+    icon: 'trending_up',
     color: '#ffba42',
     colorRgb: '255,186,66',
     levels: [
-      { niveau: 1, label: 'Onvoldoende', description: 'N+1 queries. Geen eager loading. Evidente bottlenecks.' },
-      { niveau: 2, label: 'Zwak', description: 'Wat inefficiëntie. Geen caching waar het ertoe doet.' },
-      { niveau: 3, label: 'Voldoende', description: 'Eager loading waar nodig. Queries zijn redelijk.' },
-      { niveau: 4, label: 'Goed — Stage-rijp', description: 'Geprofileerd, geoptimaliseerd, geïndexeerd.' },
+      { niveau: 1, label: 'Nog niet beheerst', description: 'Geen reactie op eerdere feedback; TODOs blijven openstaan.' },
+      { niveau: 2, label: 'Gedeeltelijk beheerst', description: 'Past feedback deels toe, zonder onderliggende patronen te herkennen.' },
+      { niveau: 3, label: 'Op opleidingsniveau', description: 'Verwerkt feedback consistent; doet kleine verbeteringen uit eigen initiatief.' },
+      { niveau: 4, label: 'Boven niveau', description: 'Refactored proactief; stelt verbeteringen voor die verder gaan dan de opdracht.' },
     ],
     example: {
       lines: [
-        { kind: 'comment', text: '# Niveau 1 — N+1 probleem' },
+        { kind: 'comment', text: '# Niveau 1 — N+1 query gerapporteerd in PR 1, niet aangepakt' },
         { kind: 'bad', text: 'for order in Order.all():' },
-        { kind: 'bad', text: '    print(order.customer.name)  # Query per order!' },
+        { kind: 'bad', text: '    print(order.customer.name)  # nog steeds query per order' },
         { kind: 'comment', text: '' },
-        { kind: 'comment', text: '# Niveau 3 — Eager loading' },
+        { kind: 'comment', text: '# Niveau 3 — feedback verwerkt + extra README-update' },
         { kind: 'good', text: "for order in Order.select_related('customer').all():" },
-        { kind: 'good', text: '    print(order.customer.name)  # Één query' },
+        { kind: 'good', text: '    print(order.customer.name)  # 1 query, gefixed na PR 1 review' },
       ],
     },
   },
   {
-    id: 'documentation',
-    name: 'Documentatie',
-    weight: '0.6×',
-    description: 'README, inline documentatie van niet-triviale code.',
-    icon: 'article',
-    color: '#b19cd9',
-    colorRgb: '177,156,217',
-    levels: [
-      { niveau: 1, label: 'Onvoldoende', description: 'Geen README. Geen comments waar ze nodig zijn.' },
-      { niveau: 2, label: 'Zwak', description: 'Minimale README. Weinig inline uitleg.' },
-      { niveau: 3, label: 'Voldoende', description: 'README met setup-instructies. Comments bij complexe delen.' },
-      { niveau: 4, label: 'Goed — Stage-rijp', description: "Volledige README + docstrings op publieke API's. Architectuur-beslissingen gedocumenteerd." },
-    ],
-  },
-  {
-    id: 'validation',
-    name: 'Validatie',
-    weight: '1.0×',
-    description: 'Of input gevalideerd wordt voordat het de business-logic raakt.',
-    icon: 'check_circle',
-    color: '#ff8b94',
-    colorRgb: '255,139,148',
-    levels: [
-      { niveau: 1, label: 'Onvoldoende', description: 'Geen validatie. User-input komt rechtstreeks in de database.' },
-      { niveau: 2, label: 'Zwak', description: 'Wat validatie, maar inconsistent toegepast.' },
-      { niveau: 3, label: 'Voldoende', description: 'Alle user-input wordt gevalideerd. Heldere foutmeldingen.' },
-      { niveau: 4, label: 'Goed — Stage-rijp', description: 'Centraal validatie-systeem. Business rules in dedicated validators.' },
-    ],
-  },
-  {
-    id: 'best-practices',
-    name: 'Best Practices',
-    weight: '0.8×',
-    description: 'Of de code de framework-conventies volgt en niet het wiel opnieuw uitvindt.',
-    icon: 'workspace_premium',
+    id: 'samenwerking',
+    name: 'Samenwerking',
+    kerntaak: 'B1-K2-W1+W3',
+    kerntaakLabel: 'Voert overleg & reflecteert op het werk',
+    weight: '15%',
+    description: 'Commit messages, PR-beschrijvingen, reactie op review, zelfreflectie.',
+    icon: 'group',
     color: '#7ee1a7',
     colorRgb: '126,225,167',
     levels: [
-      { niveau: 1, label: 'Onvoldoende', description: 'Negeert framework-conventies. Vindt het wiel opnieuw uit.' },
-      { niveau: 2, label: 'Zwak', description: 'Gebruikt wat conventies, maar inconsistent.' },
-      { niveau: 3, label: 'Voldoende', description: 'Volgt de framework-standaarden. Gebruikt ingebouwde features.' },
-      { niveau: 4, label: 'Goed — Stage-rijp', description: 'Idiomatisch. Gebruikt community best-practices. Volgt de happy path.' },
+      { niveau: 1, label: 'Nog niet beheerst', description: 'Commit-messages onduidelijk; PR-beschrijving ontbreekt; geen reactie op review.' },
+      { niveau: 2, label: 'Gedeeltelijk beheerst', description: 'Basis-beschrijving; reageert op reviews maar kort of defensief.' },
+      { niveau: 3, label: 'Op opleidingsniveau', description: 'Duidelijke commit-messages, PR-beschrijving toont context, constructieve reactie.' },
+      { niveau: 4, label: 'Boven niveau', description: 'PR-beschrijving documenteert keuzes en trade-offs; reflecteert zelfstandig.' },
     ],
+    example: {
+      lines: [
+        { kind: 'comment', text: '// Niveau 1' },
+        { kind: 'bad', text: 'git commit -m "fix"' },
+        { kind: 'comment', text: '' },
+        { kind: 'comment', text: '// Niveau 3' },
+        { kind: 'good', text: 'git commit -m "Voorkom N+1 in BookController#index"' },
+        { kind: 'good', text: '' },
+        { kind: 'good', text: '# Met PR-beschrijving die uitlegt: probleem, oplossing,' },
+        { kind: 'good', text: '# trade-off (extra query op cold cache vs N×query bij elke load).' },
+      ],
+    },
   },
 ];
 
 // Niveau-mapping section: visual columns showing what each niveau looks
-// like across multiple skills. Hand-curated short labels per skill.
+// like across the 6 Crebo werkprocessen. Hand-curated short labels.
+// Color dots match the per-criterion colors in the skills array above
+// so the eye can connect the niveau column to the relevant skill card.
 const niveauColumns = [
   {
-    niveau: 1, color: '#ff6b6b', label: 'Onvoldoende',
+    niveau: 1, color: '#ff6b6b', label: 'Nog niet beheerst',
     chips: [
-      { color: '#ff6b6b', text: 'Kritieke bugs' },
-      { color: '#4ecdc4', text: 'Onleesbaar' },
       { color: '#a2c9ff', text: 'Geen structuur' },
+      { color: '#4ecdc4', text: 'Onleesbaar' },
+      { color: '#ff6b6b', text: 'Kwetsbaarheden' },
       { color: '#95e1d3', text: 'Geen tests' },
+      { color: '#ffba42', text: 'Geen reactie' },
+      { color: '#7ee1a7', text: 'Geen context' },
     ],
   },
   {
-    niveau: 2, color: '#ffba42', label: 'Zwak',
+    niveau: 2, color: '#ffba42', label: 'Gedeeltelijk beheerst',
     chips: [
-      { color: '#ff6b6b', text: 'Wat zorgen' },
+      { color: '#a2c9ff', text: 'Basis structuur' },
       { color: '#4ecdc4', text: 'Inconsistent' },
-      { color: '#a2c9ff', text: 'Wat lagen' },
+      { color: '#ff6b6b', text: 'Wat zorgen' },
       { color: '#95e1d3', text: 'Happy path' },
+      { color: '#ffba42', text: 'Deels feedback' },
+      { color: '#7ee1a7', text: 'Korte messages' },
     ],
   },
   {
-    niveau: 3, color: '#a2c9ff', label: 'Voldoende',
+    niveau: 3, color: '#a2c9ff', label: 'Op opleidingsniveau',
     chips: [
-      { color: '#ff6b6b', text: 'Basis veilig' },
-      { color: '#4ecdc4', text: 'Leesbaar' },
       { color: '#a2c9ff', text: 'Heldere lagen' },
+      { color: '#4ecdc4', text: 'Leesbaar' },
+      { color: '#ff6b6b', text: 'Basis veilig' },
       { color: '#95e1d3', text: 'Edge cases' },
+      { color: '#ffba42', text: 'Eigen initiatief' },
+      { color: '#7ee1a7', text: 'Heldere PR' },
     ],
   },
   {
-    niveau: 4, color: '#7ee1a7', label: 'Goed — Stage-rijp',
+    niveau: 4, color: '#7ee1a7', label: 'Boven niveau',
     chips: [
+      { color: '#a2c9ff', text: 'SOLID + DRY' },
+      { color: '#4ecdc4', text: 'Robuust' },
       { color: '#ff6b6b', text: 'Defense in depth' },
-      { color: '#4ecdc4', text: 'Onderhoudbaar' },
-      { color: '#a2c9ff', text: 'SOLID' },
-      { color: '#95e1d3', text: 'Brede dekking' },
+      { color: '#95e1d3', text: 'Regressie-tests' },
+      { color: '#ffba42', text: 'Refactored proactief' },
+      { color: '#7ee1a7', text: 'ADRs + reflectie' },
     ],
   },
 ];
@@ -378,14 +406,11 @@ const dontGrade = [
       <div class="hero-grid dots drift" aria-hidden="true"></div>
       <div class="container" style="position:relative;z-index:1;text-align:center">
         <h1 class="hero-title">Hoe LEERA jouw code beoordeelt</h1>
-        <p class="hero-sub">Acht skills. Vier niveaus. Eén docent met de eindstem.</p>
+        <p class="hero-sub">Zes Crebo-werkprocessen. Vier niveaus. Eén docent met de eindstem.</p>
         <div style="display:flex;gap:16px;justify-content:center;flex-wrap:wrap">
           <button @click="scrollTo('skills')" class="primary-gradient cta-btn cta-btn--primary">
             <span class="material-symbols-outlined" style="font-size:18px">arrow_downward</span>
-            Bekijk de skills
-          </button>
-          <button @click="scrollTo('contact')" class="cta-btn cta-btn--secondary">
-            Plan een gesprek
+            Bekijk de werkprocessen
           </button>
         </div>
       </div>
@@ -434,9 +459,9 @@ const dontGrade = [
     <section id="skills">
       <div class="container">
         <div style="text-align:center;margin-bottom:60px">
-          <div class="kicker">De acht skills</div>
+          <div class="kicker">Crebo 25604 — MBO-4 ICT-developer</div>
           <h2 class="section-title">Wat LEERA beoordeelt</h2>
-          <p class="section-sub">Elke skill heeft vier niveaus — van onvoldoende tot stage-rijp. Klik op een skill voor de volledige definities en een code-voorbeeld.</p>
+          <p class="section-sub">Zes werkprocessen uit het kwalificatiedossier, elk met vier niveaus — van "nog niet beheerst" tot "boven niveau". Klik op een werkproces voor de volledige definities en een code-voorbeeld.</p>
         </div>
 
         <div class="skills-grid">
@@ -460,7 +485,10 @@ const dontGrade = [
                       background: `rgba(${skill.colorRgb},.15)`,
                       color: skill.color,
                     }"
-                  >{{ skill.weight }} weight</span>
+                  >{{ skill.weight }}</span>
+                  <span class="kerntaak-pill" :title="skill.kerntaakLabel">
+                    Crebo {{ skill.kerntaak }}
+                  </span>
                 </div>
                 <p class="skill-desc">{{ skill.description }}</p>
                 <div class="niveau-dots" :style="{ color: skill.color }">
@@ -506,8 +534,8 @@ const dontGrade = [
       <div class="container">
         <div style="text-align:center;margin-bottom:60px">
           <div class="kicker">Niveau-mapping</div>
-          <h2 class="section-title">Van onvoldoende tot stage-rijp</h2>
-          <p class="section-sub">Elk niveau is gekalibreerd aan wat een docent verwacht aan het eind van jaar 4. Niveau 1 = niet inleverbaar, Niveau 4 = klaar voor het werkveld.</p>
+          <h2 class="section-title">Van nog-niet-beheerst tot boven-niveau</h2>
+          <p class="section-sub">De vier niveaus volgen de standaard MBO-aanduidingen die elke docent al kent. Niveau 1 = niet inleverbaar, Niveau 3 = op opleidingsniveau (voldoende voor diploma), Niveau 4 = klaar voor het werkveld.</p>
         </div>
 
         <div class="niveau-grid">
@@ -557,16 +585,12 @@ const dontGrade = [
     <section id="contact" class="section--alt">
       <div class="container" style="text-align:center">
         <h2 class="section-title">Klaar om je vak in te richten?</h2>
-        <p class="section-sub" style="max-width:560px;margin:0 auto 40px">Probeer LEERA gratis tot 1 september of plan een gesprek om te zien hoe het in jouw klas past.</p>
+        <p class="section-sub" style="max-width:560px;margin:0 auto 40px">Maak je organisatie aan en koppel je eerste klas aan LEERA — binnen 5 minuten klaar.</p>
         <div style="display:flex;gap:16px;justify-content:center;flex-wrap:wrap">
           <router-link to="/org-signup" class="primary-gradient cta-btn cta-btn--primary">
             <span class="material-symbols-outlined" style="font-size:18px">play_arrow</span>
-            Probeer gratis tot 1 sept
+            Probeer nu
           </router-link>
-          <a href="mailto:inno8techs@gmail.com" class="cta-btn cta-btn--secondary">
-            <span class="material-symbols-outlined" style="font-size:18px">chat</span>
-            Plan een gesprek
-          </a>
         </div>
       </div>
     </section>
@@ -951,6 +975,17 @@ section {
   font-weight: 700;
   letter-spacing: .06em;
   text-transform: uppercase;
+}
+.kerntaak-pill {
+  display: inline-flex;
+  padding: 3px 8px;
+  border-radius: 6px;
+  font-size: 10px;
+  font-weight: 600;
+  letter-spacing: .04em;
+  font-family: 'Fira Code', ui-monospace, SFMono-Regular, Menlo, monospace;
+  background: var(--surface-container-high);
+  color: var(--on-surface-variant);
 }
 .skill-desc {
   font-size: 14px;

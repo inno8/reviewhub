@@ -182,6 +182,9 @@ function scrollTo(id: string) {
             <button @click="scrollTo('features')">Features</button>
             <button @click="scrollTo('how')">Hoe het werkt</button>
             <button @click="scrollTo('languages')">Talen</button>
+            <router-link to="/rubric" custom v-slot="{ navigate }">
+              <button @click="navigate">Rubric</button>
+            </router-link>
           </div>
         </div>
         <div class="nav-desktop-actions" style="display:flex;gap:12px;align-items:center">
@@ -216,6 +219,7 @@ function scrollTo(id: string) {
           <button @click="scrollTo('features')" class="mobile-menu-link">Features</button>
           <button @click="scrollTo('how')" class="mobile-menu-link">Hoe het werkt</button>
           <button @click="scrollTo('languages')" class="mobile-menu-link">Talen</button>
+          <router-link to="/rubric" class="mobile-menu-link" @click="mobileNavOpen = false">Rubric</router-link>
           <div class="mobile-menu-divider"></div>
           <button @click="goLogin" class="mobile-menu-link mobile-menu-secondary">Inloggen</button>
         </div>
@@ -1061,6 +1065,7 @@ function scrollTo(id: string) {
               <button @click="scrollTo('features')" class="footer-link">Features</button>
               <button @click="scrollTo('how')" class="footer-link">Zo werkt het</button>
               <button @click="scrollTo('languages')" class="footer-link">Talen</button>
+              <router-link to="/rubric" class="footer-link">Rubric</router-link>
               <button @click="goLogin" class="footer-link">Inloggen</button>
             </div>
           </div>
