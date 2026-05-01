@@ -3,7 +3,7 @@
 **Date:** 2026-04-30
 **Demo target:** May 7 pitch (Innovate8 booth)
 **Persona:** Vash, 18-year-old MBO-4 ICT student (`afriqxpress@gmail.com`)
-**Test repo:** https://github.com/inno8/klas-boekenruil
+**Test repo:** [https://github.com/inno8/klas-boekenruil](https://github.com/inno8/klas-boekenruil)
 **Cohort:** stage / Course: fullstack
 **LLM:** `claude-sonnet-4-20250514`
 
@@ -35,7 +35,7 @@ The arc is intentional: rough → redemption → growth. That's the docent value
 
 ### PR 1 — Add boeken CRUD (rough)
 
-**URL:** https://github.com/inno8/klas-boekenruil/pull/1
+**URL:** [https://github.com/inno8/klas-boekenruil/pull/1](https://github.com/inno8/klas-boekenruil/pull/1)
 **Branch:** `feat/books-crud`
 
 Beginner mistakes planted (every one a teaching moment):
@@ -56,7 +56,7 @@ Beginner mistakes planted (every one a teaching moment):
 
 ### PR 2 — Beveiliging + validatie fixes
 
-**URL:** https://github.com/inno8/klas-boekenruil/pull/2
+**URL:** [https://github.com/inno8/klas-boekenruil/pull/2](https://github.com/inno8/klas-boekenruil/pull/2)
 **Branch:** `fix/security-validation`
 
 Each PR 1 sin gets fixed:
@@ -79,7 +79,7 @@ Each PR 1 sin gets fixed:
 
 ### PR 3 — Ruilverzoeken + N+1 fix
 
-**URL:** https://github.com/inno8/klas-boekenruil/pull/3
+**URL:** [https://github.com/inno8/klas-boekenruil/pull/3](https://github.com/inno8/klas-boekenruil/pull/3)
 **Branch:** `feat/swap-requests`
 
 New feature stacked on the cleaner base:
@@ -103,16 +103,18 @@ New feature stacked on the cleaner base:
 
 The trajectory chart should show three data points per skill across the three PRs. Expected shape:
 
-| Skill           | After PR 1 | After PR 2 | After PR 3 | Notes                                  |
-|-----------------|------------|------------|------------|----------------------------------------|
-| security        | ~35        | ~70        | ~70        | Big jump after fixes + LearningProof   |
-| code_quality    | ~45        | ~60        | ~62        | Steady improvement                     |
-| testing         | ~30        | ~55        | ~65        | New tests in PR 2 and PR 3             |
-| performance     | ~40        | ~40        | ~60        | N+1 not addressed until PR 3           |
-| validation      | ~35        | ~75        | ~75        | Form requests in PR 2                  |
-| architecture    | ~50        | ~55        | ~60        | Policy class + new model               |
-| documentation   | ~50        | ~50        | ~50        | Vash didn't write any                  |
-| best_practices  | ~45        | ~60        | ~65        | Eloquent over raw SQL, etc.            |
+
+| Skill          | After PR 1 | After PR 2 | After PR 3 | Notes                                |
+| -------------- | ---------- | ---------- | ---------- | ------------------------------------ |
+| security       | ~35        | ~70        | ~70        | Big jump after fixes + LearningProof |
+| code_quality   | ~45        | ~60        | ~62        | Steady improvement                   |
+| testing        | ~30        | ~55        | ~65        | New tests in PR 2 and PR 3           |
+| performance    | ~40        | ~40        | ~60        | N+1 not addressed until PR 3         |
+| validation     | ~35        | ~75        | ~75        | Form requests in PR 2                |
+| architecture   | ~50        | ~55        | ~60        | Policy class + new model             |
+| documentation  | ~50        | ~50        | ~50        | Vash didn't write any                |
+| best_practices | ~45        | ~60        | ~65        | Eloquent over raw SQL, etc.          |
+
 
 Numbers are projections — the human verifies the actual movement in the trajectory chart for the deck screenshot.
 
@@ -125,27 +127,16 @@ The two recurring-pattern proofs (SQL injection in `index()` repeated in `byCond
 Twelve issues hit during this run. All resolved or worked around for the demo. Each is a candidate for the v1.1 hardening backlog.
 
 1. **Gunicorn 30s default timeout killed LLM-bound requests.** Worker SIGKILL'd mid-Anthropic-call, leaving GradingSessions stuck in `drafting`. Bumped to 180s in commit `388e479` on the LEERA reviewhub repo. Real fix: async kickoff via Celery (already planned as Part 2).
-
 2. **ai-engine entry point mismatch.** Dockerfile launched `app.main:app` but the FastAPI app is at top-level `main.py`. Container crashlooped on every boot.
-
-3. **`FASTAPI_URL` not passed to django service in dev compose.** Django fell back to `localhost:8001` from inside the container, which resolved to the Django container itself. Webhook handler crashed silently.
-
-4. **`AI_ENGINE_URL` legacy alias short-circuited the fallback.** `webhooks.py` used `os.getenv('AI_ENGINE_URL') or os.getenv('FASTAPI_URL')` — the legacy var had a populated default, so `or` never fired. `or` only triggers on falsy.
-
-5. **`ALLOWED_HOSTS` missing `django`.** Internal django→ai-engine→django callbacks were rejected with `DisallowedHost`. Looks like an HTTP 400 with `DEBUG=False`, which is misleading.
-
+3. `**FASTAPI_URL` not passed to django service in dev compose.** Django fell back to `localhost:8001` from inside the container, which resolved to the Django container itself. Webhook handler crashed silently.
+4. `**AI_ENGINE_URL` legacy alias short-circuited the fallback.** `webhooks.py` used `os.getenv('AI_ENGINE_URL') or os.getenv('FASTAPI_URL')` — the legacy var had a populated default, so `or` never fired. `or` only triggers on falsy.
+5. `**ALLOWED_HOSTS` missing `django`.** Internal django→ai-engine→django callbacks were rejected with `DisallowedHost`. Looks like an HTTP 400 with `DEBUG=False`, which is misleading.
 6. **DiffExtractor uses unauthenticated git clone.** Fails silently for private repos. Worked around by making `inno8/klas-boekenruil` public for the demo. Real fix: thread the GitHub App installation token through the clone URL.
-
 7. **LLM model names in env were fake.** `claude-haiku-4-5-20250929` and `claude-sonnet-4-5-20250929` 404'd from the Anthropic API. Aligned both tiers to `claude-sonnet-4-20250514`. Suboptimal cost (no haiku tier for cheap passes) but works.
-
 8. **Pending placeholder Evaluations duplicate completed rows.** ai-engine creates a placeholder Evaluation, then a separate completed row instead of updating the placeholder. Worked around with a queryset filter that hides pending rows from the user-facing list. Real fix: ai-engine updates the existing row.
-
 9. **GitHub App Setup URL vs Callback URL confusion.** Install OAuth flow redirected to a path Django didn't serve. Resolved by aligning the Callback URL to `/dev-profile/connected`.
-
-10. **`GITHUB_APP_PRIVATE_KEY_PATH` plumbing.** Missing volume mount and missing env var passthrough kept `is_github_app_configured()` returning False on first attempts. Two-line fix once spotted.
-
+10. `**GITHUB_APP_PRIVATE_KEY_PATH` plumbing.** Missing volume mount and missing env var passthrough kept `is_github_app_configured()` returning False on first attempts. Two-line fix once spotted.
 11. **CohortMembership hard-deleted on member-remove.** Re-invite restores the user but not the membership, breaking webhook routing for anyone who got removed and re-added. Tracked as a soft-delete refactor for post-pitch.
-
 12. **Mixed dev/prod compose state on droplet.** Orphan containers from earlier runs caused DNS resolution failures (django couldn't find `ai-engine` because a legacy `ai_engine` container was crashlooping in parallel and squatting the network alias). Fixed by `docker compose down` on both files + standardizing on the prod compose.
 
 ---
@@ -180,12 +171,12 @@ End on the screenshot of the trajectory chart. No buzzwords. Walk off.
 
 Before May 7:
 
-- [ ] Refresh PR 2 in the LEERA UI. Verify the draft for commit `320dc10` completes first-try (no manual reset needed). This validates the gunicorn timeout fix.
-- [ ] Refresh PR 3 in the LEERA UI. Verify the draft for commit `78899e0` completes first-try.
-- [ ] Click through all 3 PRs in teacher view. Screenshot one finding per PR for the deck (highest-impact one each).
-- [ ] Open the trajectory chart for student `afriqxpress@gmail.com`. Verify the SECURITY line actually moves PR-1 → PR-2. Screenshot for the deck.
-- [ ] Check the recurring-error detection on PR 1. Confirm it flagged the `byCondition()` SQL injection as the same pattern as `index()`. This is the strongest "we know what we're doing" signal in the demo.
-- [ ] Confirm SECURITY findings on PR 1 show as RESOLVED on PR 2 (cross-PR continuity).
-- [ ] Confirm at least one LearningProof minted with state PROVEN.
+- Refresh PR 2 in the LEERA UI. Verify the draft for commit `320dc10` completes first-try (no manual reset needed). This validates the gunicorn timeout fix.
+- Refresh PR 3 in the LEERA UI. Verify the draft for commit `78899e0` completes first-try.
+- Click through all 3 PRs in teacher view. Screenshot one finding per PR for the deck (highest-impact one each).
+- Open the trajectory chart for student `afriqxpress@gmail.com`. Verify the SECURITY line actually moves PR-1 → PR-2. Screenshot for the deck.
+- Check the recurring-error detection on PR 1. Confirm it flagged the `byCondition()` SQL injection as the same pattern as `index()`. This is the strongest "we know what we're doing" signal in the demo.
+- Confirm SECURITY findings on PR 1 show as RESOLVED on PR 2 (cross-PR continuity).
+- Confirm at least one LearningProof minted with state PROVEN.
 
 If any of the above doesn't render, the fallback for the booth is the screenshots — capture them now while the data is fresh.

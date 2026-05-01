@@ -2,7 +2,7 @@
 
 > **Looking for a from-zero walkthrough including server provisioning,
 > Docker install, DNS setup, and end-to-end smoke tests? See
-> [`deployment-guide.md`](./deployment-guide.md) — this file is the
+> `[deployment-guide.md](./deployment-guide.md)` — this file is the
 > condensed runbook for someone who already has Docker + a server +
 > DNS working.**
 

@@ -30,25 +30,27 @@ If you already have a server with Docker installed, skip to **Section 3**.
 You need:
 
 - **A Linux host** with a public IPv4. Ubuntu 24.04 LTS recommended.
-  Anything else (Debian 12, Rocky 9, etc.) works the same way with
-  apt → dnf swaps. Minimum: 2 GB RAM, 2 vCPU, 20 GB disk. The
-  ai-engine alone has a 1 GB memory limit.
+Anything else (Debian 12, Rocky 9, etc.) works the same way with
+apt → dnf swaps. Minimum: 2 GB RAM, 2 vCPU, 20 GB disk. The
+ai-engine alone has a 1 GB memory limit.
 - **A domain.** This guide uses `on-boardia.com`. You'll need DNS
-  control over both the apex and the `www` subdomain.
+control over both the apex and the `www` subdomain.
 - **An SMTP provider** (Gmail with App Password, SendGrid, Mailgun,
-  Brevo, your own mail server — anything that speaks SMTP on :587).
-  Required for the org-signup verification email.
+Brevo, your own mail server — anything that speaks SMTP on :587).
+Required for the org-signup verification email.
 - **An LLM provider API key.** Anthropic Claude is the v1 default.
 - **Anthropic / GitHub / etc. accounts ready** with the API keys
-  you'll paste into `.env`.
+you'll paste into `.env`.
 
 The host needs the public internet to reach:
+
 - `letsencrypt.org` (cert validation)
 - `api.anthropic.com` (LLM calls)
 - `api.resend.com` if you switch to Resend (else your SMTP host on :587)
 - `api.github.com` (webhook signature checks, repo fetches)
 
 The public internet needs to reach the host on:
+
 - **Port 80** (Let's Encrypt HTTP-01 challenge + HTTP→HTTPS redirect)
 - **Port 443** (HTTPS)
 
@@ -79,6 +81,7 @@ Log out, log back in as `leera`:
 
 ```bash
 ssh leera@<your-host-ip>
+
 ```
 
 Update + install firewall:
@@ -131,10 +134,12 @@ instructions before continuing.
 
 In your DNS provider (Cloudflare / Namecheap / etc.), create:
 
-| Type | Name | Value | TTL |
-|------|------|-------|-----|
-| A | `@` (or `on-boardia.com`) | `<your-host-ip>` | 300 |
-| A | `www` | `<your-host-ip>` | 300 |
+
+| Type | Name                      | Value            | TTL |
+| ---- | ------------------------- | ---------------- | --- |
+| A    | `@` (or `on-boardia.com`) | `<your-host-ip>` | 300 |
+| A    | `www`                     | `<your-host-ip>` | 300 |
+
 
 If your DNS provider supports **proxying** (Cloudflare orange cloud),
 **turn it off** for now — we want Let's Encrypt to hit your origin
@@ -191,6 +196,7 @@ multiple variables** — if one leaks, only one boundary is broken.
 For the SMTP fields, pick a provider and fill in. Quick reference:
 
 **Gmail (App Password — Google Account → Security → 2-Step → App Passwords):**
+
 ```
 EMAIL_HOST=smtp.gmail.com
 EMAIL_PORT=587
@@ -199,6 +205,7 @@ EMAIL_HOST_PASSWORD=<16-char-app-password-no-spaces>
 ```
 
 **SendGrid:**
+
 ```
 EMAIL_HOST=smtp.sendgrid.net
 EMAIL_PORT=587
@@ -255,10 +262,10 @@ docker compose -f docker-compose.prod.yml run --rm django \
 
 **Pre-flight checklist** (skipping any of these will cause the script to fail):
 
-- [ ] `dig on-boardia.com +short` returns your host IP
-- [ ] `dig www.on-boardia.com +short` returns your host IP
-- [ ] `curl http://on-boardia.com` from another network reaches your host (firewall + cloud security group)
-- [ ] `DOMAIN_NAME` and `LETSENCRYPT_EMAIL` set in `.env`
+- `dig on-boardia.com +short` returns your host IP
+- `dig www.on-boardia.com +short` returns your host IP
+- `curl http://on-boardia.com` from another network reaches your host (firewall + cloud security group)
+- `DOMAIN_NAME` and `LETSENCRYPT_EMAIL` set in `.env`
 
 **Strongly recommended: staging-first dance.** Let's Encrypt's production
 endpoint rate-limits to 5 cert issuances per domain per week. Test the
@@ -314,13 +321,15 @@ docker compose -f docker-compose.prod.yml logs -f --tail=100
 
 Expected lines:
 
-| Service | Healthy log |
-|---------|-------------|
-| `db` | `database system is ready to accept connections` |
-| `django` | `Listening at: http://0.0.0.0:8000 (gunicorn)` |
-| `ai-engine` | `Application startup complete.` |
-| `frontend` | `nginx -g daemon off` + worker process started |
-| `certbot` | (silent until first 12h tick) |
+
+| Service     | Healthy log                                      |
+| ----------- | ------------------------------------------------ |
+| `db`        | `database system is ready to accept connections` |
+| `django`    | `Listening at: http://0.0.0.0:8000 (gunicorn)`   |
+| `ai-engine` | `Application startup complete.`                  |
+| `frontend`  | `nginx -g daemon off` + worker process started   |
+| `certbot`   | (silent until first 12h tick)                    |
+
 
 `Ctrl+C` to detach (services keep running).
 
@@ -356,7 +365,7 @@ curl -i https://on-boardia.com/api/users/me/
 1. Browser → `https://on-boardia.com/org-signup`
 2. Fill in name, email, password, organization name → submit
 3. Check the email inbox you used. The verification email should arrive
-   within ~30 seconds via your SMTP provider.
+  within ~30 seconds via your SMTP provider.
 4. Click the verification link → land on the dashboard
 
 **If the email doesn't arrive:** check the django container logs for
@@ -394,9 +403,9 @@ settings. See [Section 10](#10-set-up-github-webhooks).
 
 1. Open a real PR on `inno8/codelens-test` (any branch with new commits)
 2. Within ~60 seconds, a Nakijken Copilot session appears in the
-   teacher inbox at `https://on-boardia.com/grading`
+  teacher inbox at `https://on-boardia.com/grading`
 3. Click the session, verify rubric scores rendered, edit one comment,
-   click **Verstuur** (Send)
+  click **Verstuur** (Send)
 4. Check the GitHub PR — the comment should appear within seconds
 
 If 1-4 work, the full pipeline is live.
@@ -409,11 +418,11 @@ For `inno8/codelens-test` (or any repo you want to monitor):
 
 1. Repo → **Settings → Webhooks → Add webhook**
 2. **Payload URL:** `https://on-boardia.com/api/ai/v1/webhook/github/<project-id>`
-   (the project-id comes from the LEERA UI when you connect the repo)
+  (the project-id comes from the LEERA UI when you connect the repo)
 3. **Content type:** `application/json`
 4. **Secret:** the value of `GITHUB_WEBHOOK_SECRET` from your `.env`
 5. **Which events?** "Just the push event" or "Send me everything" (we
-   handle pull_request, push, pull_request_review, etc.)
+  handle pull_request, push, pull_request_review, etc.)
 6. **Active:** checked
 7. Save
 
@@ -540,8 +549,7 @@ whatever was wrong, retry. Use `LETSENCRYPT_STAGING=1` while debugging.
 
 ### django: `OperationalError: connection to server at "db" failed`
 
-The db container hasn't finished initializing yet. `docker compose
-restart` the django service or wait 30 seconds and try again. If it
+The db container hasn't finished initializing yet. `docker compose restart` the django service or wait 30 seconds and try again. If it
 persists, check `db` logs for actual postgres errors.
 
 ### Webhook: "signature mismatch"
@@ -628,16 +636,16 @@ docker compose -f docker-compose.prod.yml exec frontend sh
 ## What's NOT in this guide (intentionally)
 
 - **Multi-host orchestration / k8s.** v1 dogfood is one box. Scale
-  later.
+later.
 - **Read replicas / connection pooling.** Postgres 16 in a single
-  container handles a few cohorts comfortably; revisit at ~10+
-  schools.
+container handles a few cohorts comfortably; revisit at ~10+
+schools.
 - **Centralized log aggregation.** `docker compose logs` is enough
-  for v1. Add Loki/Grafana when log volume hurts.
+for v1. Add Loki/Grafana when log volume hurts.
 - **Observability dashboards.** Skip until pain. The ops dashboard
-  inside LEERA covers cost + activity already.
+inside LEERA covers cost + activity already.
 - **Background-task workers.** ai-engine handles its own queue. No
-  Celery / RQ until we need it.
+Celery / RQ until we need it.
 
 These all become real concerns in v1.1+. For pre-pitch dogfood,
 they're complexity we don't need to pay for yet.

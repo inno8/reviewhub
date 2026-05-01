@@ -179,6 +179,23 @@ class Command(BaseCommand):
         if merged_at is None:
             merged_at = datetime.now(dt_tz.utc)
 
+        # Filter automation: skip dependabot/renovate/github-actions/etc.
+        # A real student doesn't push 30 dependency bumps in 14 days, and the
+        # backfill seeds Vash's profile — bot PRs read as fake to a docent.
+        # We check both `user.type == "Bot"` (most reliable) and a name suffix
+        # fallback for misconfigured forks.
+        author = pr.get("user") or {}
+        login = (author.get("login") or "").lower()
+        is_bot = (
+            author.get("type") == "Bot"
+            or login.endswith("[bot]")
+            or login in {"dependabot", "renovate", "github-actions",
+                         "snyk-bot", "greenkeeper", "imgbot", "allcontributors"}
+        )
+        if is_bot:
+            return {"skipped": True,
+                    "line": f"PR #{number} | {title[:50]} | skipped (bot: {login})"}
+
         # Idempotency: skip if a Submission for this pr_url already exists.
         if Submission.objects.filter(pr_url=pr_url).exists():
             return {"skipped": True,
