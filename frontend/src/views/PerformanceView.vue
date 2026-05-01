@@ -169,7 +169,7 @@ const categoryColors = computed(() => {
 
 
 function formatCategory(c: string) { return c.split('_').map(p => p.charAt(0) + p.slice(1).toLowerCase()).join(' '); }
-function getSkillLevel(s: number) { if (s >= 90) return 'Expert'; if (s >= 75) return 'Advanced'; if (s >= 50) return 'Intermediate'; if (s >= 25) return 'Developing'; return 'Beginner'; }
+function getSkillLevel(s: number) { if (s >= 90) return 'Expert'; if (s >= 75) return 'Gevorderd'; if (s >= 50) return 'Halfgevorderd'; if (s >= 25) return 'In ontwikkeling'; return 'Beginner'; }
 function getSkillBarColor(s: number) { if (s >= 90) return 'bg-primary'; if (s >= 75) return 'bg-green-500'; if (s >= 50) return 'bg-yellow-500'; if (s >= 25) return 'bg-orange-500'; return 'bg-red-500'; }
 function categoryAverage(c: SkillCategory) { if (!c.skills.length) return 0; return Math.round(c.skills.reduce((s, sk) => s + sk.score, 0) / c.skills.length); }
 function getRecommendationIcon(t: string) { return { book: 'menu_book', article: 'article', tutorial: 'school', video: 'play_circle' }[t] || 'link'; }
@@ -222,16 +222,16 @@ function openSkillBreakdown(id: number) { breakdownSkillId.value = id; breakdown
       <!-- ═══ Admin User List ═══ -->
       <template v-if="showUserList">
         <div class="flex flex-wrap items-center gap-3 mb-8">
-          <input v-model="adminSearch" type="text" placeholder="Search..."
+          <input v-model="adminSearch" type="text" placeholder="Zoeken..."
             class="w-56 bg-surface-container-lowest border-none rounded-lg text-on-surface placeholder:text-outline/40 focus:ring-1 focus:ring-primary/50 py-2.5 px-4 text-sm" />
           <select v-model="adminCategoryFilter"
             class="bg-surface-container-lowest border-none rounded-lg text-sm focus:ring-1 focus:ring-primary/50 py-2.5 px-4">
-            <option :value="null">All Categories</option>
+            <option :value="null">Alle categorieën</option>
             <option v-for="c in adminCategories" :key="c.id" :value="c.id">{{ c.name }}</option>
           </select>
           <select v-model="adminProjectFilter"
             class="bg-surface-container-lowest border-none rounded-lg text-sm focus:ring-1 focus:ring-primary/50 py-2.5 px-4">
-            <option :value="null">All Projects</option>
+            <option :value="null">Alle projecten</option>
             <option v-for="p in projectsStore.projects" :key="p.id" :value="p.id">{{ p.displayName }}</option>
           </select>
         </div>
@@ -259,17 +259,17 @@ function openSkillBreakdown(id: number) { breakdownSkillId.value = id; breakdown
               </div>
               <div class="bg-surface-container-lowest rounded-lg p-2">
                 <p class="text-base font-black">{{ u.total_findings }}</p>
-                <p class="text-[8px] text-outline uppercase">Findings</p>
+                <p class="text-[8px] text-outline uppercase">Bevindingen</p>
               </div>
               <div class="bg-surface-container-lowest rounded-lg p-2">
                 <p class="text-base font-black" :class="u.fix_rate >= 50 ? 'text-green-400' : 'text-error'">{{ u.fix_rate }}%</p>
-                <p class="text-[8px] text-outline uppercase">Fix Rate</p>
+                <p class="text-[8px] text-outline uppercase">Fix-percentage</p>
               </div>
             </div>
           </div>
           <div v-if="!adminUsers.length" class="col-span-full text-center py-16">
             <span class="material-symbols-outlined text-6xl text-outline mb-4">group</span>
-            <p class="text-outline">No developers found</p>
+            <p class="text-outline">Geen ontwikkelaars gevonden</p>
           </div>
         </div>
       </template>
@@ -279,26 +279,26 @@ function openSkillBreakdown(id: number) { breakdownSkillId.value = id; breakdown
         <!-- Stats Grid -->
         <section v-if="performance" class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6 mb-12">
           <div class="bg-surface-container-low p-6 rounded-xl border-l-4 border-primary">
-            <p class="text-outline text-xs font-bold uppercase tracking-wider mb-2">Total Commits</p>
+            <p class="text-outline text-xs font-bold uppercase tracking-wider mb-2">Totaal commits</p>
             <h3 class="text-3xl font-black">{{ performance.commitCount }}</h3>
           </div>
           <div class="bg-surface-container-low p-6 rounded-xl border-l-4 border-tertiary">
-            <p class="text-outline text-xs font-bold uppercase tracking-wider mb-2">Total Findings</p>
+            <p class="text-outline text-xs font-bold uppercase tracking-wider mb-2">Totaal bevindingen</p>
             <h3 class="text-3xl font-black">{{ performance.findingCount }}</h3>
           </div>
           <div class="bg-surface-container-low p-6 rounded-xl border-l-4 border-primary-container">
-            <p class="text-outline text-xs font-bold uppercase tracking-wider mb-2">Fix Rate %</p>
+            <p class="text-outline text-xs font-bold uppercase tracking-wider mb-2">Fix-percentage</p>
             <h3 class="text-3xl font-black">{{ performance.fixRate }}%</h3>
           </div>
           <div class="bg-surface-container-low p-6 rounded-xl border-l-4 border-outline">
-            <p class="text-outline text-xs font-bold uppercase tracking-wider mb-2">Review Velocity</p>
+            <p class="text-outline text-xs font-bold uppercase tracking-wider mb-2">Review-snelheid</p>
             <h3 class="text-3xl font-black">{{ performance.reviewVelocity !== null ? performance.reviewVelocity + 'd' : '—' }}</h3>
           </div>
         </section>
         <section v-else-if="!loading" class="mb-12">
           <div class="bg-surface-container-low p-8 rounded-xl text-center">
             <span class="material-symbols-outlined text-4xl text-outline mb-2">analytics</span>
-            <p class="text-outline">No performance data available.</p>
+            <p class="text-outline">Geen voortgangsdata beschikbaar.</p>
           </div>
         </section>
 
@@ -306,7 +306,7 @@ function openSkillBreakdown(id: number) { breakdownSkillId.value = id; breakdown
         <section v-if="performance" class="grid grid-cols-1 lg:grid-cols-3 gap-6 mb-12">
           <!-- Developer Level -->
           <div class="bg-surface-container-low p-6 rounded-xl text-center">
-            <p class="text-outline text-xs font-bold uppercase tracking-wider mb-3">Developer Level</p>
+            <p class="text-outline text-xs font-bold uppercase tracking-wider mb-3">Ontwikkelaarsniveau</p>
             <div class="inline-flex items-center justify-center w-24 h-24 rounded-full mb-3"
               :class="{
                 'bg-red-500/20 text-red-400': performance.level === 'beginner',
@@ -317,13 +317,13 @@ function openSkillBreakdown(id: number) { breakdownSkillId.value = id; breakdown
               }">
               <span class="text-2xl font-black uppercase">{{ performance.level?.[0] }}</span>
             </div>
-            <p class="text-lg font-bold capitalize">{{ performance.level || 'Unknown' }}</p>
-            <p class="text-sm text-outline mt-1">{{ performance.compositeScore || performance.averageScore }}pts composite</p>
+            <p class="text-lg font-bold capitalize">{{ performance.level || 'Onbekend' }}</p>
+            <p class="text-sm text-outline mt-1">{{ performance.compositeScore || performance.averageScore }} pt totaal</p>
           </div>
 
           <!-- Level Breakdown -->
           <div v-if="performance.levelBreakdown" class="bg-surface-container-low p-6 rounded-xl">
-            <p class="text-outline text-xs font-bold uppercase tracking-wider mb-4">Level Breakdown</p>
+            <p class="text-outline text-xs font-bold uppercase tracking-wider mb-4">Niveau-verdeling</p>
             <div class="space-y-2.5">
               <div v-for="(data, factor) in performance.levelBreakdown" :key="factor" class="flex items-center gap-2">
                 <span class="text-[9px] font-medium w-20 text-right capitalize">{{ String(factor).replace('_', ' ') }}</span>
@@ -339,7 +339,7 @@ function openSkillBreakdown(id: number) { breakdownSkillId.value = id; breakdown
 
           <!-- Severity Distribution -->
           <div class="bg-surface-container-low p-6 rounded-xl">
-            <p class="text-outline text-xs font-bold uppercase tracking-wider mb-4">Findings by Severity</p>
+            <p class="text-outline text-xs font-bold uppercase tracking-wider mb-4">Bevindingen per ernst</p>
             <div v-if="performance.severityDistribution" class="space-y-3">
               <div v-for="(count, severity) in performance.severityDistribution" :key="severity" class="flex items-center gap-3">
                 <span class="text-xs font-bold uppercase w-20"
@@ -363,12 +363,12 @@ function openSkillBreakdown(id: number) { breakdownSkillId.value = id; breakdown
                 <span class="text-sm font-bold w-8 text-right">{{ count }}</span>
               </div>
             </div>
-            <p v-else class="text-sm text-outline text-center py-4">No data yet</p>
+            <p v-else class="text-sm text-outline text-center py-4">Nog geen data</p>
           </div>
 
           <!-- Top Issue Categories -->
           <div class="bg-surface-container-low p-6 rounded-xl">
-            <p class="text-outline text-xs font-bold uppercase tracking-wider mb-4">Top Issue Areas</p>
+            <p class="text-outline text-xs font-bold uppercase tracking-wider mb-4">Belangrijkste probleemgebieden</p>
             <div v-if="performance.categoryBreakdown?.length" class="space-y-2">
               <div v-for="cat in performance.categoryBreakdown.slice(0, 6)" :key="cat.name"
                 class="flex items-center gap-3 cursor-pointer hover:bg-surface-container-lowest rounded-lg p-1 -m-1 transition-colors"
@@ -383,7 +383,7 @@ function openSkillBreakdown(id: number) { breakdownSkillId.value = id; breakdown
                 <span class="material-symbols-outlined text-xs text-outline">chevron_right</span>
               </div>
             </div>
-            <p v-else class="text-sm text-outline text-center py-4">No data yet</p>
+            <p v-else class="text-sm text-outline text-center py-4">Nog geen data</p>
           </div>
         </section>
 
@@ -392,8 +392,8 @@ function openSkillBreakdown(id: number) { breakdownSkillId.value = id; breakdown
           <div class="bg-surface-container-low rounded-3xl p-8 border border-outline-variant/10">
             <div class="flex justify-between items-start mb-6">
               <div>
-                <h4 class="text-xl font-bold">Your Coding Progression</h4>
-                <p class="text-sm text-outline mt-1">Each point is a commit — the line shows your running average improving over time</p>
+                <h4 class="text-xl font-bold">Jouw voortgang</h4>
+                <p class="text-sm text-outline mt-1">Elk punt is een commit — de lijn laat zien hoe je voortschrijdend gemiddelde verbetert in de tijd</p>
               </div>
               <div v-if="performance.progression.length >= 3"
                 class="flex items-center gap-2 px-4 py-2 rounded-lg"
@@ -401,17 +401,17 @@ function openSkillBreakdown(id: number) { breakdownSkillId.value = id; breakdown
                 <span class="material-symbols-outlined text-sm">{{ performance.improving ? 'trending_up' : 'trending_down' }}</span>
                 <span class="text-sm font-bold">
                   {{ performance.improving ? '+' : '' }}{{ performance.improvementPct }}%
-                  {{ performance.improving ? 'improvement' : 'decline' }}
+                  {{ performance.improving ? 'verbetering' : 'achteruitgang' }}
                 </span>
-                <span class="text-xs text-outline ml-1">(first 3 vs last 3 commits)</span>
+                <span class="text-xs text-outline ml-1">(eerste 3 vs laatste 3 commits)</span>
               </div>
             </div>
 
             <!-- Legend -->
             <div class="flex gap-6 mb-4 text-xs">
-              <span class="flex items-center gap-2"><span class="w-3 h-3 rounded-full bg-primary"></span> Commit Score (0-100)</span>
-              <span class="flex items-center gap-2"><span class="w-8 h-0.5 bg-green-400"></span> Running Average</span>
-              <span class="flex items-center gap-2"><span class="w-3 h-3 rounded-full" style="background:#F78166"></span> Findings Count</span>
+              <span class="flex items-center gap-2"><span class="w-3 h-3 rounded-full bg-primary"></span> Commit-score (0-100)</span>
+              <span class="flex items-center gap-2"><span class="w-8 h-0.5 bg-green-400"></span> Voortschrijdend gemiddelde</span>
+              <span class="flex items-center gap-2"><span class="w-3 h-3 rounded-full" style="background:#F78166"></span> Aantal bevindingen</span>
             </div>
 
             <!-- Chart -->
@@ -424,17 +424,17 @@ function openSkillBreakdown(id: number) { breakdownSkillId.value = id; breakdown
 
             <!-- Score zones reference -->
             <div class="flex justify-between mt-4 text-[10px] text-outline px-4">
-              <span class="text-red-400">0-39: Needs Work</span>
-              <span class="text-orange-400">40-59: Developing</span>
-              <span class="text-yellow-400">60-74: Good</span>
-              <span class="text-green-400">75-89: Strong</span>
+              <span class="text-red-400">0-39: Vraagt aandacht</span>
+              <span class="text-orange-400">40-59: In ontwikkeling</span>
+              <span class="text-yellow-400">60-74: Goed op weg</span>
+              <span class="text-green-400">75-89: Sterk</span>
               <span class="text-primary">90-100: Expert</span>
             </div>
 
             <!-- Per-commit details (collapsible) -->
             <details class="mt-6">
               <summary class="text-sm font-bold text-outline cursor-pointer hover:text-on-surface">
-                View commit-by-commit breakdown ({{ performance.progression.length }} commits)
+                Bekijk commit-voor-commit verdeling ({{ performance.progression.length }} commits)
               </summary>
               <div class="mt-3 space-y-1 max-h-64 overflow-y-auto">
                 <div v-for="(p, i) in performance.progression" :key="i"
@@ -450,8 +450,8 @@ function openSkillBreakdown(id: number) { breakdownSkillId.value = id; breakdown
                     }">{{ Math.round(p.score) }}</span>
                   <code class="text-xs text-outline w-16">{{ p.commit }}</code>
                   <span class="flex-1 truncate">{{ p.message }}</span>
-                  <span class="text-xs text-outline">{{ p.findings }} issues</span>
-                  <span class="text-xs text-outline">avg: {{ p.runningAvg }}</span>
+                  <span class="text-xs text-outline">{{ p.findings }} problemen</span>
+                  <span class="text-xs text-outline">gem: {{ p.runningAvg }}</span>
                 </div>
               </div>
             </details>
@@ -461,23 +461,23 @@ function openSkillBreakdown(id: number) { breakdownSkillId.value = id; breakdown
         <!-- Strengths / Growth -->
         <section v-if="performance" class="grid grid-cols-1 lg:grid-cols-2 gap-10 mb-12">
           <div class="space-y-6">
-            <h4 class="text-xl font-bold flex items-center gap-2"><span class="w-8 h-1 bg-primary rounded-full"></span>Strengths</h4>
+            <h4 class="text-xl font-bold flex items-center gap-2"><span class="w-8 h-1 bg-primary rounded-full"></span>Sterke punten</h4>
             <div class="bg-surface-container-low rounded-2xl p-6 space-y-4">
               <div v-for="s in performance.strengths" :key="s" class="flex items-center gap-4 p-4 bg-surface-container-lowest rounded-xl">
                 <span class="material-symbols-outlined text-primary">check_circle</span>
                 <span class="font-bold">{{ formatCategory(s) }}</span>
               </div>
-              <p v-if="!performance.strengths.length" class="text-sm text-outline text-center py-4">No strengths identified yet</p>
+              <p v-if="!performance.strengths.length" class="text-sm text-outline text-center py-4">Nog geen sterke punten in beeld</p>
             </div>
           </div>
           <div class="space-y-6">
-            <h4 class="text-xl font-bold flex items-center gap-2"><span class="w-8 h-1 bg-tertiary rounded-full"></span>Growth Areas</h4>
+            <h4 class="text-xl font-bold flex items-center gap-2"><span class="w-8 h-1 bg-tertiary rounded-full"></span>Groeipunten</h4>
             <div class="bg-surface-container-low rounded-2xl p-6 space-y-4">
               <div v-for="a in performance.growthAreas" :key="a" class="flex items-center gap-4 p-4 bg-surface-container-lowest rounded-xl">
                 <span class="material-symbols-outlined text-tertiary">trending_up</span>
                 <span class="font-bold">{{ formatCategory(a) }}</span>
               </div>
-              <p v-if="!performance.growthAreas.length" class="text-sm text-outline text-center py-4">No growth areas identified yet</p>
+              <p v-if="!performance.growthAreas.length" class="text-sm text-outline text-center py-4">Nog geen groeipunten in beeld</p>
             </div>
           </div>
         </section>
@@ -487,8 +487,8 @@ function openSkillBreakdown(id: number) { breakdownSkillId.value = id; breakdown
           <div class="bg-surface-container-low rounded-3xl p-8 border border-outline-variant/10">
             <div class="flex justify-between items-start mb-6">
               <div>
-                <h4 class="text-xl font-bold">Category Improvement Trends</h4>
-                <p class="text-sm text-outline mt-1">Daily findings per category over the last 30 days — decreasing lines mean improvement</p>
+                <h4 class="text-xl font-bold">Trends per categorie</h4>
+                <p class="text-sm text-outline mt-1">Dagelijkse bevindingen per categorie over de laatste 30 dagen — dalende lijnen betekenen verbetering</p>
               </div>
             </div>
             <CategoryTrendChart :trends="trends" :category-colors="categoryColors" :height="360" />
@@ -501,9 +501,9 @@ function openSkillBreakdown(id: number) { breakdownSkillId.value = id; breakdown
             <div class="mb-6">
               <h4 class="text-xl font-bold flex items-center gap-2">
                 <span class="material-symbols-outlined text-tertiary">repeat</span>
-                Recurring Errors
+                Terugkerende fouten
               </h4>
-              <p class="text-sm text-outline mt-1">Patterns that keep appearing in your code — fix these to level up fastest</p>
+              <p class="text-sm text-outline mt-1">Patronen die telkens opnieuw verschijnen in je code — los deze op om het snelst te groeien</p>
             </div>
             <RecurringErrorsPanel :patterns="patterns" />
           </div>
@@ -511,20 +511,20 @@ function openSkillBreakdown(id: number) { breakdownSkillId.value = id; breakdown
 
         <!-- Recommendations -->
         <section v-if="recommendations.length" class="space-y-6 mb-12">
-          <h4 class="text-2xl font-black tracking-tight">Recommended Learning</h4>
+          <h4 class="text-2xl font-black tracking-tight">Aanbevolen leerpad</h4>
           <div class="grid grid-cols-1 md:grid-cols-3 gap-6">
             <div v-for="rec in recommendations.slice(0, 3)" :key="rec.url" class="glass-panel p-6 rounded-2xl border border-outline-variant/10 hover:border-primary/30 transition-all">
               <span class="material-symbols-outlined text-primary mb-4 text-2xl">{{ getRecommendationIcon(rec.type) }}</span>
               <h5 class="font-bold text-lg mb-2">{{ rec.title }}</h5>
               <p class="text-sm text-outline mb-4">{{ rec.reason }}</p>
-              <a :href="rec.url" target="_blank" class="text-primary font-bold text-sm">View Resource</a>
+              <a :href="rec.url" target="_blank" class="text-primary font-bold text-sm">Bekijk bron</a>
             </div>
           </div>
         </section>
 
         <!-- Skill Progress -->
         <section v-if="skillCategories.length" class="mb-12">
-          <h4 class="text-2xl font-black tracking-tight mb-6">Skill Progress</h4>
+          <h4 class="text-2xl font-black tracking-tight mb-6">Skill-voortgang</h4>
           <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
             <div v-for="cat in skillCategories" :key="cat.id" class="bg-surface-container-low p-6 rounded-xl">
               <div class="flex items-center gap-3 mb-4">
@@ -545,14 +545,14 @@ function openSkillBreakdown(id: number) { breakdownSkillId.value = id; breakdown
                 </div>
               </div>
               <div class="mt-4 pt-4 border-t border-outline-variant/10 flex justify-between">
-                <span class="text-sm font-bold">Average</span>
+                <span class="text-sm font-bold">Gemiddeld</span>
                 <span class="text-sm font-bold text-primary">{{ categoryAverage(cat) }}%</span>
               </div>
             </div>
           </div>
         </section>
 
-        <p v-if="loading" class="text-sm text-outline">Loading performance insights...</p>
+        <p v-if="loading" class="text-sm text-outline">Voortgangsinzichten laden...</p>
       </template>
     </div>
 
