@@ -297,15 +297,17 @@ async function loadStudentSnapshot() {
   const sid = authStore.user?.id;
   if (!sid) return;
   try {
-    const axios = (await import('axios')).default;
-    const token = localStorage.getItem('reviewhub_token');
-    const { data } = await axios.get(
-      `${import.meta.env.VITE_API_URL}/grading/students/${sid}/snapshot/`,
-      { headers: token ? { Authorization: `Bearer ${token}` } : {} },
-    );
+    // Route through the shared axios client so the 401-refresh interceptor
+    // fires when the access token is stale. The previous bare axios call
+    // with a manual localStorage Authorization header bypassed the
+    // interceptor and silently caught every error — students saw
+    // "Nog geen rubric-data" on the Eindniveau widget even when the
+    // backend had real per_skill data.
+    const { data } = await api.grading.students.snapshot(sid);
     studentPerSkill.value = data.per_skill || [];
     studentCohortName.value = data.student?.cohort?.name || null;
-  } catch {
+  } catch (e) {
+    console.error('loadStudentSnapshot failed:', e);
     studentPerSkill.value = [];
   }
 }
