@@ -1,0 +1,297 @@
+<!doctype html>
+<html lang="nl">
+<head>
+<meta charset="utf-8" />
+<title>Leera — Booth A6 card · 7 mei 2026</title>
+<style>
+  /* A6 portrait: 105mm × 148mm. Add 3mm bleed for safe print. */
+  @page {
+    size: 111mm 154mm; /* with 3mm bleed each side */
+    margin: 0;
+  }
+
+  :root {
+    --bg-front: #0a0e1a;
+    --bg-back: #131826;
+    --primary: #5b8dee;
+    --primary-bright: #a3c8ff;
+    --on-surface: #ffffff;
+    --on-surface-variant: rgba(255, 255, 255, 0.72);
+    --outline: rgba(255, 255, 255, 0.4);
+    --check: #76c7a3;
+  }
+
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+
+  html, body {
+    background: #1a1a1a;
+    color: var(--on-surface);
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Inter, system-ui, sans-serif;
+    -webkit-font-smoothing: antialiased;
+  }
+
+  /* Screen preview: stack two cards with a gap so user can sanity-check
+     before printing. Print: each card on its own page. */
+  body { display: flex; flex-direction: column; align-items: center; gap: 24px; padding: 40px 20px; }
+
+  .card {
+    width: 111mm;
+    height: 154mm;
+    padding: 12mm 11mm;
+    position: relative;
+    overflow: hidden;
+    page-break-after: always;
+    box-shadow: 0 12px 48px rgba(0,0,0,0.5);
+  }
+  .card:last-child { page-break-after: auto; }
+
+  @media print {
+    body { background: #fff; padding: 0; gap: 0; }
+    .card { box-shadow: none; }
+  }
+
+  /* ─────── FRONT ─────── */
+  .front { background: var(--bg-front); }
+  .front::before {
+    content: '';
+    position: absolute; inset: 0;
+    background:
+      radial-gradient(circle at 80% -10%, rgba(91,141,238,0.25), transparent 50%),
+      radial-gradient(circle at -10% 110%, rgba(163,200,255,0.12), transparent 45%);
+    pointer-events: none;
+  }
+
+  .front-inner {
+    position: relative; z-index: 1;
+    height: 100%;
+    display: flex; flex-direction: column; justify-content: space-between;
+  }
+
+  .wordmark {
+    font-family: "Inter", system-ui, sans-serif;
+    font-weight: 200;
+    font-size: 38px;
+    letter-spacing: 8px;
+    color: var(--primary-bright);
+    text-shadow: 0 0 32px rgba(91,141,238,0.4);
+  }
+
+  .hero { max-width: 95%; }
+  .hero h1 {
+    font-size: 32px;
+    line-height: 1.05;
+    font-weight: 800;
+    letter-spacing: -0.5px;
+    color: var(--on-surface);
+  }
+  .hero h1 em {
+    font-style: normal;
+    background: linear-gradient(135deg, var(--primary-bright), var(--primary));
+    -webkit-background-clip: text;
+    background-clip: text;
+    color: transparent;
+  }
+  .hero p {
+    margin-top: 16px;
+    font-size: 13px;
+    line-height: 1.5;
+    color: var(--on-surface-variant);
+    max-width: 80%;
+  }
+
+  .qr-block { display: flex; align-items: center; gap: 14px; }
+  .qr-placeholder {
+    width: 28mm; height: 28mm;
+    border: 1.5px solid var(--primary);
+    border-radius: 6px;
+    background:
+      linear-gradient(45deg, rgba(91,141,238,0.08) 25%, transparent 25%, transparent 75%, rgba(91,141,238,0.08) 75%) 0 0/4mm 4mm,
+      linear-gradient(45deg, rgba(91,141,238,0.08) 25%, transparent 25%, transparent 75%, rgba(91,141,238,0.08) 75%) 2mm 2mm/4mm 4mm,
+      var(--bg-front);
+    display: grid; place-items: center;
+    color: var(--primary);
+    font-size: 9px;
+    text-align: center;
+    line-height: 1.3;
+    padding: 4px;
+  }
+  /* If a QR PNG is dropped in (./qr.png), this overlay shows it.
+     Otherwise the placeholder pattern with caption renders. */
+  .qr-placeholder img {
+    width: 100%; height: 100%; display: block;
+    object-fit: contain;
+  }
+  .qr-caption {
+    font-size: 10px;
+    color: var(--primary-bright);
+    line-height: 1.4;
+  }
+  .qr-caption .url {
+    font-family: ui-monospace, "SF Mono", Menlo, monospace;
+    font-size: 11px;
+    font-weight: 600;
+    color: var(--on-surface);
+    display: block;
+  }
+  .qr-caption .small {
+    font-size: 9px;
+    color: var(--outline);
+    margin-top: 4px;
+  }
+
+  /* ─────── BACK ─────── */
+  .back { background: var(--bg-back); }
+  .back-inner { position: relative; z-index: 1; height: 100%; display: flex; flex-direction: column; }
+
+  .back h2 {
+    font-size: 14px;
+    text-transform: uppercase;
+    letter-spacing: 2.4px;
+    color: var(--primary-bright);
+    font-weight: 700;
+    margin-bottom: 16px;
+  }
+
+  ol.steps {
+    list-style: none;
+    counter-reset: step;
+    margin-bottom: 18px;
+  }
+  ol.steps li {
+    counter-increment: step;
+    position: relative;
+    padding-left: 28px;
+    margin-bottom: 12px;
+    font-size: 12px;
+    line-height: 1.45;
+    color: var(--on-surface);
+  }
+  ol.steps li::before {
+    content: counter(step);
+    position: absolute; left: 0; top: -1px;
+    width: 20px; height: 20px;
+    border-radius: 50%;
+    background: var(--primary);
+    color: var(--bg-back);
+    font-weight: 800;
+    font-size: 11px;
+    display: grid; place-items: center;
+  }
+  ol.steps li b {
+    color: var(--primary-bright);
+    font-weight: 700;
+  }
+
+  .promises {
+    border-top: 1px solid rgba(255,255,255,0.08);
+    border-bottom: 1px solid rgba(255,255,255,0.08);
+    padding: 12px 0;
+    margin-bottom: 14px;
+  }
+  .promises ul { list-style: none; }
+  .promises li {
+    font-size: 12px;
+    line-height: 1.6;
+    color: var(--on-surface);
+    display: flex; align-items: center; gap: 8px;
+  }
+  .promises li::before {
+    content: '✓';
+    color: var(--check);
+    font-weight: 800;
+    font-size: 13px;
+  }
+
+  .pilot-badge {
+    background: linear-gradient(135deg, rgba(91,141,238,0.18), rgba(163,200,255,0.08));
+    border: 1px solid rgba(91,141,238,0.35);
+    border-radius: 8px;
+    padding: 10px 12px;
+    font-size: 11px;
+    color: var(--on-surface);
+    margin-bottom: auto;
+  }
+  .pilot-badge b {
+    display: block;
+    color: var(--primary-bright);
+    font-size: 12px;
+    font-weight: 800;
+    margin-bottom: 2px;
+  }
+
+  .footer {
+    border-top: 1px solid rgba(255,255,255,0.08);
+    padding-top: 12px;
+    display: flex; justify-content: space-between; align-items: flex-end;
+    font-size: 9px;
+    color: var(--outline);
+  }
+  .footer .email {
+    font-family: ui-monospace, "SF Mono", Menlo, monospace;
+    color: var(--primary-bright);
+    font-size: 10px;
+  }
+</style>
+</head>
+<body>
+
+<!-- ═══════════ FRONT ═══════════ -->
+<section class="card front">
+  <div class="front-inner">
+    <div class="wordmark">LEERA</div>
+
+    <div class="hero">
+      <h1>Nakijken in <em>5 minuten</em><br>— niet 20.</h1>
+      <p>Een AI-copilot voor MBO-4 ICT-docenten. AI schrijft het concept, jij houdt het laatste woord.</p>
+    </div>
+
+    <div class="qr-block">
+      <div class="qr-placeholder">
+        <!-- Drop your QR PNG here as ./qr-welcome.png and uncomment the img.
+             Until then this striped placeholder renders so you don't ship a blank box. -->
+        <!-- <img src="qr-welcome.png" alt="Scan voor leera.nl/welcome" /> -->
+        QR<br>here
+      </div>
+      <div class="qr-caption">
+        Scan voor de demo
+        <span class="url">leera.nl/welcome</span>
+        <span class="small">of mail inno8techs@gmail.com</span>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ═══════════ BACK ═══════════ -->
+<section class="card back">
+  <div class="back-inner">
+    <h2>Hoe het werkt</h2>
+
+    <ol class="steps">
+      <li>Student pusht commit → AI schrijft een <b>rubric-concept in jouw stem</b>.</li>
+      <li>Jij reviewt, tweakt, klikt <b>Verzenden</b>.</li>
+      <li>Student leest binnen seconden de feedback — direct in GitHub.</li>
+    </ol>
+
+    <div class="promises">
+      <ul>
+        <li>Crebo 25604 native — 6 werkprocessen ingebouwd</li>
+        <li>AVG-compliant, EU-data, geen ChatGPT-route</li>
+        <li>GitHub-native, geen uploads, geen extra tools</li>
+      </ul>
+    </div>
+
+    <div class="pilot-badge">
+      <b>Pilot tot 1 september</b>
+      Gratis, geen creditcard, geen verplichtingen.
+      Probeer het met je eigen klas.
+    </div>
+
+    <div class="footer">
+      <span class="email">inno8techs@gmail.com</span>
+      <span>© 2026 Leera · v1.0</span>
+    </div>
+  </div>
+</section>
+
+</body>
+</html>
