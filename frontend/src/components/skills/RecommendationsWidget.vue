@@ -136,6 +136,18 @@ onMounted(() => {
             <p class="text-xs text-on-surface-variant">
               {{ recommendation.skill.category }}
             </p>
+            <!-- v1.1 E3: Crebo werkproces pill (kerntaakcode + naam). Hidden
+                 if backend returned werkproces_code=null (e.g. pattern recs
+                 with no skill category). -->
+            <p
+              v-if="recommendation.werkproces_code"
+              class="text-[10px] uppercase tracking-widest text-primary mt-1 font-semibold"
+              :title="`Crebo 25604 · ${recommendation.werkproces_name}`"
+            >
+              <span class="font-mono">{{ recommendation.werkproces_code }}</span>
+              <span class="text-on-surface-variant font-normal normal-case tracking-normal mx-1">·</span>
+              <span class="font-normal normal-case tracking-normal">{{ recommendation.werkproces_name }}</span>
+            </p>
           </div>
 
           <!-- Score Badge -->

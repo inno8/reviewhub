@@ -11,6 +11,57 @@ from django.utils import timezone
 from .models import SkillMetric
 
 
+# v1.1 task E3 (May 2 2026): map every skill_slug back to a Crebo werkproces
+# so recommendations can display the docent-recognisable kerntaak code.
+#
+# Two layers:
+#   1. Direct match for the 6 rubric-criterion slugs (these ARE Crebo
+#      werkprocessen by definition — see grading/rubric_defaults.py).
+#   2. Fallback by SkillCategory.name for the per-commit slugs (clean_code,
+#      input_validation, html_semantics, etc) so we always surface SOMETHING.
+#
+# Crebo 25604 (MBO-4 ICT-developer) kerntaakcodes:
+#   B1-K1-W2  Ontwerpt software
+#   B1-K1-W3  Realiseert software           (also covers Veiligheid sub)
+#   B1-K1-W4  Test software
+#   B1-K1-W5  Doet verbetervoorstellen
+#   B1-K2-W1  Voert overleg                 (combined with W3)
+#   B1-K2-W3  Reflecteert op werk
+CREBO_BY_SKILL_SLUG = {
+    # Direct rubric-criterion mappings (6 Crebo werkprocessen = 6 slugs).
+    'code_ontwerp':   ('B1-K1-W2', 'Ontwerpt software'),
+    'code_kwaliteit': ('B1-K1-W3', 'Realiseert software'),
+    'veiligheid':     ('B1-K1-W3', 'Realiseert software (veiligheid)'),
+    'testen':         ('B1-K1-W4', 'Test software'),
+    'verbetering':    ('B1-K1-W5', 'Doet verbetervoorstellen'),
+    'samenwerking':   ('B1-K2-W1+W3', 'Voert overleg & reflecteert'),
+}
+
+# Fallback when a skill_slug isn't one of the 6 rubric criteria — map by
+# SkillCategory.name. The 8 SkillCategory names come from
+# skills/models.py:90 (Code Quality, Design Patterns, Logic & Algorithms,
+# Security, Testing, Frontend, Backend, DevOps).
+CREBO_BY_CATEGORY = {
+    'Code Quality':         ('B1-K1-W3', 'Realiseert software'),
+    'Design Patterns':      ('B1-K1-W2', 'Ontwerpt software'),
+    'Logic & Algorithms':   ('B1-K1-W3', 'Realiseert software'),
+    'Security':             ('B1-K1-W3', 'Realiseert software (veiligheid)'),
+    'Testing':              ('B1-K1-W4', 'Test software'),
+    'Frontend':             ('B1-K1-W3', 'Realiseert software'),
+    'Backend':              ('B1-K1-W3', 'Realiseert software'),
+    'DevOps':               ('B1-K1-W5', 'Doet verbetervoorstellen'),
+}
+
+
+def crebo_for(skill_slug, category_name=None):
+    """Return (werkproces_code, werkproces_name) or (None, None) if no match."""
+    if skill_slug in CREBO_BY_SKILL_SLUG:
+        return CREBO_BY_SKILL_SLUG[skill_slug]
+    if category_name and category_name in CREBO_BY_CATEGORY:
+        return CREBO_BY_CATEGORY[category_name]
+    return (None, None)
+
+
 class LearningRecommendationsView(APIView):
     """
     Get personalized learning recommendations based on:
@@ -256,6 +307,16 @@ class LearningRecommendationsView(APIView):
         # Sort by priority and limit
         priority_order = {'high': 0, 'medium': 1, 'low': 2, 'mastered': 3, 'growth': 4}
         recommendations.sort(key=lambda x: priority_order.get(x['priority'], 5))
+
+        # v1.1 task E3: tag every recommendation with the Crebo werkproces it
+        # belongs to so the frontend can render a kerntaak-pill ("B1-K1-W3 ·
+        # Realiseert software") next to the rec. Pattern recs without a real
+        # SkillCategory get (None, None) and the pill is hidden.
+        for rec in recommendations:
+            skill = rec.get('skill') or {}
+            code, name = crebo_for(skill.get('slug'), skill.get('category'))
+            rec['werkproces_code'] = code
+            rec['werkproces_name'] = name
 
         return Response(recommendations[:limit])
     
