@@ -1050,6 +1050,45 @@ function scrollTo(id: string) {
       </div>
     </section>
 
+    <!-- ════════════════════════ FINAL CTA ════════════════════════
+         Added May 2 2026: a docent who scrolled past 13,000+ px of
+         storytelling needs a clear path forward. Earlier the only
+         post-hero CTAs were the embedded demo's "Verstuur naar
+         student" (not a sign-up surface) and a small "Inloggen" in
+         the nav. Now the page closes with a primary "Probeer nu" →
+         /org-signup and a secondary "Ik heb al een account" → /login.
+    -->
+    <section style="padding:100px 0;border-top:1px solid var(--outline-variant)">
+      <div class="container" style="max-width:720px;text-align:center">
+        <h2 style="font-size:clamp(32px,5vw,48px);font-weight:800;letter-spacing:-1px;margin-bottom:16px;line-height:1.1">
+          Klaar om je nakijken een copilot te geven?
+        </h2>
+        <p style="color:var(--on-surface-variant);font-size:18px;line-height:1.5;max-width:520px;margin:0 auto 32px">
+          Probeer LEERA met je eigen klas. Gratis tijdens de pilot — geen creditcard, geen verplichtingen.
+        </p>
+        <div style="display:flex;gap:12px;justify-content:center;flex-wrap:wrap">
+          <router-link
+            to="/org-signup"
+            class="cta-primary"
+            style="display:inline-flex;align-items:center;gap:8px;padding:16px 32px;border-radius:10px;font-weight:700;font-size:16px;background:linear-gradient(135deg,#a3c8ff,#5b8dee);color:#0a0e1a;box-shadow:0 4px 24px rgba(91,141,238,.3);text-decoration:none;transition:transform .15s ease,box-shadow .15s ease"
+          >
+            <span class="material-symbols-outlined" style="font-size:18px">rocket_launch</span>
+            Probeer nu
+          </router-link>
+          <router-link
+            to="/login"
+            class="cta-secondary"
+            style="display:inline-flex;align-items:center;padding:16px 28px;border-radius:10px;font-weight:600;font-size:16px;color:var(--on-surface);border:1px solid var(--outline-variant);text-decoration:none;transition:background .15s ease"
+          >
+            Ik heb al een account
+          </router-link>
+        </div>
+        <p style="color:var(--outline);font-size:13px;margin-top:24px">
+          Vragen? <a href="mailto:inno8techs@gmail.com" style="color:var(--primary);text-decoration:none">inno8techs@gmail.com</a>
+        </p>
+      </div>
+    </section>
+
     <!-- ════════════════════════ FOOTER ════════════════════════ -->
     <footer>
       <div class="container">
