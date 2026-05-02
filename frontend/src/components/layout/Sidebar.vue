@@ -57,18 +57,29 @@ onMounted(async () => {
  * but we migrate toward the explicit flags above.
  */
 const navItems = [
-  // Student experience (the learning loop)
+  // Student experience (the learning loop).
+  // v1.1 (May 2 2026): Dutch labels + clearer icons.
+  //   - "PR Review" -> "PR-review"; icon `school` (book) was misleading
+  //     because the page is the student's own PR list, not a learning
+  //     module. `merge_type` reflects the PR/merge concept.
+  //   - "Skills" stays as Dutch loanword; icon kept as `school` since
+  //     this IS the skill-progression view.
+  //   - "Recommendations" -> "Aanbevelingen" (matches /recommendations
+  //     page wrapper shipped earlier today).
+  //   - "Code Review" -> "Commit-review" — clearer that this is the
+  //     per-commit AI feed, not PR-level grading. Icon `bolt` was
+  //     fine but `account_tree` (git branch) reads as "code/commits"
+  //     instead of "speed".
   { name: 'Dashboard', icon: 'dashboard', path: '/', studentOnly: true },
-  { name: 'PR Review', icon: 'school', path: '/my/prs', studentOnly: true },
+  { name: 'PR-review', icon: 'merge_type', path: '/my/prs', studentOnly: true },
   { name: 'Skills', icon: 'school', path: '/skills', studentOnly: true },
-  { name: 'Recommendations', icon: 'route', path: '/recommendations', studentOnly: true },
-  // Code Review — per-commit AI auto-review feed. Mounted at /timeline
-  // for backwards compat (route name retained); rebranded as "Code Review"
-  // in the nav because that's the student-facing concept. Drives off the
-  // ai_engine push pipeline which writes Evaluation + Finding rows on
-  // every commit. Distinct from "PR Review" (teacher rubric grading
-  // at PR level) — the in-page banner makes that distinction explicit.
-  { name: 'Code Review', icon: 'bolt', path: '/timeline', studentOnly: true },
+  { name: 'Aanbevelingen', icon: 'route', path: '/recommendations', studentOnly: true },
+  // Commit-review — per-commit AI auto-review feed. Mounted at /timeline
+  // for backwards compat (route name retained). Drives off the ai_engine
+  // push pipeline which writes Evaluation + Finding rows on every commit.
+  // Distinct from "PR-review" (teacher rubric grading at PR level) — the
+  // in-page banner makes that distinction explicit.
+  { name: 'Commit-review', icon: 'account_tree', path: '/timeline', studentOnly: true },
   // "My Profile" lives in the sidebar footer (Dev Profile link) — no need
   // for a duplicate top-nav entry.
   // "My Cohort" moved into Settings → My Cohort tab — it's reference info
@@ -88,7 +99,9 @@ const navItems = [
   // School admins also do NOT grade — they manage cohorts/teachers/students,
   // they don't review code (and may not even read code). Removed
   // schoolAdminOnly Apr 28 2026 — landed in school-admin dashboard rebuild.
-  { name: 'Grading Inbox', icon: 'rate_review', path: '/grading',
+  // v1.1 (May 2 2026): "Grading Inbox" -> "Nakijken" (matches the
+  // page H1 + the rest of the docent surface).
+  { name: 'Nakijken', icon: 'rate_review', path: '/grading',
     teacherOnly: true },
   // Klas-overzicht — redirect-or-pick page for teachers (single cohort → straight
   // redirect to the cohort overview; multiple → picker).
@@ -98,15 +111,17 @@ const navItems = [
   { name: 'Studenten', icon: 'person', path: '/grading/students',
     teacherOnly: true },
   // Teachers see their own cohorts view (same CohortListView, scoped by queryset)
-  { name: 'My Cohorts', icon: 'groups_2', path: '/org/cohorts',
+  { name: 'Mijn klassen', icon: 'groups_2', path: '/org/cohorts',
     teacherOnly: true },
 
   // School admin experience (org governance).
   // Single unified members view replaces the old /team + /org-dashboard split.
   // Platform ops get these too — they manage schools on behalf of customers.
-  { name: 'Members', icon: 'group', path: '/org/members',
+  // v1.1 (May 2 2026): Dutch labels — "Members" -> "Leden",
+  // "Cohorts" -> "Klassen". Model name stays Cohort for code stability.
+  { name: 'Leden', icon: 'group', path: '/org/members',
     schoolAdminOnly: true, opsOnly: true },
-  { name: 'Cohorts', icon: 'groups_2', path: '/org/cohorts',
+  { name: 'Klassen', icon: 'groups_2', path: '/org/cohorts',
     schoolAdminOnly: true, opsOnly: true },
 
   // Platform ops (us — superuser only)
@@ -639,10 +654,10 @@ function toggleAllBranches(selected: boolean) {
               {{ project.displayName }}
             </option>
           </select>
-          <p class="text-[10px] text-outline uppercase tracking-widest">Active Project</p>
+          <p class="text-[10px] text-outline uppercase tracking-widest">Actief project</p>
         </div>
       </div>
-      
+
       <!-- Add Project Button -->
       <button
         v-if="auth.isAdmin"
@@ -650,7 +665,7 @@ function toggleAllBranches(selected: boolean) {
         class="w-full mt-2 py-2 px-3 border border-dashed border-outline-variant/30 rounded-lg text-xs text-outline hover:text-primary hover:border-primary/50 transition-colors flex items-center justify-center gap-2"
       >
         <span class="material-symbols-outlined text-sm">add</span>
-        Add Project
+        Project toevoegen
       </button>
     </div>
 
@@ -777,7 +792,7 @@ function toggleAllBranches(selected: boolean) {
         ]"
       >
         <span class="material-symbols-outlined">psychology</span>
-        <span>Dev Profile</span>
+        <span>Mijn profiel</span>
       </router-link>
     </div>
   </aside>
