@@ -169,6 +169,30 @@ const categoryColors = computed(() => {
 
 
 function formatCategory(c: string) { return c.split('_').map(p => p.charAt(0) + p.slice(1).toLowerCase()).join(' '); }
+// v1.1 (May 2 2026): backend returns developer level / severity as English
+// enum keys (beginner/junior/intermediate/senior/expert and critical/warning/
+// info/suggestion). The May 1 i18n pass missed these because they came in
+// as DATA, not template literals — visible on the demo path though.
+function levelLabel(l: string | null | undefined): string {
+  const map: Record<string, string> = {
+    beginner: 'Beginner',
+    junior: 'Junior',
+    intermediate: 'Halfgevorderd',
+    senior: 'Senior',
+    expert: 'Expert',
+  };
+  return l ? (map[l.toLowerCase()] || l) : 'Onbekend';
+}
+function severityLabel(s: string | number | null | undefined): string {
+  const key = String(s || '').toLowerCase();
+  const map: Record<string, string> = {
+    critical: 'Kritiek',
+    warning: 'Waarschuwing',
+    info: 'Info',
+    suggestion: 'Suggestie',
+  };
+  return map[key] || String(s || '');
+}
 function getSkillLevel(s: number) { if (s >= 90) return 'Expert'; if (s >= 75) return 'Gevorderd'; if (s >= 50) return 'Halfgevorderd'; if (s >= 25) return 'In ontwikkeling'; return 'Beginner'; }
 function getSkillBarColor(s: number) { if (s >= 90) return 'bg-primary'; if (s >= 75) return 'bg-green-500'; if (s >= 50) return 'bg-yellow-500'; if (s >= 25) return 'bg-orange-500'; return 'bg-red-500'; }
 function categoryAverage(c: SkillCategory) { if (!c.skills.length) return 0; return Math.round(c.skills.reduce((s, sk) => s + sk.score, 0) / c.skills.length); }
@@ -317,7 +341,7 @@ function openSkillBreakdown(id: number) { breakdownSkillId.value = id; breakdown
               }">
               <span class="text-2xl font-black uppercase">{{ performance.level?.[0] }}</span>
             </div>
-            <p class="text-lg font-bold capitalize">{{ performance.level || 'Onbekend' }}</p>
+            <p class="text-lg font-bold">{{ levelLabel(performance.level) }}</p>
             <p class="text-sm text-outline mt-1">{{ performance.compositeScore || performance.averageScore }} pt totaal</p>
           </div>
 
@@ -348,7 +372,7 @@ function openSkillBreakdown(id: number) { breakdownSkillId.value = id; breakdown
                     'text-orange-400': severity === 'warning',
                     'text-blue-400': severity === 'info',
                     'text-green-400': severity === 'suggestion',
-                  }">{{ severity }}</span>
+                  }">{{ severityLabel(severity) }}</span>
                 <div class="flex-1 bg-surface-container-lowest rounded-full h-4 overflow-hidden">
                   <div class="h-full rounded-full transition-all"
                     :class="{

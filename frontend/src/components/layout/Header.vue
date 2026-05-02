@@ -98,10 +98,20 @@ function logout() {
   router.push('/login');
 }
 
-const navItems = [
-  { name: 'Vandaag', path: '/' },
-  { name: 'Projecten', path: '/projects' },
-];
+// v1.1 (May 2 2026): "Projecten" routes to legacy ProjectsView (the v0
+// developer-era standalone-repo page). It's deprecated for grading-first v1
+// — Sidebar already removed it, but the persistent top nav still showed it
+// for everyone. Hide for staff roles (teacher / school admin / superuser);
+// developer-mode users still see it because it's their personal-projects
+// surface.
+const navItems = computed(() => {
+  const items = [{ name: 'Vandaag', path: '/' }];
+  const isStaff = auth.isTeacher || auth.isSchoolAdmin || auth.isSuperuser;
+  if (!isStaff) {
+    items.push({ name: 'Projecten', path: '/projects' });
+  }
+  return items;
+});
 
 function isActive(path: string) {
   return route.path === path;

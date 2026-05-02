@@ -53,14 +53,29 @@ function getPriorityBg(priority: string) {
 }
 
 function getPriorityLabel(priority: string) {
+  // v1.1 (May 2 2026): Dutch labels for the priority pill. Backend
+  // returns the english enum keys; this layer is the only place they
+  // need to be translated.
   const labels: Record<string, string> = {
-    high: 'high priority',
-    medium: 'medium priority',
-    low: 'low priority',
-    mastered: 'mastered',
-    growth: 'next level',
+    high: 'hoge prioriteit',
+    medium: 'gemiddelde prioriteit',
+    low: 'lage prioriteit',
+    mastered: 'beheerst',
+    growth: 'volgend niveau',
   };
   return labels[priority] || priority;
+}
+
+// v1.1 (May 2 2026): Dutch labels for the severity_breakdown chips on
+// the rec card (critical/warning/info/suggestion).
+function getSeverityLabel(severity: string) {
+  const labels: Record<string, string> = {
+    critical: 'kritiek',
+    warning: 'waarschuwing',
+    info: 'info',
+    suggestion: 'suggestie',
+  };
+  return labels[severity] || severity;
 }
 
 function getPriorityIcon(priority: string) {
@@ -88,7 +103,7 @@ onMounted(() => {
     <div class="flex items-center justify-between mb-4">
       <div class="flex items-center gap-2">
         <span class="material-symbols-outlined text-primary">school</span>
-        <h2 class="text-xl font-bold text-on-surface">Recommended for You</h2>
+        <h2 class="text-xl font-bold text-on-surface">Aanbevolen voor jou</h2>
       </div>
     </div>
 
@@ -102,9 +117,9 @@ onMounted(() => {
       <span class="material-symbols-outlined text-6xl text-success mb-2">
         workspace_premium
       </span>
-      <p class="text-on-surface font-semibold mb-1">All skills looking strong!</p>
+      <p class="text-on-surface font-semibold mb-1">Alle skills zien er sterk uit!</p>
       <p class="text-on-surface-variant text-sm">
-        Keep pushing code — new recommendations will appear as you take on new challenges.
+        Blijf code pushen — nieuwe aanbevelingen verschijnen wanneer je nieuwe uitdagingen aanpakt.
       </p>
     </div>
 
@@ -164,7 +179,8 @@ onMounted(() => {
             >
               {{ recommendation.current_score }}
             </div>
-            <span class="text-xs text-on-surface-variant mt-1">score</span>
+            <span class="text-xs text-on-surface-variant mt-1">score</span><!-- "score" is a Dutch loanword too — leave as-is -->
+
           </div>
         </div>
 
@@ -189,7 +205,7 @@ onMounted(() => {
         <div v-if="recommendation.issue_count" class="flex gap-4 mb-3 text-sm">
           <div class="flex items-center gap-1 text-on-surface-variant">
             <span class="material-symbols-outlined text-base">bug_report</span>
-            <span>{{ recommendation.issue_count }} issues</span>
+            <span>{{ recommendation.issue_count }} {{ recommendation.issue_count === 1 ? 'bevinding' : 'bevindingen' }}</span>
           </div>
 
           <div
@@ -200,20 +216,20 @@ onMounted(() => {
               v-if="recommendation.severity_breakdown.critical"
               class="px-2 py-0.5 bg-error/10 text-error rounded"
             >
-              {{ recommendation.severity_breakdown.critical }} critical
+              {{ recommendation.severity_breakdown.critical }} {{ getSeverityLabel('critical') }}
             </span>
             <span
               v-if="recommendation.severity_breakdown.warning"
               class="px-2 py-0.5 bg-warning/10 text-warning rounded"
             >
-              {{ recommendation.severity_breakdown.warning }} warning
+              {{ recommendation.severity_breakdown.warning }} {{ getSeverityLabel('warning') }}
             </span>
           </div>
         </div>
 
         <!-- Resources -->
         <div v-if="recommendation.suggested_resources?.length" class="space-y-2">
-          <p class="text-xs font-semibold text-on-surface-variant">Suggested Resources:</p>
+          <p class="text-xs font-semibold text-on-surface-variant">Aanbevolen bronnen:</p>
           <div class="space-y-1">
             <button
               v-for="(resource, idx) in recommendation.suggested_resources.slice(0, 2)"
