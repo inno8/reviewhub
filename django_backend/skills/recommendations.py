@@ -381,6 +381,126 @@ class LearningRecommendationsView(APIView):
         'solid_principles': {
             '_default': [{'title': 'SOLID Principles Explained', 'type': 'article', 'url': 'https://refactoring.guru/solid'}],
         },
+        # ──────────────────────────────────────────────────────────────────
+        # v1.1 task E4 (May 2 2026): fill the ~22 hardcoded skill_slug gaps
+        # below. Before this batch, recommendations for these slugs fell
+        # through to a Google search URL — embarrassing for a docent demo
+        # ("the AI just sends students to Google?"). Each slug now has at
+        # least a _default authoritative resource; major slugs also have
+        # python + javascript variants. Curated for Dutch MBO-4 ICT use.
+        # ──────────────────────────────────────────────────────────────────
+
+        # Logic & Algorithms category
+        'abstraction': {
+            '_default': [{'title': 'Refactoring Guru: Abstract Factory', 'type': 'article', 'url': 'https://refactoring.guru/design-patterns/abstract-factory'}],
+        },
+        'algorithm_efficiency': {
+            '_default': [{'title': 'Big-O Cheat Sheet', 'type': 'article', 'url': 'https://www.bigocheatsheet.com/'}],
+            'python': [{'title': 'Python: TimeComplexity (CPython operations)', 'type': 'documentation', 'url': 'https://wiki.python.org/moin/TimeComplexity'}],
+        },
+        'data_structures': {
+            'python': [{'title': 'Python: Data Structures', 'type': 'documentation', 'url': 'https://docs.python.org/3/tutorial/datastructures.html'}],
+            'javascript': [{'title': 'MDN: JavaScript Data Structures', 'type': 'documentation', 'url': 'https://developer.mozilla.org/en-US/docs/Web/JavaScript/Data_structures'}],
+            '_default': [{'title': 'Visualgo: Data Structure Visualizations', 'type': 'tutorial', 'url': 'https://visualgo.net/'}],
+        },
+        'problem_decomposition': {
+            '_default': [{'title': 'Refactoring Guru: Extract Function', 'type': 'article', 'url': 'https://refactoring.guru/extract-method'}],
+        },
+        'performance': {
+            'javascript': [{'title': 'Web.dev: Performance', 'type': 'documentation', 'url': 'https://web.dev/learn/performance/'}],
+            'python': [{'title': 'Python: Profilers (cProfile)', 'type': 'documentation', 'url': 'https://docs.python.org/3/library/profile.html'}],
+            '_default': [{'title': 'Use the Index, Luke! — SQL Performance', 'type': 'article', 'url': 'https://use-the-index-luke.com/'}],
+        },
+
+        # Security category
+        'auth_practices': {
+            '_default': [{'title': 'OWASP: Authentication Cheat Sheet', 'type': 'documentation', 'url': 'https://cheatsheetseries.owasp.org/cheatsheets/Authentication_Cheat_Sheet.html'}],
+            'javascript': [{'title': 'Auth0: Web Auth Best Practices', 'type': 'article', 'url': 'https://auth0.com/blog/web-application-security-101/'}],
+        },
+
+        # Testing category
+        'tdd': {
+            '_default': [{'title': 'Martin Fowler: Test Driven Development', 'type': 'article', 'url': 'https://martinfowler.com/bliki/TestDrivenDevelopment.html'}],
+            'python': [{'title': 'pytest: Get Started', 'type': 'documentation', 'url': 'https://docs.pytest.org/en/stable/getting-started.html'}],
+            'javascript': [{'title': 'Vitest: Getting Started', 'type': 'documentation', 'url': 'https://vitest.dev/guide/'}],
+        },
+        'unit_testing': {
+            'python': [{'title': 'Python: unittest', 'type': 'documentation', 'url': 'https://docs.python.org/3/library/unittest.html'}],
+            'javascript': [{'title': 'Vitest: Writing Tests', 'type': 'documentation', 'url': 'https://vitest.dev/guide/features.html'}],
+            '_default': [{'title': 'Martin Fowler: UnitTest', 'type': 'article', 'url': 'https://martinfowler.com/bliki/UnitTest.html'}],
+        },
+        'test_coverage': {
+            'python': [{'title': 'pytest-cov: Coverage Reporting', 'type': 'documentation', 'url': 'https://pytest-cov.readthedocs.io/en/latest/'}],
+            'javascript': [{'title': 'Vitest: Coverage', 'type': 'documentation', 'url': 'https://vitest.dev/guide/coverage.html'}],
+            '_default': [{'title': 'Martin Fowler: TestCoverage', 'type': 'article', 'url': 'https://martinfowler.com/bliki/TestCoverage.html'}],
+        },
+        'test_quality': {
+            '_default': [{'title': 'Test Smells: Common Anti-Patterns', 'type': 'article', 'url': 'https://martinfowler.com/articles/practical-test-pyramid.html'}],
+        },
+
+        # DevOps / Backend
+        'ci_cd': {
+            '_default': [{'title': 'GitHub Actions: Quickstart', 'type': 'documentation', 'url': 'https://docs.github.com/en/actions/quickstart'}],
+        },
+        'git_practices': {
+            '_default': [{'title': 'Atlassian: Gitflow Workflow', 'type': 'tutorial', 'url': 'https://www.atlassian.com/git/tutorials/comparing-workflows/gitflow-workflow'}],
+        },
+        'environment_config': {
+            'python': [{'title': 'python-dotenv: Loading .env', 'type': 'documentation', 'url': 'https://github.com/theskumar/python-dotenv#getting-started'}],
+            '_default': [{'title': '12-Factor App: Config', 'type': 'article', 'url': 'https://12factor.net/config'}],
+        },
+        'build_tools': {
+            'javascript': [{'title': 'Vite: Why Vite', 'type': 'documentation', 'url': 'https://vitejs.dev/guide/why.html'}],
+            'python': [{'title': 'Python Packaging User Guide', 'type': 'documentation', 'url': 'https://packaging.python.org/en/latest/'}],
+        },
+
+        # Design Patterns
+        'mvc_patterns': {
+            '_default': [{'title': 'Refactoring Guru: MVC', 'type': 'article', 'url': 'https://refactoring.guru/design-patterns/strategy'}],
+        },
+        'reusability': {
+            '_default': [{'title': 'Refactoring Guru: Composition over Inheritance', 'type': 'article', 'url': 'https://refactoring.guru/design-patterns/strategy'}],
+        },
+
+        # Crebo rubric criterion slugs — fall back to deeper-skill resources
+        # so a "code_kwaliteit" rec gives the docent something concrete.
+        'code_kwaliteit': {
+            '_default': [
+                {'title': 'Refactoring Guru: Code Smells', 'type': 'article', 'url': 'https://refactoring.guru/refactoring/smells'},
+                {'title': 'Clean Code by Robert C. Martin (samenvatting)', 'type': 'article', 'url': 'https://gist.github.com/wojteklu/73c6914cc446146b8b533c0988cf8d29'},
+            ],
+        },
+        'code_ontwerp': {
+            '_default': [
+                {'title': 'Refactoring Guru: SOLID Principles', 'type': 'article', 'url': 'https://refactoring.guru/solid'},
+                {'title': 'Refactoring Guru: Design Patterns', 'type': 'article', 'url': 'https://refactoring.guru/design-patterns'},
+            ],
+        },
+        'veiligheid': {
+            '_default': [
+                {'title': 'OWASP Top 10', 'type': 'documentation', 'url': 'https://owasp.org/www-project-top-ten/'},
+                {'title': 'OWASP Cheat Sheet Series', 'type': 'documentation', 'url': 'https://cheatsheetseries.owasp.org/'},
+            ],
+        },
+        'testen': {
+            '_default': [
+                {'title': 'Martin Fowler: Practical Test Pyramid', 'type': 'article', 'url': 'https://martinfowler.com/articles/practical-test-pyramid.html'},
+            ],
+            'python': [{'title': 'pytest: Get Started', 'type': 'documentation', 'url': 'https://docs.pytest.org/en/stable/getting-started.html'}],
+            'javascript': [{'title': 'Vitest: Getting Started', 'type': 'documentation', 'url': 'https://vitest.dev/guide/'}],
+        },
+        'verbetering': {
+            '_default': [
+                {'title': 'Refactoring Guru: Refactoring Catalog', 'type': 'article', 'url': 'https://refactoring.guru/refactoring/catalog'},
+                {'title': 'Martin Fowler: Refactoring (book overview)', 'type': 'article', 'url': 'https://martinfowler.com/books/refactoring.html'},
+            ],
+        },
+        'samenwerking': {
+            '_default': [
+                {'title': 'Atlassian: Code Review Best Practices', 'type': 'article', 'url': 'https://www.atlassian.com/agile/software-development/code-reviews'},
+                {'title': 'Conventional Commits', 'type': 'documentation', 'url': 'https://www.conventionalcommits.org/en/v1.0.0/'},
+            ],
+        },
     }
 
     def _get_resources_for_skill(self, skill_slug, primary_language=None):
