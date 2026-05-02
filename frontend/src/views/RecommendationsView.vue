@@ -10,10 +10,10 @@ const projectsStore = useProjectsStore();
   <AppShell>
     <div class="p-8 flex-1 max-w-6xl mx-auto w-full">
       <header class="mb-8">
-        <span class="text-primary font-bold uppercase tracking-[0.2em] text-xs">Learning Path</span>
-        <h1 class="text-3xl font-black tracking-tight text-on-surface mt-2">Recommendations</h1>
+        <span class="text-primary font-bold uppercase tracking-[0.2em] text-xs">Leerpad</span>
+        <h1 class="text-3xl font-black tracking-tight text-on-surface mt-2">Aanbevelingen</h1>
         <p class="text-outline text-sm mt-2">
-          Personalized learning recommendations based on your code patterns, skill gaps, and progress.
+          Persoonlijke leeraanbevelingen gebaseerd op je code-patronen, skill-gaten en voortgang.
         </p>
       </header>
 

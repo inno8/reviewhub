@@ -554,6 +554,33 @@ function getCategoryClass(cat: string) {
 function openFile(filePath: string) { router.push({ path: '/file-review', query: { file: filePath, ids: groupedByFile.value[filePath].map(f => f.id).join(','), project: devSelectedProject.value ? String(devSelectedProject.value) : undefined } }); }
 function formatCategory(cat: string) { return cat.replace('_', ' '); }
 
+// v1.1 (May 2 2026): Dutch labels for the 8 SkillCategory names that the
+// backend returns as English uppercase enum keys (Code Quality, Security,
+// Backend, Testing, Logic & Algorithms, Frontend, DevOps, Design Patterns).
+// Used by the recurring-patterns category headers on the student dashboard
+// where the raw English was leaking through. Falls back to formatCategory
+// for any unknown value so we don't crash on a new SkillCategory.
+function categoryLabelNL(cat: string): string {
+  // Normalise spaces, dashes AND `&` to underscores so the lookup key matches
+  // regardless of how the backend formats the category name.
+  const k = (cat || '').toUpperCase().replace(/[\s\-&]+/g, '_');
+  const map: Record<string, string> = {
+    CODE_QUALITY: 'Code-kwaliteit',
+    SECURITY: 'Veiligheid',
+    BACKEND: 'Backend',
+    TESTING: 'Testen',
+    LOGIC_ALGORITHMS: 'Logica & algoritmes',
+    FRONTEND: 'Frontend',
+    DEVOPS: 'DevOps',
+    DESIGN_PATTERNS: 'Design patterns',
+    PERFORMANCE: 'Prestaties',
+    CODE_STYLE: 'Code-stijl',
+    ARCHITECTURE: 'Architectuur',
+    ALGEMEEN: 'Algemeen',
+  };
+  return map[k] || formatCategory(cat || 'Algemeen');
+}
+
 function scoreColor(score: number) {
   if (score >= 80) return 'text-green-400';
   if (score >= 60) return 'text-yellow-400';
@@ -1123,7 +1150,7 @@ function scoreColor(score: number) {
               class="bg-tertiary/15 text-tertiary hover:bg-tertiary/25 px-4 py-2 rounded-lg text-xs font-bold transition-colors flex-shrink-0"
               @click="router.push('/skills')"
             >
-              Open Skills →
+              Bekijk skills →
             </button>
           </section>
 
@@ -1141,7 +1168,7 @@ function scoreColor(score: number) {
               <p class="text-4xl font-black" :class="devHome.avgScore >= 70 ? 'text-green-400' : devHome.avgScore >= 50 ? 'text-yellow-400' : 'text-red-400'">
                 {{ devHome.avgScore }}%
               </p>
-              <p class="text-[10px] text-outline uppercase tracking-wider mt-1">Avg Score</p>
+              <p class="text-[10px] text-outline uppercase tracking-wider mt-1">Score</p>
             </div>
             <div class="bg-surface-container-low p-5 rounded-xl border border-outline-variant/10 text-center cursor-pointer group"
               @click="showLevelBreakdown = !showLevelBreakdown">
@@ -1149,17 +1176,17 @@ function scoreColor(score: number) {
                 <span class="text-sm font-black uppercase" :class="getLevelColor(devHome.level)">{{ (devHome.level || '?')[0] }}</span>
               </div>
               <p class="text-sm font-bold capitalize" :class="getLevelColor(devHome.level)">{{ devHome.level }}</p>
-              <p v-if="devHome.compositeScore" class="text-[9px] text-outline mt-0.5">{{ devHome.compositeScore }}pts <span class="group-hover:text-primary">▾</span></p>
+              <p v-if="devHome.compositeScore" class="text-[9px] text-outline mt-0.5">{{ devHome.compositeScore }}pt <span class="group-hover:text-primary">▾</span></p>
             </div>
             <div class="bg-surface-container-low p-5 rounded-xl border border-outline-variant/10 text-center">
               <p class="text-2xl font-black" :class="devHome.improving ? 'text-green-400' : 'text-orange-400'">
                 {{ devHome.improving ? '+' : '' }}{{ devHome.improvementPct }}%
               </p>
-              <p class="text-[10px] text-outline uppercase tracking-wider mt-1">{{ devHome.improving ? 'Improving' : 'Trend' }}</p>
+              <p class="text-[10px] text-outline uppercase tracking-wider mt-1">{{ devHome.improving ? 'Verbetering' : 'Trend' }}</p>
             </div>
             <div class="bg-surface-container-low p-5 rounded-xl border border-outline-variant/10 text-center">
               <p class="text-2xl font-black text-tertiary">{{ devHome.findingCount }}</p>
-              <p class="text-[10px] text-outline uppercase tracking-wider mt-1">Findings</p>
+              <p class="text-[10px] text-outline uppercase tracking-wider mt-1">Bevindingen</p>
             </div>
             <div class="bg-surface-container-low p-5 rounded-xl border border-outline-variant/10 text-center">
               <p class="text-2xl font-black text-primary">{{ devHome.commitCount }}</p>
@@ -1174,8 +1201,8 @@ function scoreColor(score: number) {
           <!-- Level Breakdown Panel -->
           <section v-if="showLevelBreakdown && devHome.levelBreakdown" class="mb-8 bg-surface-container-low rounded-xl border border-outline-variant/10 p-5">
             <div class="flex items-center justify-between mb-4">
-              <h3 class="text-sm font-bold">How Your Level Is Calculated</h3>
-              <button @click="showLevelBreakdown = false" class="text-xs text-outline hover:text-on-surface">Hide</button>
+              <h3 class="text-sm font-bold">Hoe je niveau wordt berekend</h3>
+              <button @click="showLevelBreakdown = false" class="text-xs text-outline hover:text-on-surface">Verbergen</button>
             </div>
             <div class="space-y-2.5">
               <div v-for="(data, factor) in devHome.levelBreakdown" :key="factor" class="flex items-center gap-3">
@@ -1190,7 +1217,7 @@ function scoreColor(score: number) {
               </div>
             </div>
             <div class="mt-3 pt-3 border-t border-outline-variant/10 flex items-center justify-between">
-              <p class="text-xs text-outline">Composite: <strong class="text-on-surface">{{ devHome.compositeScore }}pts</strong></p>
+              <p class="text-xs text-outline">Totaal: <strong class="text-on-surface">{{ devHome.compositeScore }}pt</strong></p>
               <p class="text-xs capitalize font-bold" :class="getLevelColor(devHome.level)">{{ devHome.level }}</p>
             </div>
           </section>
@@ -1205,7 +1232,7 @@ function scoreColor(score: number) {
               <div v-if="devHome.priorities?.length" class="p-5 rounded-xl bg-primary/5 border border-primary/20">
                 <div class="flex items-center gap-2 mb-3">
                   <span class="material-symbols-outlined text-primary">target</span>
-                  <h3 class="text-sm font-bold text-primary uppercase tracking-wider">Focus this week</h3>
+                  <h3 class="text-sm font-bold text-primary uppercase tracking-wider">Focus deze week</h3>
                 </div>
                 <div class="flex flex-wrap gap-3">
                   <div v-for="p in devHome.priorities" :key="p.slug"
@@ -1217,7 +1244,7 @@ function scoreColor(score: number) {
                     </div>
                     <div>
                       <p class="text-sm font-bold">{{ p.skill }}</p>
-                      <p class="text-[10px] text-outline">{{ p.issues }} issues</p>
+                      <p class="text-[10px] text-outline">{{ p.issues }} {{ p.issues === 1 ? 'bevinding' : 'bevindingen' }}</p>
                     </div>
                   </div>
                 </div>
@@ -1259,7 +1286,7 @@ function scoreColor(score: number) {
                         :style="{ backgroundColor: cat.color || 'rgb(var(--color-tertiary) / 0.7)' }"
                       ></span>
                       <span class="text-[11px] font-bold uppercase tracking-widest text-on-surface">
-                        {{ cat.name }}
+                        {{ categoryLabelNL(cat.name) }}
                       </span>
                       <span class="text-[10px] text-outline">
                         {{ cat.totalFrequency }}× totaal · {{ cat.patterns.length }} patroon{{ cat.patterns.length === 1 ? '' : 'en' }}
